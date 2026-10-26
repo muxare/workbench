@@ -29,7 +29,7 @@ All four are first drafts to refine together.
 ## Check the process files
 
 ```
-pip install pyyaml
+pip install -r requirements.txt
 python3 checks/validate_functions.py
 ```
 
