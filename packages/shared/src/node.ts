@@ -3,6 +3,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { FunctionFileError, parseFunctionFile, type FunctionFile } from "./functionFile.ts";
+import { validateProcess, type ProcessFunctionFile, type ValidationReport } from "./functionValidator.ts";
 
 export interface LoadedFunctionFile extends FunctionFile {
   path: string;
@@ -40,4 +41,30 @@ export function functionFilePaths(functionsDir: string): string[] {
 /** Load every function file under a functions directory, e.g. process/functions. */
 export function loadFunctionFiles(functionsDir: string): LoadedFunctionFile[] {
   return functionFilePaths(functionsDir).map(loadFunctionFile);
+}
+
+/**
+ * Run the port of checks/validate_functions.py over `<root>/process`, where
+ * root is the repo root (or a copy of its layout, as the tests use).
+ */
+export function validateProcessDir(root: string): ValidationReport {
+  const processDir = path.join(root, "process");
+  const functionFiles: ProcessFunctionFile[] = functionFilePaths(path.join(processDir, "functions"))
+    .map((filePath) => ({
+      rel: path.relative(root, filePath).split(path.sep).join("/"),
+      folder: path.basename(path.dirname(filePath)),
+      stem: path.basename(filePath, ".md"),
+      text: readFileSync(filePath, "utf8"),
+    }))
+    // Python sorts paths part by part, so `be/x.md` comes before `be-a/y.md`.
+    .sort((a, b) => compare(a.folder, b.folder) || compare(a.stem + ".md", b.stem + ".md"));
+  return validateProcess({
+    templateText: readFileSync(path.join(processDir, "template.md"), "utf8"),
+    artifactsText: readFileSync(path.join(processDir, "artifacts.md"), "utf8"),
+    functionFiles,
+  });
+}
+
+function compare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }

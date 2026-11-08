@@ -13,6 +13,7 @@
     "test": "pnpm -r test",
     "lint": "eslint .",
     "validate": "python3 checks/validate_functions.py",
+    "validate:ts": "node packages/shared/src/validateFunctionsCli.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm validate"
   },
   "devDependencies": {
