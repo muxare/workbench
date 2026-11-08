@@ -4,12 +4,12 @@ Last updated 2026-11-08 by Claude.
 
 ## Where the work stands
 
-- Process model: template v1 and the four segment functions are drafted; the 2026-10-26 review changes and the app docs are merged into `main` (not pushed).
+- Process model: template v1 and the four segment functions are drafted; the 2026-10-26 review changes and the app docs are on `main` and pushed.
 - Phase 2, the hand run on a past project, is postponed until after ConCon; the app is built and demoed on invented data. See `docs/decisions.md`.
 - Product direction: build toward a working product. ConCon is on 2026-11-18; the talk is mostly about how AI and people should collaborate, and the app is shown as an example at whatever stage it has reached. Stack and model are in `docs/architecture.md`, the plan in `docs/plan.md`, the design snapshot in `docs/design/`.
 - The build runs in Claude Code locally in this repo; `docs/plan.md` is the source of truth for the plan. The Workbench board artifact was retired on 2026-11-08 and now points here. See `docs/decisions.md`.
 - Stack accepted: pnpm, Hono and SSE. `docs/tutorial-pnpm-hono-sse.md` stays as Mikael's reference.
-- The TypeScript workspace is scaffolded and merged into `main` (not pushed): `apps/api` (Hono, `/api/health`), `apps/web` (React and Vite, a placeholder page) and `packages/shared` (zod, the card statuses). `pnpm check` passes: lint, typecheck, 4 tests and the validator. `pnpm build` works. The API and web dev servers have not yet been run together.
+- The TypeScript workspace is scaffolded, on `main` and pushed: `apps/api` (Hono, `/api/health`), `apps/web` (React and Vite, a placeholder page) and `packages/shared` (zod, the card statuses). `pnpm check` passes: lint, typecheck, 4 tests and the validator. `pnpm build` works. The API and web dev servers have not yet been run together.
 
 ## Waiting for Mikael
 
