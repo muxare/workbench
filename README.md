@@ -2,7 +2,7 @@
 
 A workbench where people and AI do a team's work together, one step at a time. Each step in a role's chain (UX, frontend, backend) is a **function**: it reads artifacts, writes artifacts, is done when its checks pass, and follows a conversation protocol that says who opens, who asks, who writes and who decides.
 
-The full plan lives in the claude.ai project "Collabborating with AI" (`claude/human-ai-workbench-plan.md`).
+The full plan is in `docs/plan.md`. The claude.ai project "Collabborating with AI" points here instead of keeping its own copy.
 
 ## Where things are
 
@@ -12,7 +12,13 @@ The full plan lives in the claude.ai project "Collabborating with AI" (`claude/h
 | `process/artifacts.md` | Every artifact the functions read or write, with owner, maker and required fields. |
 | `process/functions/<role>/<name>.md` | One file per function. |
 | `checks/validate_functions.py` | Checks every function file against the template and the artifact list. |
-| `docs/decisions.md` | Decisions about the process model, newest first. |
+| `docs/next.md` | Where the work stands, what waits for Mikael, what comes next. Read this first. |
+| `docs/plan.md` | Goal, decisions and phases. |
+| `docs/architecture.md` | The app: stack, layout, domain model, first slice. |
+| `docs/design/` | Snapshot of the Claude Design concept the first UI follows, plus design tokens. |
+| `docs/decisions.md` | Decisions about the process model and the app, newest first. |
+| `docs/runs.md` | How a run is stored: artifact files, approvals, proposals. |
+| `docs/tutorial-pnpm-hono-sse.md` | Hands-on introduction to pnpm, Hono and server-sent events. |
 | `runs/` | One folder per feature run through the chain (from phase 2). |
 
 ## Status
@@ -25,6 +31,8 @@ Phase 0 (template) is drafted. Phase 1 (the first segment) is drafted:
 4. `be/define_api_contract`: agree the API contract
 
 All four are first drafts to refine together.
+
+From 2026-11-08 the repo also grows the app: full-stack TypeScript, with the first UI following the Claude Design concept. See `docs/architecture.md`, and `docs/next.md` for current status.
 
 ## Check the process files
 

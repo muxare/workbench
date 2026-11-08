@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Card #151: needs input</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#3b36b8}a:hover{color:#161b26}
+</style>
+</helmet>
+<div style="box-sizing: border-box; width: 100%; background: #f3f5f8; color: #161b26; font-family: 'Schibsted Grotesk', 'Helvetica Neue', Arial, sans-serif; padding: 40px 24px 64px">
+<div style="max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px">
+
+<div style="display: flex; flex-direction: column; gap: 12px">
+<div style="font-size: 13px; color: #5b6475"><a href="Main.dc.html" style="color: #5b6475">Team board</a> › Needs input</div>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 10px; min-width: 0; flex: 1 1 520px">
+<h1 style="margin: 0; font-size: 32px; line-height: 1.15; font-weight: 700; letter-spacing: -0.02em"><span style="font-family: 'JetBrains Mono', monospace; font-weight: 400; color: #5b6475; font-size: 26px">#151</span> Define the orders API contract</h1>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px">
+<span style="font-weight: 600; padding: 4px 10px; border-radius: 99px; background: #fbe7e5; color: #b3261e">Needs input · waiting on BE</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 4px 10px; border-radius: 99px; background: #ffffff; border: 1px solid #d9dee7">define_api_contract</span>
+<span style="font-weight: 600; padding: 4px 10px; border-radius: 99px; background: #dff3f0; color: #0b6b63">AI assists, BE drives</span>
+<span style="padding: 4px 10px; border-radius: 99px; background: #ffffff; border: 1px solid #d9dee7">Owner: Backend developer</span>
+</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button type="button" style="font: inherit; font-size: 14px; font-weight: 600; min-height: 44px; padding: 10px 16px; border-radius: 8px; border: 1px solid #d9dee7; background: #ffffff; color: #161b26; cursor: pointer">Reassign</button>
+<button type="button" style="font: inherit; font-size: 14px; font-weight: 600; min-height: 44px; padding: 10px 16px; border-radius: 8px; border: 1px solid #161b26; background: #161b26; color: #ffffff; cursor: pointer">Answer and resume</button>
+</div>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+
+<section style="background: #ffffff; border: 1px solid #b3261e; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; align-items: center">
+<h2 style="margin: 0; font-size: 17px; font-weight: 700; color: #b3261e">Open question</h2>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #5b6475">AI → Backend developer · 09:41</span>
+</div>
+<p style="margin: 0; font-size: 16px; line-height: 1.5">The refined UI spec (#147) shows the order list as infinite scroll. Should the contract page by page numbers or by a cursor?</p>
+<p style="margin: 0; font-size: 14px; line-height: 1.5; color: #5b6475">Why it blocks: it changes the response shape, the mocks frontend builds against, and #152.</p>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button type="button" style="font: inherit; font-size: 14px; min-height: 44px; padding: 10px 14px; border-radius: 8px; border: 1px solid #d9dee7; background: #f3f5f8; color: #161b26; cursor: pointer">Cursor</button>
+<button type="button" style="font: inherit; font-size: 14px; min-height: 44px; padding: 10px 14px; border-radius: 8px; border: 1px solid #d9dee7; background: #f3f5f8; color: #161b26; cursor: pointer">Page numbers</button>
+<button type="button" style="font: inherit; font-size: 14px; min-height: 44px; padding: 10px 14px; border-radius: 8px; border: 1px solid #d9dee7; background: #f3f5f8; color: #161b26; cursor: pointer">Ask AI to compare both</button>
+<button type="button" style="font: inherit; font-size: 14px; min-height: 44px; padding: 10px 14px; border-radius: 8px; border: 1px solid #d9dee7; background: #f3f5f8; color: #161b26; cursor: pointer">Pass to Frontend</button>
+</div>
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600">Why (kept in the decision log)
+<textarea rows="3" style="font: inherit; font-size: 14px; font-weight: 400; padding: 10px 12px; border: 1px solid #d9dee7; border-radius: 8px; resize: vertical">Cursor. Orders are appended often, so page numbers would skip rows.</textarea>
+</label>
+</section>
+
+<section style="background: #ffffff; border: 1px solid #d9dee7; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 17px; font-weight: 700">How this card is worked</h2>
+<p style="margin: 0; font-size: 14px; color: #5b6475">From the Backend developer's process map: <b style="color: #0b6b63">AI assists, I drive</b>.</p>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px">
+<div style="background: #f3f5f8; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 4px"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #5b6475">Opens</span><span style="font-size: 14px; font-weight: 600">Backend dev</span></div>
+<div style="background: #f3f5f8; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 4px"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #5b6475">Asks</span><span style="font-size: 14px; font-weight: 600">AI</span></div>
+<div style="background: #f3f5f8; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 4px"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #5b6475">Writes</span><span style="font-size: 14px; font-weight: 600">AI drafts, BE edits</span></div>
+<div style="background: #f3f5f8; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 4px"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #5b6475">Decides</span><span style="font-size: 14px; font-weight: 600">Backend dev</span></div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; font-size: 14px">
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #5b6475">Reads</span><span>Refined UI spec · from #147</span><span>Domain rules · standing</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #5b6475">Writes</span><span>API contract · draft 2</span><span>Decision log · 3 questions, 2 answered</span></div>
+</div>
+</section>
+
+<section style="background: #ffffff; border: 1px solid #d9dee7; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-size: 17px; font-weight: 700">Checks</h2>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px 14px; border-radius: 8px; background: #f3f5f8; font-size: 14px"><span><b>Structural</b> · code rules</span><span style="color: #a8480a; font-weight: 600">6 of 7 pass · no error shape for 429</span></div>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px 14px; border-radius: 8px; background: #f3f5f8; font-size: 14px"><span><b>Consistency</b> · AI critic</span><span style="color: #b3261e; font-weight: 600">1 flag · paging unclear in the UI spec</span></div>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px 14px; border-radius: 8px; background: #f3f5f8; font-size: 14px"><span><b>Human</b> · FE and BE sign off</span><span style="color: #5b6475; font-weight: 600">Not started</span></div>
+</section>
+
+</div>
+
+<aside style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+
+<section style="background: #ffffff; border: 1px solid #d9dee7; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 17px; font-weight: 700">Card log</h2>
+<div style="display: flex; flex-direction: column; gap: 12px; font-size: 13.5px; line-height: 1.45">
+<div style="display: flex; gap: 10px"><span style="flex: none; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #5b6475; width: 44px">09:41</span><span><b>AI</b> moved the card to <span style="color: #b3261e; font-weight: 600">Needs input</span> and asked BE about paging.</span></div>
+<div style="display: flex; gap: 10px"><span style="flex: none; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #5b6475; width: 44px">09:36</span><span><b>AI critic</b> flagged a mismatch with the UI spec.</span></div>
+<div style="display: flex; gap: 10px"><span style="flex: none; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #5b6475; width: 44px">09:30</span><span><b>Checks</b> ran on draft 2: 6 of 7 pass.</span></div>
+<div style="display: flex; gap: 10px"><span style="flex: none; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #5b6475; width: 44px">09:12</span><span><b>AI</b> drafted contract v2 from the refined UI spec.</span></div>
+<div style="display: flex; gap: 10px"><span style="flex: none; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #5b6475; width: 44px">Fri</span><span><b>BE</b> picked the card. Mode: AI assists.</span></div>
+</div>
+</section>
+
+<section style="background: #ffffff; border: 1px solid #d9dee7; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 14px">
+<h2 style="margin: 0; font-size: 17px; font-weight: 700">Linked work</h2>
+<div style="display: flex; justify-content: space-between; gap: 8px"><span>Depends on <b>#147</b> Refine UI spec</span><span style="color: #b3261e">Needs input</span></div>
+<div style="display: flex; justify-content: space-between; gap: 8px"><span>Unblocks <b>#152</b> Orders endpoint</span><span style="color: #5b6475">Ready</span></div>
+<div style="display: flex; justify-content: space-between; gap: 8px"><span>Milestone</span><span>Self-service onboarding</span></div>
+</section>
+
+</aside>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1120}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
