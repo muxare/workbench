@@ -2,6 +2,13 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-08: Invented data until after ConCon; the Phase 2 project can wait (with Mikael)
+
+- **The app is built and demoed on invented data, and choosing the past project for Phase 2 is postponed until after ConCon on 2026-11-18.** None of the build tasks depend on the choice, and invented data can be shown at the talk without any concern for client confidentiality. This replaces the earlier recommendation to pick the project before the scaffold was done.
+- **All seed data lives in one module behind the event store**, every example marked as invented. Switching to the real project later is then a data change, not a code change.
+- **The cost is a template not yet tested on a real project.** The fields for failed checks and waiting on another role stay out until the Phase 2 run shows they are needed (2026-10-26), so Phase 2 runs before any such field is added.
+- What would change it: a past project that can be shown publicly turning up before the demo data is written, or the build needing a template field that only the Phase 2 run can settle.
+
 ## 2026-11-08: Demo date, where the build runs, which plan copy counts (with Mikael)
 
 - **ConCon is on 2026-11-18, and the talk is mostly about the idea of how AI should collaborate with people.** The app is shown as an example of that idea and does not have to be finished. The build order stays as it is; nothing is cut to make a date.

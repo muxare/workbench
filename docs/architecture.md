@@ -63,4 +63,4 @@ The core loop, end to end:
 3. It needs input, so it asks a person on the card; the card moves to Needs input.
 4. Mikael answers on the card; the card goes back to In progress; every step shows in the logs.
 
-Seed data comes from the Phase 2 project if it is chosen in time, otherwise invented examples marked as invented.
+Seed data is invented, marked as invented and kept in one module, so the Phase 2 project can replace it after ConCon (see `docs/decisions.md`, 2026-11-08).
