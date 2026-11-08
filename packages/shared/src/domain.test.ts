@@ -1,6 +1,6 @@
 // All example data here is invented.
 import { describe, expect, it } from "vitest";
-import { card, cardEvent, decidedByHuman, question, status, teammate, type Teammate } from "./domain.ts";
+import { card, cardEvent, cycle, decidedByHuman, question, status, teammate, type Teammate } from "./domain.ts";
 
 const at = "2026-11-08T09:41:00Z";
 
@@ -116,5 +116,17 @@ describe("cardEvent", () => {
   it("rejects a status change to needs_input without waiting_on", () => {
     const e = { ...base, type: "status_changed", from: "in_progress", to: { state: "needs_input", question_id: "invented-q1" } };
     expect(cardEvent.safeParse(e).success).toBe(false);
+  });
+});
+
+describe("cycle", () => {
+  it("accepts a window that ends after it starts, across time zone offsets", () => {
+    const c = { id: "invented-s14", name: "Invented sprint", starts_at: "2026-11-02T09:00:00+01:00", ends_at: "2026-11-02T08:30:00Z" };
+    expect(cycle.parse(c)).toEqual(c);
+  });
+
+  it("rejects a window that ends before it starts", () => {
+    const c = { id: "invented-s14", name: "Invented sprint", starts_at: "2026-11-16T08:00:00Z", ends_at: "2026-11-02T08:00:00Z" };
+    expect(cycle.safeParse(c).success).toBe(false);
   });
 });
