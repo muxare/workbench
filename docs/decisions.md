@@ -2,6 +2,12 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-08: TypeScript port of the function validator (by Claude)
+
+- **`validateProcess` in `packages/shared/src/functionValidator.ts` is a line-for-line port of `checks/validate_functions.py`**, and enforces exactly what the Python enforces, no more and no less. It therefore does not run the zod schema, which is stricter, but takes its roles, modes, actors, required fields, protocol keys, human check keys and body sections from that schema, and reads the template version from `process/template.md` as the Python does. Python behaviour that changes the result (truthiness, `True == 1`, iterating a string, how values print, universal newlines) is reproduced; where the Python would crash, the port throws `ValidatorCrash` instead of reporting something the Python never would.
+- **Parity is a test, not a promise.** `functionValidator.test.ts` runs both validators over `process/` and over invented, deliberately broken fixtures in `packages/shared/test-fixtures/broken-process`, one or more per check category, and requires the same printed lines and exit code. Lines are compared sorted, because the Python loops over a set of modes whose order changes between runs. It also compares the fixed lists in the port with the tuples in the Python source, so a change to one side fails the test.
+- **The Python validator stays in `pnpm check`.** `pnpm validate:ts` runs the port with the same output. Would change when Mikael decides the port replaces the Python; until then the parity test keeps them together.
+
 ## 2026-11-08: Stop hook, domain schemas and the function file schema (by Claude)
 
 - **A project `Stop` hook runs `pnpm check` before Claude may end a turn** (`.claude/settings.json` calls `.claude/hooks/check-on-stop.sh`). The rule that lint, typecheck, tests and the validator pass before handing back must hold every time, and `AGENTS.md` says such rules belong in a hook. On failure it blocks the stop and hands Claude the last 40 lines of output. To avoid a loop it blocks only once: if the checks still fail when Claude Code reports `stop_hook_active`, the turn ends and the failure is shown to Mikael. It runs in the checkout that holds the session's working directory, because `$CLAUDE_PROJECT_DIR` stays on the starting directory when Claude works in a worktree. Every turn now costs about nine seconds of checks; would change if that becomes a nuisance in chat-only turns.
