@@ -2,6 +2,18 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-08: Stop hook, domain schemas and the function file schema (by Claude)
+
+- **A project `Stop` hook runs `pnpm check` before Claude may end a turn** (`.claude/settings.json` calls `.claude/hooks/check-on-stop.sh`). The rule that lint, typecheck, tests and the validator pass before handing back must hold every time, and `AGENTS.md` says such rules belong in a hook. On failure it blocks the stop and hands Claude the last 40 lines of output. To avoid a loop it blocks only once: if the checks still fail when Claude Code reports `stop_hook_active`, the turn ends and the failure is shown to Mikael. It runs in the checkout that holds the session's working directory, because `$CLAUDE_PROJECT_DIR` stays on the starting directory when Claude works in a worktree. Every turn now costs about nine seconds of checks; would change if that becomes a nuisance in chat-only turns.
+- **Card status is a discriminated union on `state`.** `needs_input` must name the teammate it waits on and the open question's id, and every other state rejects those fields, so a card can never be waiting without saying on whom.
+- **Questions are rebuilt from events, not stored as their own record.** The `asked` and `answered` events carry everything needed, and the actor of `answered` is the decider. That decider must be human; the schema cannot see the teammate list, so `decidedByHuman` checks it separately.
+- **Card links store only `depends_on`.** "Unblocks" is the same link read from the other card, so the two directions cannot disagree.
+- **Domain fields use snake_case**, like the architecture doc and the function files. The event schema is named `cardEvent` so it does not shadow the DOM `Event` type in `apps/web`.
+- **Function file front matter has a zod schema in `packages/shared`**, following `process/template.md` version 1, with strict objects so a misspelled field fails. YAML is parsed with the `yaml` package, which has no dependencies, needs no install scripts and runs in the browser and in Node. `parseFunctionFile` works on text and is exported from the browser-safe `index.ts`; reading from disk lives in `@workbench/shared/node`, so `apps/web` never pulls in `node:fs`. Cross-file rules stay in the Python validator until task 12 ports them.
+- **The three modes are defined once**, as `functionMode` in `functionFile.ts`; the domain's `mode` is the same schema.
+- **Protocols carry an optional `note`**, which every function file uses but `process/template.md` does not list. The schema accepts it; whether the template should name it is an open question for Mikael.
+- **Three subagents built these in parallel**, each in its own worktree and branch, and the results were merged and checked together. `.claude/worktrees/` is ignored by git.
+
 ## 2026-11-08: Invented data until after ConCon; the Phase 2 project can wait (with Mikael)
 
 - **The app is built and demoed on invented data, and choosing the past project for Phase 2 is postponed until after ConCon on 2026-11-18.** None of the build tasks depend on the choice, and invented data can be shown at the talk without any concern for client confidentiality. This replaces the earlier recommendation to pick the project before the scaffold was done.

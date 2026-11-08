@@ -13,3 +13,6 @@ __pycache__/
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Worktrees made by Claude Code subagents
+.claude/worktrees/

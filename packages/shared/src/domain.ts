@@ -3,6 +3,7 @@
 // docs/architecture.md ("Domain model"). Field names are snake_case, like the
 // architecture doc and the function files in process/.
 import { z } from "zod";
+import { functionMode } from "./functionFile.ts";
 
 const id = z.string().min(1);
 const timestamp = z.iso.datetime({ offset: true });
@@ -18,7 +19,8 @@ export const eventId = id;
  */
 export const functionId = z.string().regex(/^[a-z][a-z0-9_]*$/, "expected a snake_case function name");
 
-export const mode = z.enum(["manual", "assist", "delegate"]);
+/** The modes defined once in functionFile.ts, from process/template.md. */
+export const mode = functionMode;
 export type Mode = z.infer<typeof mode>;
 
 /** The mode a person works each of their functions in, keyed by function id. */
