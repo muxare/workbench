@@ -9,7 +9,7 @@ inputs:
     required: true
     from: refine_ui_spec
   - artifact: issues
-    required: true
+    required: false
     from: write_issues
   - artifact: domain_rules
     required: true

@@ -27,7 +27,8 @@ artifacts:
     owner: team
     made_by: external
     format: markdown
-    fields: [time, budget, technology, regulation]
+    fields: [time, budget, technology, regulation, team_conventions]
+    note: team_conventions holds habits such as the issue size scale and the largest size allowed.
   - id: stakeholder_context
     name: Stakeholder context
     owner: ux
@@ -143,6 +144,10 @@ This first version covers the phase 1 segment: frame_problem → write_issues �
 - `made_by: external` means the artifact comes from outside the team's chain, or is standing context nobody in the chain produces.
 - `fields` are the required fields. The structural check of the function that makes the artifact verifies them.
 - An artifact made in one role and used in another is a **handoff**. In this segment: `problem_statement`, `success_criteria` (ux → team), `issues` (team → fe), `refined_ui_spec` (fe → be), `design_questions` (fe → ux).
+
+## Artifact files
+
+During a run, each artifact is a markdown file whose YAML front matter holds its fields, with free prose below for people. Fields that are tables (such as `success_criteria`) are lists of objects. Structural checks read only the front matter. See `docs/runs.md`.
 
 ## Adding an artifact
 

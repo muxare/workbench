@@ -34,13 +34,13 @@ outputs:
 checks:
   structural:
     - id: fields_filled
-      rule: Every issue has all fields listed for issues in artifacts.md.
+      rule: Every issue's front matter has all fields listed for issues in artifacts.md.
     - id: has_acceptance
       rule: Every issue links at least one acceptance criterion.
     - id: has_success_link
       rule: Every issue links at least one success criterion.
-    - id: size_bounded
-      rule: Every issue has a size of S or M. L issues are split before the check passes.
+    - id: size_within_convention
+      rule: Every issue's size is within the largest size allowed by team_conventions in constraints. Larger issues are split before the check passes.
   consistency:
     - id: spec_covered
       rule: Every acceptance criterion is covered by at least one issue.
@@ -91,13 +91,13 @@ The step is mostly mechanical once the slicing approach is chosen, so the defaul
 
 **manual.** The team lead writes the issues from the spec, the same as today.
 
-**assist.** A person writes the issues. The AI keeps a coverage table beside them and flags acceptance criteria no issue covers yet, issues without a success-criterion link, and anything sized L.
+**assist.** A person writes the issues. The AI keeps a coverage table beside them and flags acceptance criteria no issue covers yet, issues without a success-criterion link, and anything larger than the team's size convention.
 
 **delegate.** A person picks the slicing approach in one sentence. The AI drafts all issues, a coverage table (acceptance criterion → issue) and a suggested order. In refinement, the team edits, splits and orders them. The team decides what goes into the tracker.
 
 ## Example
 
-Invented example, continuing frame_problem's.
+Invented example, continuing frame_problem's. AC-3 and AC-4 are placeholder ids for acceptance criteria from the handoff spec.
 
 | Title | Goal | Acceptance | Success link | Role | Size |
 | --- | --- | --- | --- | --- | --- |
@@ -107,4 +107,4 @@ Invented example, continuing frame_problem's.
 ## Open points
 
 - Do issues live only in GitHub or Jira, with this artifact as a snapshot, or is this file the source until refinement is done?
-- Should size use S/M only, or story points the team already uses?
+- Which size scale goes into team_conventions: S/M/L, or the story points the team already uses?

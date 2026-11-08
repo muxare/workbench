@@ -29,7 +29,7 @@ outputs:
 checks:
   structural:
     - id: fields_filled
-      rule: Every output has all fields listed for it in artifacts.md.
+      rule: Every output file's front matter has all fields listed for it in artifacts.md.
     - id: states_complete
       rule: Every screen lists loading, empty, error and success states, or says why one does not apply.
     - id: data_named
@@ -71,7 +71,7 @@ decision_log:
   - Deviations from the UI spec and who agreed to them.
 writes_back:
   - artifact: design_system
-    what: Components or states requested that the design system lacks (as a request to the UX owner, not a direct edit).
+    what: Components or states the design system lacks, as a proposal for the UX owner to accept or reject.
 ---
 
 ## Purpose

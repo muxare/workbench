@@ -87,6 +87,10 @@ def main():
             for rule in rules:
                 if not rule.get("id") or not rule.get("rule"):
                     err(f"checks.{layer}: every rule needs id and rule")
+                if rule.get("severity", "error") not in ("error", "warning"):
+                    err(f"checks.{layer}.{rule.get('id')}: severity must be error or warning")
+                if layer == "consistency" and "severity" in rule:
+                    err(f"checks.consistency.{rule.get('id')}: severity is only for structural rules")
         human = checks.get("human") or {}
         for key in ("approver", "where", "criteria"):
             if not human.get(key):

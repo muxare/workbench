@@ -33,11 +33,12 @@ outputs:
 checks:
   structural:
     - id: fields_filled
-      rule: Every output has all fields listed for it in artifacts.md.
+      rule: Every output file's front matter has all fields listed for it in artifacts.md.
     - id: criteria_measurable
       rule: Every success criterion has a number in baseline and target, and a date in deadline.
-    - id: no_solution_in_problem
-      rule: The problem statement does not name a solution (app, portal, dashboard, feature, button, screen, integration).
+    - id: no_solution_words
+      rule: The problem statement contains none of the listed solution words (app, portal, dashboard, feature, button, integration).
+      severity: warning
     - id: assumptions_have_status
       rule: Every assumption is marked tested or untested, and every untested one has a risk_if_wrong.
     - id: at_least_one_non_goal
@@ -49,6 +50,8 @@ checks:
       rule: Every success criterion serves at least one business goal.
     - id: no_contradictions
       rule: No non-goal contradicts the brief without a client question about it.
+    - id: problem_not_a_solution
+      rule: The problem statement describes a need, not a solution, whatever words it uses.
     - id: assumptions_cover_risks
       rule: Every claim the problem statement depends on appears as an assumption.
   human:

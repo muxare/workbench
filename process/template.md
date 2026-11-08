@@ -9,6 +9,8 @@ Every step in a role's chain is described as a **function**: it reads artifacts,
 
 Each function lives in `process/functions/<role>/<name>.md`. The file is markdown with YAML front matter. The front matter holds the fields a machine reads (the validator, Claude Code skills, later the UI). The body holds what people read: purpose, how each mode plays out, and examples.
 
+How artifacts, approvals and proposals are stored during a run is described in `docs/runs.md`.
+
 Run `python3 checks/validate_functions.py` after any change. It checks every function file against this template and against `process/artifacts.md`.
 
 ## Front matter fields
@@ -24,14 +26,14 @@ Run `python3 checks/validate_functions.py` after any change. It checks every fun
 | `context` | no | Standing artifacts the step reads but never changes (design system, constraints, codebase). Same shape as inputs, without `required`. |
 | `tacit` | no | Knowledge that only arrives through conversation with the person doing the step. A list of plain sentences. The AI must ask for these; it cannot read them from files. |
 | `outputs` | yes | Artifacts the step writes. Each: `artifact` (id). The fields each artifact must have are defined once, in `artifacts.md`. |
-| `checks.structural` | yes | Deterministic rules run on every draft, by code, not AI. Each: `id`, `rule`. |
+| `checks.structural` | yes | Deterministic rules run on every draft, by code, not AI. Each: `id`, `rule`, and optionally `severity`: `error` (default, blocks the step) or `warning` (shown, does not block). Use `warning` for rules code can only approximate, such as word lists. |
 | `checks.consistency` | yes | Rules an AI critic checks on every draft (traceability, contradictions). Each: `id`, `rule`. |
 | `checks.human` | yes | `approver` (who signs off), `where` (in the tool, in a meeting), `criteria` (what they confirm). |
 | `modes.default` | yes | The suggested mode: `manual`, `assist` or `delegate`. |
 | `modes.allowed` | yes | Which modes the team allows for this step. |
 | `protocols` | yes | One entry per allowed mode, with four roles: `opens`, `asks`, `writes`, `decides`. Values: `human`, `ai`, `both`, or `none`. `decides` is always `human`. |
 | `decision_log` | yes | What is kept from the conversation after the step is done. |
-| `writes_back` | no | Tacit knowledge that should be written into a context artifact after the step, so the next run starts with it. Each: `artifact`, `what`. |
+| `writes_back` | no | Tacit knowledge to carry into a context artifact after the step, so the next run starts with it. Each: `artifact`, `what`. It creates a **proposal**; the role that owns the artifact accepts or rejects it (see `docs/runs.md`). |
 
 ## The three modes as conversation protocols
 
