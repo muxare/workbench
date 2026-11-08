@@ -8,7 +8,8 @@
     "typecheck": "tsc -p .",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "db:seed": "tsx src/db/seedCli.ts"
+    "db:seed": "tsx src/db/seedCli.ts",
+    "teammate:run": "tsx src/teammates/runCli.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",
