@@ -84,4 +84,4 @@ The live list of questions for Mikael, with recommendations, is in `docs/next.md
 - [Team process map](https://claude.ai/artifact/XcK8U1F2A9dM4ub1KLq2fA): every role as a chain of functions with inputs, outputs, checks and modes.
 - [Team feedback loops](https://claude.ai/artifact/UzXyLRXQDQqNRXHjkCeGy6): the four loops between stakeholders, UX, frontend and backend, and how each changes with AI.
 - [AI teammate on the team board](https://claude.ai/artifact/Wh1XCBD4Bdw8Gr7kbAfq4t): the live Claude Design canvas; snapshot and tokens in `docs/design/`.
-- [Workbench board](https://claude.ai/artifact/WdB9brqt51zGQjWHmXvc1h): earlier live task board, superseded by `docs/next.md` unless Mikael decides otherwise (question 5 in `docs/next.md`).
+- [Workbench board](https://claude.ai/artifact/WdB9brqt51zGQjWHmXvc1h): earlier live task board, retired on 2026-11-08; it now points to `docs/next.md`.

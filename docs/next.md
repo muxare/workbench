@@ -4,10 +4,10 @@ Last updated 2026-11-08 by Claude.
 
 ## Where the work stands
 
-- Process model: template v1 and the four segment functions are drafted, and the 2026-10-26 review changes are committed on branch `process-review-and-app-docs`, with the app docs as a second commit. The branch is not pushed or merged.
+- Process model: template v1 and the four segment functions are drafted; the 2026-10-26 review changes and the app docs are merged into `main` (not pushed).
 - Phase 2, the hand run on a past project, has not started. Mikael is looking into which project to use.
 - Product direction: build toward a working product. ConCon is on 2026-11-18; the talk is mostly about how AI and people should collaborate, and the app is shown as an example at whatever stage it has reached. Stack and model are in `docs/architecture.md`, the plan in `docs/plan.md`, the design snapshot in `docs/design/`.
-- The build runs in Claude Code locally in this repo; `docs/plan.md` is the source of truth for the plan. See `docs/decisions.md`.
+- The build runs in Claude Code locally in this repo; `docs/plan.md` is the source of truth for the plan. The Workbench board artifact was retired on 2026-11-08 and now points here. See `docs/decisions.md`.
 - `docs/tutorial-pnpm-hono-sse.md` introduces the proposed stack hands-on. Its playground server was run and typechecked on 2026-11-08.
 - No app code yet.
 
@@ -15,9 +15,7 @@ Last updated 2026-11-08 by Claude.
 
 1. **Which past project for the Phase 2 run?** Recommendation: pick it before the scaffold is done, so the demo board can show real cards instead of invented ones. Mikael is investigating.
 2. **pnpm, Hono and server-sent events, after trying the tutorial?** Recommendation: yes. pnpm handles workspaces strictly, Hono is small and typed with built-in SSE, and SSE is enough because the board only receives updates; actions go through normal requests.
-3. **Merge the branch `process-review-and-app-docs` into `main`?** It holds the process review commit and the app docs commit. Recommendation: yes, after a look at the two commits, so the scaffold starts from `main`.
-4. **Replace the plan copy in the claude.ai project with a pointer to the repo?** Claude cannot reach the project doc from here. Recommendation: replace its text with "The plan lives in `docs/plan.md` in the workbench repo; this project is for design and discussion."
-5. **Retire the Workbench board artifact?** It is the earlier claude.ai task board (https://claude.ai/artifact/WdB9brqt51zGQjWHmXvc1h) with phases, tasks, way of working and decisions, which Claude updated at the end of Cowork sessions. This file has taken over that job. Recommendation: retire it, or add a line on it that points here, so the two trackers cannot drift.
+3. **Replace the plan copy in the claude.ai project with a pointer to the repo?** Claude cannot reach the project doc from here. Recommendation: replace its text with "The plan lives in `docs/plan.md` in the workbench repo; this project is for design and discussion."
 
 ## Next, in the suggested order
 

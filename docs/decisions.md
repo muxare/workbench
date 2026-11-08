@@ -7,6 +7,7 @@ Newest first. Each entry: what was decided, why, and what would change it.
 - **ConCon is on 2026-11-18, and the talk is mostly about the idea of how AI should collaborate with people.** The app is shown as an example of that idea and does not have to be finished. The build order stays as it is; nothing is cut to make a date.
 - **The build runs in Claude Code locally in this repo**, so the agent can run the dev server and Mikael can watch the UI. The claude.ai project is for design and discussion.
 - **`docs/plan.md` in the repo is the source of truth for the plan.** The claude.ai project doc is replaced by a short pointer to the repo, so two copies cannot drift.
+- **The Workbench board artifact is retired.** Its page now says so and points to `docs/next.md`, `docs/decisions.md` and `docs/plan.md`; its stored tasks remain and an earlier version can be republished. One tracker cannot drift from another.
 - **pnpm, Hono and SSE stay open until Mikael has tried them.** `docs/tutorial-pnpm-hono-sse.md` was written for that; the scaffold waits for the answer.
 
 ## 2026-11-08: Agents, subagents, hooks and skills for building the app (with Mikael)
