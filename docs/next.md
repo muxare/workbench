@@ -10,7 +10,7 @@ Last updated 2026-11-08 by Claude.
 - The build runs in Claude Code locally in this repo; `docs/plan.md` is the source of truth for the plan. The Workbench board artifact was retired on 2026-11-08 and now points here. See `docs/decisions.md`.
 - Stack accepted: pnpm, Hono and SSE. `docs/tutorial-pnpm-hono-sse.md` stays as Mikael's reference.
 - The TypeScript workspace is scaffolded, on `main` and pushed: `apps/api` (Hono, `/api/health`), `apps/web` (React and Vite, a placeholder page) and `packages/shared` (zod, the card statuses). `pnpm check` passes: lint, typecheck, 4 tests and the validator. `pnpm build` works. The API and web dev servers have not yet been run together.
-- On branch `feat/schemas-and-stop-hook` (not merged): a `Stop` hook that runs `pnpm check` before a turn ends; zod schemas for teammate, process profile, card, status with `waiting_on`, question and event in `packages/shared/src/domain.ts`; and a schema and loader for function file front matter that all four function files pass. `pnpm check` passes with 43 tests.
+- On `main` and pushed: a `Stop` hook that runs `pnpm check` before a turn ends; zod schemas for teammate, process profile, card, status with `waiting_on`, question and event in `packages/shared/src/domain.ts`; and a schema and loader for function file front matter that all four function files pass. `pnpm check` passes with 43 tests.
 
 ## Waiting for Mikael
 
