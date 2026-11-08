@@ -39,7 +39,7 @@ protocols:
 decision_log: []
 ---
 
-Invented fixture for the validator parity test. Not a real function.
+Invented fixture for the validator tests. Not a real function.
 
 ## Purpose
 

@@ -12,16 +12,17 @@
 
 input=$(cat)
 
-# Read stop_hook_active and cwd from the stdin JSON with python3, which the
-# process validator already requires. Prints "true" or "false", then the cwd.
-parsed=$(printf '%s' "$input" | python3 -c '
-import json, sys
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    data = {}
-print("true" if data.get("stop_hook_active") is True else "false")
-print(str(data.get("cwd") or ""))
+# Read stop_hook_active and cwd from the stdin JSON with node, which pnpm
+# already requires. Prints "true" or "false", then the cwd.
+parsed=$(printf '%s' "$input" | node -e '
+let text = "";
+process.stdin.on("data", (chunk) => { text += chunk; });
+process.stdin.on("end", () => {
+  let data = {};
+  try { data = JSON.parse(text) ?? {}; } catch { data = {}; }
+  console.log(data.stop_hook_active === true ? "true" : "false");
+  console.log(String(data.cwd || ""));
+});
 ')
 active=$(printf '%s\n' "$parsed" | sed -n 1p)
 cwd=$(printf '%s\n' "$parsed" | sed -n 2p)
@@ -45,18 +46,15 @@ if (cd "$root" && pnpm check) >"$log" 2>&1; then
 fi
 
 # Keep the reason short: last 40 lines, each clipped to 300 characters.
-ACTIVE="$active" ROOT="$root" python3 - "$log" <<'PY'
-import json, os, sys
-
-with open(sys.argv[1], encoding="utf-8", errors="replace") as f:
-    lines = f.read().splitlines()
-tail = "\n".join(line[:300] for line in lines[-40:])
-head = f"`pnpm check` failed in {os.environ['ROOT']}. Last lines of output:\n\n"
-
-if os.environ["ACTIVE"] == "true":
-    out = {"systemMessage": head + tail + "\n\nThe Stop hook already asked Claude to fix this once; stopping anyway."}
-else:
-    out = {"decision": "block", "reason": head + tail + "\n\nFix every failure, run `pnpm check` again, then finish."}
-print(json.dumps(out))
-PY
+ACTIVE="$active" ROOT="$root" node -e '
+const { readFileSync } = require("node:fs");
+const lines = readFileSync(process.argv[1], "utf8").split(/\r?\n/);
+if (lines.at(-1) === "") lines.pop();
+const tail = lines.slice(-40).map((line) => line.slice(0, 300)).join("\n");
+const head = "`pnpm check` failed in " + process.env.ROOT + ". Last lines of output:\n\n";
+const out = process.env.ACTIVE === "true"
+  ? { systemMessage: head + tail + "\n\nThe Stop hook already asked Claude to fix this once; stopping anyway." }
+  : { decision: "block", reason: head + tail + "\n\nFix every failure, run `pnpm check` again, then finish." };
+console.log(JSON.stringify(out));
+' "$log"
 exit 0

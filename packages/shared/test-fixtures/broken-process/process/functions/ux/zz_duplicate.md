@@ -1,6 +1,6 @@
 ---
-# Invented fixture: reuses the name draft_sketch. The Python validator keys
-# functions by name, so this file replaces draft_sketch in the cross-checks.
+# Invented fixture: reuses the name draft_sketch, which is an error. The first
+# file to use a name keeps it in the cross-checks.
 template: 1
 name: draft_sketch
 role: ux
@@ -31,7 +31,7 @@ protocols:
 decision_log: []
 ---
 
-Invented fixture for the validator parity test. Not a real function.
+Invented fixture for the validator tests. Not a real function.
 
 ## Purpose
 

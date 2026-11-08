@@ -20,6 +20,10 @@ inputs:
   - artifact: moodboard
     required: false
     from: external
+  # No made_by in artifacts.md, so 'from' is not compared
+  - artifact: loose_notes
+    required: false
+    from: external
 context:
   - artifact: style_guide
     from: refine_ui_spec
@@ -29,6 +33,7 @@ outputs:
   - artifact: sketch
   - artifact: plan
   - artifact: storyboard
+  - artifact: handout
 checks:
   structural:
     - id: has_frames
@@ -64,7 +69,7 @@ writes_back:
     what: Invented.
 ---
 
-Invented fixture for the validator parity test. Not a real function.
+Invented fixture for the validator tests. Not a real function.
 
 ## Purpose
 

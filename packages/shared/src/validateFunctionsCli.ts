@@ -1,6 +1,5 @@
-// The TypeScript port of checks/validate_functions.py, run from the repo root:
-//   node packages/shared/src/validateFunctionsCli.ts
-// Prints the same lines and exits with the same code as the Python version.
+// The process validator from the command line, run from the repo root as
+// `pnpm validate`. Prints notes, errors and a summary; exits 1 on any error.
 import path from "node:path";
 import { formatReport } from "./functionValidator.ts";
 import { validateProcessDir } from "./node.ts";
