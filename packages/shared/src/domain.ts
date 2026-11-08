@@ -63,6 +63,18 @@ export const card = z.object({
 export type Card = z.infer<typeof card>;
 
 /**
+ * The ids of the cards `card` depends on that are not done. A card with an
+ * unfinished dependency may not be picked, so nobody, person or AI, works on
+ * input that is not settled. A link to a card that is not in `cards` counts as
+ * unfinished.
+ */
+export function unfinishedDependencies(card: Card, cards: readonly Card[]): string[] {
+  return card.links
+    .filter((link) => cards.find((c) => c.id === link.card_id)?.status.state !== "done")
+    .map((link) => link.card_id);
+}
+
+/**
  * A question asked on a card. `answer` and `decided_by` are set together.
  * In every protocol `decides` is human, so `decided_by` must be a human
  * teammate; the schema cannot see the teammate list, so check that with

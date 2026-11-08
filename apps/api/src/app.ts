@@ -14,6 +14,7 @@ import {
   isManualMove,
   moveStatusRequest,
   pickRequest,
+  unfinishedDependencies,
   type ApiError,
   type ApiErrorCode,
   type BoardResponse,
@@ -191,6 +192,10 @@ export function createApp(deps: AppDeps) {
       }
       if (card.status.state !== "ready") {
         throw new ApiProblem("conflict", `${card.id} is ${card.status.state}; only a ready card can be picked`);
+      }
+      const blockers = unfinishedDependencies(card, await listCards(db));
+      if (blockers.length > 0) {
+        throw new ApiProblem("conflict", `${card.id} depends on ${blockers.join(", ")}, which is not done`);
       }
       return c.json(
         await write(card.id, [

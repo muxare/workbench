@@ -62,6 +62,7 @@ export const inventedSeed: SeedData = {
       links: [{ relation: "depends_on", card_id: "invented-151" }],
     },
     { id: "invented-153", title: "Invented: frame the account recovery problem", function_id: "frame_problem", owner: UX, links: [] },
+    { id: "invented-154", title: "Invented: define the onboarding status contract", function_id: "define_api_contract", owner: BE, milestone, links: [] },
   ],
 
   events: [
@@ -77,6 +78,7 @@ export const inventedSeed: SeedData = {
     e({ type: "status_changed", card_id: "invented-149", actor: PO, at: "2026-11-03T08:33:00Z", from: "backlog", to: { state: "ready" } }),
     e({ type: "status_changed", card_id: "invented-151", actor: PO, at: "2026-11-03T08:34:00Z", from: "backlog", to: { state: "ready" } }),
     e({ type: "status_changed", card_id: "invented-152", actor: PO, at: "2026-11-03T08:35:00Z", from: "backlog", to: { state: "ready" } }),
+    e({ type: "status_changed", card_id: "invented-154", actor: PO, at: "2026-11-03T08:36:00Z", from: "backlog", to: { state: "ready" } }),
 
     // #138 goes through its checks and review to done.
     e({

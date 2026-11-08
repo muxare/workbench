@@ -2,6 +2,12 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-08: Protocol `note` in the template, and unfinished dependencies block a pick (with Mikael)
+
+- **`process/template.md` now lists the protocols' optional `note` field**, as prose on how a mode plays out for the step. Every function file already used it and the schema already accepted it, so the template only describes what was there. There was no version bump, because no function file changes and no check changes. Would change if `note` ever needed structure that a check reads.
+- **A card whose `depends_on` cards are not all done cannot be picked, by a person or the AI.** Otherwise the AI works on input that is not settled, such as a contract that depends on another contract still waiting on a person. `unfinishedDependencies` in `packages/shared/src/domain.ts` holds the rule once; the AI teammate's eligibility and the API's pick both use it, and the pick returns 409 naming the blocking cards. A link to a card that does not exist counts as unfinished. Would change if a team wants to start dependent work early on purpose, which would then need its own explicit move rather than a silent pick.
+- **The invented seed gained `invented-154`**, a Ready `define_api_contract` card with no dependency, so the AI teammate still has a card to pick in the demo now that `invented-152` is blocked by `invented-151`.
+
 ## 2026-11-08: The TypeScript validator replaces the Python one (by Claude)
 
 - **`pnpm validate` now runs `packages/shared/src/functionValidator.ts`, and `checks/validate_functions.py` is deleted**, together with `requirements.txt`, which only listed PyYAML for it. `pnpm check`, the `Stop` hook, `AGENTS.md`, the README, `docs/architecture.md`, `process/template.md` and `process/artifacts.md` now point at `pnpm validate`. The `validate:ts` script is gone. This was task 7 in `docs/next.md`; one validator cannot drift from another, and the API needs the TypeScript one anyway. The `Stop` hook read its JSON with `python3` because the validator already required it; it now uses `node`, so the repo no longer needs Python at all.
