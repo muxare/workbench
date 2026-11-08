@@ -91,6 +91,20 @@ export function decidedByHuman(q: Question, teammates: readonly Teammate[]): boo
   return teammates.some((t) => t.id === q.decided_by && t.kind === "human");
 }
 
+export const cycleId = id;
+
+/**
+ * A cycle (the design's "Sprint 14"): a named time window on the board. The
+ * cycle log is every event whose `at` falls in [starts_at, ends_at).
+ */
+export const cycle = z
+  .object({ id: cycleId, name: z.string().min(1), starts_at: timestamp, ends_at: timestamp })
+  .refine((c) => Date.parse(c.starts_at) < Date.parse(c.ends_at), {
+    message: "a cycle must end after it starts",
+    path: ["ends_at"],
+  });
+export type Cycle = z.infer<typeof cycle>;
+
 const eventBase = { id: eventId, card_id: cardId, actor: teammateId, at: timestamp };
 
 /**

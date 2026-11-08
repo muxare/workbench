@@ -6,14 +6,19 @@
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc -p .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:seed": "tsx src/db/seedCli.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",
+    "@libsql/client": "^0.18.0",
     "@workbench/shared": "workspace:*",
+    "drizzle-orm": "^0.45.4",
     "hono": "^4.13.17"
   },
   "devDependencies": {
+    "drizzle-kit": "^0.31.11",
     "tsx": "^4.23.15"
   }
 }

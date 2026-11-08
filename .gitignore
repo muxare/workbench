@@ -16,3 +16,6 @@ dist/
 
 # Worktrees made by Claude Code subagents
 .claude/worktrees/
+
+# Local SQLite databases (pnpm --filter @workbench/api db:seed)
+apps/api/data/
