@@ -11,6 +11,8 @@ Last updated 2026-11-08 by Claude.
 - Stack accepted: pnpm, Hono and SSE. `docs/tutorial-pnpm-hono-sse.md` stays as Mikael's reference.
 - The TypeScript workspace is scaffolded, on `main` and pushed: `apps/api` (Hono, `/api/health`), `apps/web` (React and Vite, a placeholder page) and `packages/shared` (zod, the card statuses). `pnpm check` passes: lint, typecheck, 4 tests and the validator. `pnpm build` works. The API and web dev servers have not yet been run together.
 - On `main` and pushed: a `Stop` hook that runs `pnpm check` before a turn ends; zod schemas for teammate, process profile, card, status with `waiting_on`, question and event in `packages/shared/src/domain.ts`; and a schema and loader for function file front matter that all four function files pass. `pnpm check` passes with 43 tests.
+- Merged to `main` on 2026-11-08, not pushed: the event store in `apps/api` (libSQL through Drizzle 0.45; status derived from events; card, board and cycle logs as queries; invented seed in `apps/api/src/seed/invented.ts`, `pnpm --filter @workbench/api db:seed`); the read-only `design-reviewer` subagent in `.claude/agents/`; and a TypeScript port of the function validator with a parity test against the Python (`pnpm validate:ts`). `pnpm check` passes with 106 tests. ESLint now ignores `.claude/worktrees/`.
+- The port found gaps in the Python validator that it copies on purpose: `decides: human` is checked only for allowed modes, and an artifact without `made_by` crashes with a KeyError. The full list is in `docs/decisions.md`.
 
 ## Waiting for Mikael
 
@@ -20,11 +22,9 @@ Last updated 2026-11-08 by Claude.
 ## Next, in the suggested order
 
 1. Mikael: replace the plan text in the claude.ai project with "The plan lives in `docs/plan.md` in the workbench repo; this project is for design and discussion."
-2. Build the event store in SQLite through Drizzle, with card, board and cycle logs as queries. Seed it with invented example data, marked as invented and kept in one module so a real project can replace it later.
-3. Build the API: board, pick, ask, answer, move status, and an SSE stream of events.
-4. Build the board UI from the Main artboard: columns, cards with mode pills, cycle log, live updates.
-5. Add a read-only `design-reviewer` subagent (Read, Grep, Glob) that compares a built screen with its artboard and the tokens in `docs/design/`. Add one line to `AGENTS.md` saying when to use it.
-6. Add one AI teammate behind a provider interface: it picks a card, works it in `assist` mode and raises a question that moves the card to Needs input.
-7. Build card detail and the answer flow from the Card artboard.
-8. Build the teammate profile from the Profile artboard, with modes read from the function files.
-9. Port the structural checks from `checks/validate_functions.py` to `packages/shared`; keep the Python version until both give the same results.
+2. Build the API on the event store: board, pick, ask, answer, move status, and an SSE stream of events.
+3. Build the board UI from the Main artboard: columns, cards with mode pills, cycle log, live updates. Run `design-reviewer` on it before handing back.
+4. Add one AI teammate behind a provider interface: it picks a card, works it in `assist` mode and raises a question that moves the card to Needs input.
+5. Build card detail and the answer flow from the Card artboard.
+6. Build the teammate profile from the Profile artboard, with modes read from the function files.
+7. Switch `pnpm check` from the Python validator to the TypeScript port, then fix the `decides: human` and missing `made_by` gaps in the port and drop the Python.
