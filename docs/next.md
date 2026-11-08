@@ -8,19 +8,17 @@ Last updated 2026-11-08 by Claude.
 - Phase 2, the hand run on a past project, has not started. Mikael is looking into which project to use.
 - Product direction: build toward a working product. ConCon is on 2026-11-18; the talk is mostly about how AI and people should collaborate, and the app is shown as an example at whatever stage it has reached. Stack and model are in `docs/architecture.md`, the plan in `docs/plan.md`, the design snapshot in `docs/design/`.
 - The build runs in Claude Code locally in this repo; `docs/plan.md` is the source of truth for the plan. The Workbench board artifact was retired on 2026-11-08 and now points here. See `docs/decisions.md`.
-- `docs/tutorial-pnpm-hono-sse.md` introduces the proposed stack hands-on. Its playground server was run and typechecked on 2026-11-08.
-- No app code yet.
+- Stack accepted: pnpm, Hono and SSE. `docs/tutorial-pnpm-hono-sse.md` stays as Mikael's reference.
+- The TypeScript workspace is scaffolded and merged into `main` (not pushed): `apps/api` (Hono, `/api/health`), `apps/web` (React and Vite, a placeholder page) and `packages/shared` (zod, the card statuses). `pnpm check` passes: lint, typecheck, 4 tests and the validator. `pnpm build` works. The API and web dev servers have not yet been run together.
 
 ## Waiting for Mikael
 
 1. **Which past project for the Phase 2 run?** Recommendation: pick it before the scaffold is done, so the demo board can show real cards instead of invented ones. Mikael is investigating.
-2. **pnpm, Hono and server-sent events, after trying the tutorial?** Recommendation: yes. pnpm handles workspaces strictly, Hono is small and typed with built-in SSE, and SSE is enough because the board only receives updates; actions go through normal requests.
-3. **Replace the plan copy in the claude.ai project with a pointer to the repo?** Claude cannot reach the project doc from here. Recommendation: replace its text with "The plan lives in `docs/plan.md` in the workbench repo; this project is for design and discussion."
 
 ## Next, in the suggested order
 
-1. Scaffold the TypeScript repo: pnpm workspaces with `apps/web`, `apps/api` and `packages/shared`, plus lint, typecheck and test scripts (blocked by question 2).
-2. Add a `Stop` hook in `.claude/settings.json` that runs typecheck, tests and `checks/validate_functions.py`, so a turn cannot end while they fail.
+1. Mikael: replace the plan text in the claude.ai project with "The plan lives in `docs/plan.md` in the workbench repo; this project is for design and discussion."
+2. Add a `Stop` hook in `.claude/settings.json` that runs `pnpm check`, so a turn cannot end while lint, typecheck, tests or the validator fail.
 3. Write the shared zod schemas: teammate, process profile, card, status with `waiting_on`, question, event.
 4. Add a schema that loads the function files' front matter, and test it against all four function files.
 5. Build the event store in SQLite through Drizzle, with card, board and cycle logs as queries. Seed it with example data marked as invented.

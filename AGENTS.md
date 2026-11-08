@@ -45,6 +45,8 @@ Rules:
 
 - The UI follows `docs/design/`. Read the artboard and the tokens before building its screen. Treat the `.dc.html` files as reference, not code to copy.
 - App code is TypeScript. Types shared by the UI and the API live in `packages/shared`; do not copy them.
+- Run `pnpm check` (lint, typecheck, tests, process validator) before you hand back, and fix every failure.
+- A dependency that needs install scripts goes under `allowBuilds` in `pnpm-workspace.yaml` only when the task needs it; say why in the change.
 - The app reads function definitions from `process/`. Never hardcode a function's fields in app code.
 - Store events, not logs. The card, board and cycle logs are queries over the event stream.
 - Record decisions about the app in `docs/decisions.md`, like process decisions.

@@ -1,0 +1,19 @@
+{
+  "name": "@workbench/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.6",
+    "@workbench/shared": "workspace:*",
+    "hono": "^4.13.17"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
+}

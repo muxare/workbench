@@ -8,7 +8,15 @@ Newest first. Each entry: what was decided, why, and what would change it.
 - **The build runs in Claude Code locally in this repo**, so the agent can run the dev server and Mikael can watch the UI. The claude.ai project is for design and discussion.
 - **`docs/plan.md` in the repo is the source of truth for the plan.** The claude.ai project doc is replaced by a short pointer to the repo, so two copies cannot drift.
 - **The Workbench board artifact is retired.** Its page now says so and points to `docs/next.md`, `docs/decisions.md` and `docs/plan.md`; its stored tasks remain and an earlier version can be republished. One tracker cannot drift from another.
-- **pnpm, Hono and SSE stay open until Mikael has tried them.** `docs/tutorial-pnpm-hono-sse.md` was written for that; the scaffold waits for the answer.
+- **pnpm, Hono and SSE are accepted** (decided later the same day). `docs/tutorial-pnpm-hono-sse.md` stays in the repo as Mikael's reference.
+- **The plan copy in the claude.ai project is replaced by a pointer** to `docs/plan.md`. Mikael does this; Claude Code has no access to that project doc.
+
+## 2026-11-08: Workspace scaffold (by Claude)
+
+- **TypeScript is pinned to 6.0, not the current 7.0.** typescript-eslint 8.72 supports TypeScript below 6.1 only. Would change when typescript-eslint supports 7.
+- **Packages export their TypeScript source directly** (`"exports": "./src/index.ts"`), with no build step for `packages/shared`. Vite and tsx compile it where it is used, and imports use `.ts` extensions. Would change if a package has to be published or run by plain Node.
+- **Vitest per package, run through `pnpm -r test`; one ESLint flat config at the root.** `pnpm check` runs lint, typecheck, tests and the process validator, and is what the planned `Stop` hook will call.
+- **The API serves everything under `/api`** and the Vite dev server proxies that prefix, so the browser sees one origin and needs no CORS.
 
 ## 2026-11-08: Agents, subagents, hooks and skills for building the app (with Mikael)
 

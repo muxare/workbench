@@ -34,6 +34,16 @@ All four are first drafts to refine together.
 
 From 2026-11-08 the repo also grows the app: full-stack TypeScript, with the first UI following the Claude Design concept. See `docs/architecture.md`, and `docs/next.md` for current status.
 
+## Run the app
+
+Needs Node 22 or later and pnpm 11 (`npm install -g pnpm`).
+
+```
+pnpm install
+pnpm dev      # API on :3000, web on :5173 with /api proxied to the API
+pnpm check    # lint, typecheck, tests and the process validator
+```
+
 ## Check the process files
 
 ```

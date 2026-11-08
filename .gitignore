@@ -8,3 +8,8 @@ __pycache__/
 
 # Claude Code per-user settings
 .claude/settings.local.json
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo

@@ -1,6 +1,6 @@
 # Architecture: the workbench app
 
-As of 2026-11-08. The direction and TypeScript were decided with Mikael; pnpm, Hono and SSE are Claude's picks, open in `docs/next.md` until Mikael has tried them with `docs/tutorial-pnpm-hono-sse.md`. Reasons are in `docs/decisions.md`.
+As of 2026-11-08. The direction, TypeScript, pnpm, Hono and SSE were decided with Mikael. `docs/tutorial-pnpm-hono-sse.md` introduces the last three. Reasons are in `docs/decisions.md`.
 
 ## Goal
 
