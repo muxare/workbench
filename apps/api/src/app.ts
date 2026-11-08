@@ -1,9 +1,286 @@
-import { Hono } from "hono";
-import { cardStatus } from "@workbench/shared";
+// The HTTP API over the event store. Every write is a POST that appends events
+// through `appendEvents`, which checks them against the stream; the board,
+// card and question views are queries over the same stream, and
+// `GET /api/events` streams each appended event to every connected client.
+// Request and response shapes live in @workbench/shared (api.ts).
+import { randomUUID } from "node:crypto";
+import { Hono, type Context } from "hono";
+import { z } from "zod";
+import {
+  answerRequest,
+  askRequest,
+  cardStatus,
+  createCardRequest,
+  isManualMove,
+  moveStatusRequest,
+  pickRequest,
+  type ApiError,
+  type ApiErrorCode,
+  type BoardResponse,
+  type Card,
+  type CardEvent,
+  type CardResponse,
+  type Teammate,
+  type WriteResponse,
+} from "@workbench/shared";
+import type { Db } from "./db/client.ts";
+import { eventStream, startingPoint } from "./sse.ts";
+import {
+  addCard,
+  appendEvents,
+  boardLog,
+  cardLog,
+  getCard,
+  getTeammate,
+  lastSeq,
+  listCards,
+  listQuestions,
+  listTeammates,
+  StoreError,
+  type StoreErrorCode,
+} from "./store.ts";
 
-// Routes live under /api so the web dev server can proxy one prefix.
-export const app = new Hono().basePath("/api");
+export interface AppDeps {
+  db: Db;
+  /** Function names read from process/functions (`loadFunctionIds`). */
+  functionIds: ReadonlySet<string>;
+  /** The clock for event times; tests pass a fixed one. */
+  now?: () => Date;
+  /** New card, question and event ids. */
+  newId?: () => string;
+}
 
-app.get("/health", (c) => c.json({ ok: true, statuses: cardStatus.options }));
+/** How many of the latest events `GET /board` returns as its log. */
+const BOARD_LOG_LIMIT = 50;
 
-export type AppType = typeof app;
+const httpStatus = {
+  invalid_request: 400,
+  forbidden: 403,
+  not_found: 404,
+  conflict: 409,
+  rule_violation: 422,
+} as const satisfies Record<ApiErrorCode, number>;
+
+const fromStoreCode: Record<StoreErrorCode, ApiErrorCode> = {
+  conflict: "conflict",
+  forbidden: "forbidden",
+  not_found: "not_found",
+  unknown_function: "rule_violation",
+  rule_violation: "rule_violation",
+};
+
+/** A request the API refuses, answered as an `ApiError` body. */
+class ApiProblem extends Error {
+  readonly code: ApiErrorCode;
+  readonly issues: ApiError["issues"];
+  constructor(code: ApiErrorCode, reason: string, issues?: ApiError["issues"]) {
+    super(reason);
+    this.code = code;
+    this.issues = issues;
+  }
+}
+
+function issuesOf(error: z.ZodError): NonNullable<ApiError["issues"]> {
+  return error.issues.map((i) => ({ path: i.path.join("."), message: i.message }));
+}
+
+async function body<S extends z.ZodType>(c: Context, schema: S): Promise<z.output<S>> {
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    throw new ApiProblem("invalid_request", "the request body is not JSON");
+  }
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    const issues = issuesOf(parsed.error);
+    const reason = issues.map((i) => (i.path ? `${i.path}: ${i.message}` : i.message)).join("; ");
+    throw new ApiProblem("invalid_request", reason, issues);
+  }
+  return parsed.data;
+}
+
+export function createApp(deps: AppDeps) {
+  const { db, functionIds } = deps;
+  const now = deps.now ?? (() => new Date());
+  const newId = deps.newId ?? randomUUID;
+
+  async function cardOr404(id: string): Promise<Card> {
+    const card = await getCard(db, id);
+    if (!card) throw new ApiProblem("not_found", `no card '${id}'`);
+    return card;
+  }
+
+  async function teammateOr422(id: string, role: string): Promise<Teammate> {
+    const t = await getTeammate(db, id);
+    if (!t) throw new ApiProblem("rule_violation", `${role} '${id}' is not a teammate`);
+    return t;
+  }
+
+  /** Append the events, then answer with the card as it now stands. */
+  async function write(cardId: string, events: CardEvent[]): Promise<WriteResponse> {
+    const stored = await appendEvents(db, events);
+    return { card: await cardOr404(cardId), events: stored.map((s) => s.event) };
+  }
+
+  const base = (cardId: string, actor: string) => ({ id: newId(), card_id: cardId, actor, at: now().toISOString() });
+
+  const app = new Hono()
+    .basePath("/api")
+    .get("/health", (c) => c.json({ ok: true, statuses: cardStatus.options }))
+
+    .get("/board", async (c) => {
+      const response: BoardResponse = {
+        cards: await listCards(db),
+        teammates: await listTeammates(db),
+        open_questions: (await listQuestions(db)).filter((q) => q.answer === undefined),
+        log: await boardLog(db, { limit: BOARD_LOG_LIMIT }),
+        last_seq: await lastSeq(db),
+      };
+      return c.json(response);
+    })
+
+    .get("/cards/:id", async (c) => {
+      const card = await cardOr404(c.req.param("id"));
+      const response: CardResponse = {
+        card,
+        log: await cardLog(db, card.id),
+        questions: await listQuestions(db, { cardId: card.id }),
+      };
+      return c.json(response);
+    })
+
+    .post("/cards", async (c) => {
+      const req = await body(c, createCardRequest);
+      await teammateOr422(req.actor, "actor");
+      await teammateOr422(req.owner, "owner");
+      for (const link of req.links) await cardOr404(link.card_id);
+      const id = newId();
+      await addCard(
+        db,
+        {
+          id,
+          title: req.title,
+          function_id: req.function_id,
+          owner: req.owner,
+          links: req.links,
+          ...(req.milestone === undefined ? {} : { milestone: req.milestone }),
+        },
+        functionIds,
+      );
+      return c.json({ card: await cardOr404(id) }, 201);
+    })
+
+    .post("/cards/:id/pick", async (c) => {
+      const card = await cardOr404(c.req.param("id"));
+      const req = await body(c, pickRequest);
+      await teammateOr422(req.actor, "actor");
+      const owner = await teammateOr422(card.owner, "owner");
+      const ownerMode = owner.kind === "human" ? owner.process_profile[card.function_id] : undefined;
+      if (ownerMode === undefined) {
+        throw new ApiProblem(
+          "rule_violation",
+          `owner ${owner.id} has no mode for ${card.function_id}, so ${card.id} cannot be picked`,
+        );
+      }
+      if (req.mode !== undefined && req.mode !== ownerMode) {
+        throw new ApiProblem(
+          "rule_violation",
+          `${card.id} is worked in ${ownerMode}, the mode its owner set for ${card.function_id}, not ${req.mode}`,
+        );
+      }
+      if (card.status.state !== "ready") {
+        throw new ApiProblem("conflict", `${card.id} is ${card.status.state}; only a ready card can be picked`);
+      }
+      return c.json(
+        await write(card.id, [
+          { ...base(card.id, req.actor), type: "picked", mode: ownerMode },
+          { ...base(card.id, req.actor), type: "status_changed", from: "ready", to: { state: "in_progress" } },
+        ]),
+      );
+    })
+
+    .post("/cards/:id/questions", async (c) => {
+      const card = await cardOr404(c.req.param("id"));
+      const req = await body(c, askRequest);
+      await teammateOr422(req.actor, "actor");
+      await teammateOr422(req.asked_of, "asked_of");
+      if (card.status.state !== "in_progress") {
+        throw new ApiProblem("conflict", `${card.id} is ${card.status.state}; questions are asked on a card in progress`);
+      }
+      const questionId = newId();
+      return c.json(
+        await write(card.id, [
+          {
+            ...base(card.id, req.actor),
+            type: "asked",
+            question_id: questionId,
+            asked_of: req.asked_of,
+            text: req.text,
+            why_it_blocks: req.why_it_blocks,
+          },
+          {
+            ...base(card.id, req.actor),
+            type: "status_changed",
+            from: "in_progress",
+            to: { state: "needs_input", waiting_on: req.asked_of, question_id: questionId },
+          },
+        ]),
+      );
+    })
+
+    .post("/cards/:id/questions/:questionId/answer", async (c) => {
+      const card = await cardOr404(c.req.param("id"));
+      const questionId = c.req.param("questionId");
+      const req = await body(c, answerRequest);
+      await teammateOr422(req.actor, "actor");
+      const q = (await listQuestions(db, { cardId: card.id })).find((x) => x.id === questionId);
+      if (!q) throw new ApiProblem("not_found", `no question '${questionId}' on ${card.id}`);
+      if (q.answer !== undefined) throw new ApiProblem("conflict", `question ${questionId} is already answered`);
+      const events: CardEvent[] = [{ ...base(card.id, req.actor), type: "answered", question_id: questionId, answer: req.answer }];
+      if (card.status.state === "needs_input" && card.status.question_id === questionId) {
+        events.push({ ...base(card.id, req.actor), type: "status_changed", from: "needs_input", to: { state: "in_progress" } });
+      }
+      return c.json(await write(card.id, events));
+    })
+
+    .post("/cards/:id/status", async (c) => {
+      const card = await cardOr404(c.req.param("id"));
+      const req = await body(c, moveStatusRequest);
+      await teammateOr422(req.actor, "actor");
+      if (!isManualMove(req.from, req.to.state)) {
+        throw new ApiProblem(
+          "rule_violation",
+          `${req.from} to ${req.to.state} is not a status move; picking, asking and answering have their own endpoints`,
+        );
+      }
+      return c.json(
+        await write(card.id, [{ ...base(card.id, req.actor), type: "status_changed", from: req.from, to: req.to }]),
+      );
+    })
+
+    .get("/events", async (c) => {
+      const start = await startingPoint(c, db);
+      if (start === undefined) {
+        throw new ApiProblem("invalid_request", "Last-Event-ID and ?after= must be a stream position (a whole number)");
+      }
+      return eventStream(c, db, start);
+    });
+
+  app.onError((err, c) => {
+    if (err instanceof ApiProblem) return problem(c, err.code, err.message, err.issues);
+    if (err instanceof StoreError) return problem(c, fromStoreCode[err.code], err.message);
+    if (err instanceof z.ZodError) return problem(c, "rule_violation", err.message, issuesOf(err));
+    console.error(err);
+    return c.json({ error: "internal", reason: "unexpected server error" }, 500);
+  });
+
+  return app;
+}
+
+function problem(c: Context, code: ApiErrorCode, reason: string, issues?: ApiError["issues"]) {
+  const payload: ApiError = issues === undefined ? { error: code, reason } : { error: code, reason, issues };
+  return c.json(payload, httpStatus[code]);
+}
+
+export type AppType = ReturnType<typeof createApp>;

@@ -2,3 +2,4 @@
 export * from "./domain.ts";
 export * from "./functionFile.ts";
 export * from "./functionValidator.ts";
+export * from "./api.ts";
