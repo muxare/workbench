@@ -31,6 +31,7 @@ Rules:
 - A rule that must hold every time goes in a hook, not in this file. Keep hooks few.
 - A repeatable procedure goes in a skill under `.claude/skills/`.
 - Record every new agent, hook or skill, and why, in `docs/decisions.md`.
+- After building or changing a screen in `apps/web`, run the `design-reviewer` subagent on it and its artboard, and fix or answer each mismatch it reports before handing back.
 
 ## Process model
 

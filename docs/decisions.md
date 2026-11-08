@@ -2,6 +2,13 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-08: A read-only design-reviewer subagent (by Claude)
+
+- **`.claude/agents/design-reviewer.md` compares a built screen in `apps/web` with its artboard and the tokens in `docs/design/`**, and reports mismatches in layout, tokens and colour, spacing, typography, copy, states and teammate lines with `path:line` references. It was planned on 2026-11-08 for when the first screen exists, and the build tasks for the board, card detail and profile will each ask for the same review, so it meets the bar of a request that recurs.
+- **It adds two things a plain request cannot: enforced tool limits and fresh eyes.** Its tools are `Read`, `Grep` and `Glob` only, so Claude Code stops it from editing anything, and it starts without the context of the session that built the screen. It reads the `.dc.html` artboards as a specification and is told never to suggest copying their markup.
+- **It runs on `sonnet`, not `haiku` or the session's model.** Matching inline styles against tokens and judging layout from markup needs more care than haiku reliably gives, and the job does not need the session's larger model. Would change if its reports miss real mismatches (move up) or prove reliable enough on simple screens to try haiku.
+- The frontmatter fields `name`, `description`, `tools` and `model` were taken from https://code.claude.com/docs/en/sub-agents on 2026-11-08. `permissionMode: plan` was not used because the docs say a subagent inherits the parent's auto or bypass mode and ignores it; the `tools` allowlist is what makes it read-only.
+
 ## 2026-11-08: Stop hook, domain schemas and the function file schema (by Claude)
 
 - **A project `Stop` hook runs `pnpm check` before Claude may end a turn** (`.claude/settings.json` calls `.claude/hooks/check-on-stop.sh`). The rule that lint, typecheck, tests and the validator pass before handing back must hold every time, and `AGENTS.md` says such rules belong in a hook. On failure it blocks the stop and hands Claude the last 40 lines of output. To avoid a loop it blocks only once: if the checks still fail when Claude Code reports `stop_hook_active`, the turn ends and the failure is shown to Mikael. It runs in the checkout that holds the session's working directory, because `$CLAUDE_PROJECT_DIR` stays on the starting directory when Claude works in a worktree. Every turn now costs about nine seconds of checks; would change if that becomes a nuisance in chat-only turns.
