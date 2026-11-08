@@ -151,4 +151,4 @@ During a run, each artifact is a markdown file whose YAML front matter holds its
 
 ## Adding an artifact
 
-Add an entry above, then run `python3 checks/validate_functions.py`. The validator fails if a function refers to an id that is not here, or if `made_by` names a function whose outputs do not include the artifact.
+Add an entry above, then run `pnpm validate`. The validator fails if a function refers to an id that is not here, or if `made_by` names a function whose outputs do not include the artifact.

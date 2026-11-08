@@ -1,11 +1,10 @@
 ---
-# Invented fixture: values the Python validator reads in its own way.
-# `template: yes` is a YAML 1.1 boolean, and True == 1 in Python, so it passes.
-# `allowed` is a string, which Python turns into a set of characters.
-template: yes
-name: python_quirks
+# Invented fixture: protocols for modes that are not allowed. A human must
+# still decide in each of them.
+template: 1
+name: extra_protocol
 role: be
-title: Python quirks
+title: Extra protocol
 summary: Invented.
 inputs: []
 outputs: []
@@ -22,17 +21,26 @@ checks:
     criteria: Invented.
 modes:
   default: manual
-  allowed: manual
+  allowed: [manual]
 protocols:
   manual:
     opens: human
     asks: none
     writes: human
     decides: human
+  assist:
+    opens: human
+    asks: ai
+    writes: human
+  delegate:
+    opens: ai
+    asks: none
+    writes: ai
+    decides: ai
 decision_log: []
 ---
 
-Invented fixture for the validator parity test. Not a real function.
+Invented fixture for the validator tests. Not a real function.
 
 ## Purpose
 

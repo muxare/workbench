@@ -6,4 +6,4 @@ role: ux
 
 # Not closed
 
-Invented fixture for the validator parity test.
+Invented fixture for the validator tests.

@@ -1,19 +1,19 @@
-// A TypeScript port of checks/validate_functions.py. It reports the same
-// errors and notes, with the same wording, for the same process tree, so the
-// two can be compared line by line (see functionValidator.test.ts).
+// The structural validator for the process model: it checks every function
+// file against process/template.md and process/artifacts.md, and every
+// artifact entry against the functions that make and read it. `pnpm validate`
+// runs it from the repo root (validateFunctionsCli.ts).
 //
-// It deliberately enforces exactly what the Python validator enforces, no
-// more and no less. That is why it does not run the zod schema in
-// functionFile.ts, which is stricter (strict objects, snake_case names, types
-// of every field). It takes its enums, required fields and body sections from
-// that schema instead of repeating them, and reads the current template
-// version from process/template.md, as the Python does.
+// It began as a line-for-line port of the Python validator it replaced on
+// 2026-11-08, and keeps that validator's checks and wording, including how
+// values print (`True`, `None`, `['a', 'b']`) and which values count as empty.
+// What it does differently from the Python is listed in docs/decisions.md.
+// It never stops on a malformed file: anything it cannot read becomes an error
+// line, and errors and notes come out sorted, so the output is stable.
 //
-// Python semantics that change the result are reproduced by the helpers
-// below: truthiness (`or`, `not`), `==` between numbers and booleans, how
-// `str()` and `repr()` print values, and iterating a dict or a string. Where
-// the Python validator would crash with a traceback, this port throws
-// ValidatorCrash rather than reporting something the Python never would.
+// It does not run the zod schema in functionFile.ts, which is stricter (strict
+// objects and the type of every field). It takes its enums, required fields
+// and body sections from that schema instead of repeating them, and reads the
+// current template version from process/template.md.
 //
 // This module is browser-safe: it works on text. Reading a process directory
 // from disk is validateProcessDir in ./node.ts.
@@ -28,11 +28,6 @@ import {
   protocolActor,
   splitFrontMatter,
 } from "./functionFile.ts";
-
-/** The Python validator would stop with a traceback at this point. */
-export class ValidatorCrash extends Error {
-  override name = "ValidatorCrash";
-}
 
 function requiredKeys(shape: Record<string, { safeParse(value: unknown): { success: boolean } }>): string[] {
   return Object.entries(shape)
@@ -53,54 +48,20 @@ const CHECK_LAYERS = ["structural", "consistency"] as const;
 const ARTIFACT_KEYS = ["name", "owner", "made_by", "fields"] as const;
 const SEVERITIES = ["error", "warning"];
 
-/** The fixed lists the validator checks against, exported so a test can compare them with the Python's. */
-export const VALIDATOR_RULES = {
-  roles: [...ROLES],
-  modes: [...MODES],
-  actors: [...ACTORS],
-  protocolKeys: PROTOCOL_KEYS,
-  required: REQUIRED,
-} as const;
-
-// ---- Python semantics ---------------------------------------------------
+// ---- Values, read and printed as the Python validator did ------------------
 
 type Dict = Record<string, unknown>;
+type Report = (msg: string) => void;
 
 function isDict(value: unknown): value is Dict {
   return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Date);
 }
 
-/** `value.get(key, fallback)`; crashes like Python when value is not a dict. */
-function get(value: unknown, key: string, fallback: unknown = null): unknown {
-  if (!isDict(value)) throw new ValidatorCrash(`'${typeName(value)}' object has no attribute 'get'`);
+function get(value: Dict, key: string, fallback: unknown = null): unknown {
   return Object.hasOwn(value, key) ? value[key] : fallback;
 }
 
-/** `value[key]`; crashes like Python when the key is missing. */
-function index(value: unknown, key: string): unknown {
-  if (!isDict(value)) throw new ValidatorCrash(`'${typeName(value)}' object is not subscriptable`);
-  if (!Object.hasOwn(value, key)) throw new ValidatorCrash(`KeyError: '${key}'`);
-  return value[key];
-}
-
-/** `key in value` for a dict. */
-function hasKey(value: unknown, key: string): boolean {
-  if (isDict(value)) return Object.hasOwn(value, key);
-  if (typeof value === "string") return value.includes(key);
-  if (Array.isArray(value)) return value.some((item) => pyEq(item, key));
-  throw new ValidatorCrash(`argument of type '${typeName(value)}' is not iterable`);
-}
-
-function typeName(value: unknown): string {
-  if (value === null || value === undefined) return "NoneType";
-  if (typeof value === "boolean") return "bool";
-  if (typeof value === "number") return Number.isInteger(value) ? "int" : "float";
-  if (typeof value === "string") return "str";
-  if (Array.isArray(value)) return "list";
-  if (value instanceof Date) return "date";
-  return "dict";
-}
-
+/** Empty values: null, false, 0, "", [] and {}. */
 function truthy(value: unknown): boolean {
   if (value === null || value === undefined || value === false || value === 0 || value === "") return false;
   if (Array.isArray(value)) return value.length > 0;
@@ -108,46 +69,48 @@ function truthy(value: unknown): boolean {
   return true;
 }
 
-/** `value or fallback` */
 function or(value: unknown, fallback: unknown): unknown {
   return truthy(value) ? value : fallback;
 }
 
-/** `for item in value`: lists give items, dicts their keys, strings their characters. */
-function iter(value: unknown): unknown[] {
-  if (Array.isArray(value)) return value;
-  if (isDict(value)) return Object.keys(value);
-  if (typeof value === "string") return [...value];
-  throw new ValidatorCrash(`'${typeName(value)}' object is not iterable`);
+/** An empty value as `{}`; anything else that is not a mapping is reported. */
+function mapping(value: unknown, where: string, err: Report): Dict | null {
+  const v = or(value, {});
+  if (isDict(v)) return v;
+  err(`${where} must be a mapping`);
+  return null;
 }
 
-/** Python `==`, where True == 1 and 1 == 1.0. */
-function pyEq(a: unknown, b: unknown): boolean {
-  const numeric = (v: unknown) => typeof v === "number" || typeof v === "boolean";
-  if (numeric(a) && numeric(b)) return Number(a) === Number(b);
+/** An empty value as `[]`; anything else that is not a list is reported. */
+function list(value: unknown, where: string, err: Report): unknown[] | null {
+  const v = or(value, []);
+  if (Array.isArray(v)) return v;
+  err(`${where} must be a list`);
+  return null;
+}
+
+/** Equality where 1 == 1.0, and lists and mappings compare by content. */
+function same(a: unknown, b: unknown): boolean {
   if (a === undefined) a = null;
   if (b === undefined) b = null;
-  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v, i) => pyEq(v, b[i]));
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v, i) => same(v, b[i]));
   if (isDict(a) && isDict(b)) {
     const keys = Object.keys(a);
-    return keys.length === Object.keys(b).length && keys.every((k) => Object.hasOwn(b, k) && pyEq(a[k], b[k]));
+    return keys.length === Object.keys(b).length && keys.every((k) => Object.hasOwn(b, k) && same(a[k], b[k]));
   }
   if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
   return a === b;
 }
 
-/** A key for a Python set or dict: equal for values Python hashes as equal; crashes on unhashable values. */
-function hashKey(value: unknown): string {
+/** A map key that is equal for values `same` treats as equal. */
+function key(value: unknown): string {
   if (value === null || value === undefined) return "None";
-  if (typeof value === "boolean" || typeof value === "number") return `n:${Number(value)}`;
+  if (typeof value === "number") return `n:${value}`;
   if (typeof value === "string") return `s:${value}`;
-  if (value instanceof Date) return `d:${value.getTime()}`;
-  throw new ValidatorCrash(`unhashable type: '${typeName(value)}'`);
+  return `r:${pyRepr(value)}`;
 }
 
-/** `value in some_set_of_strings` */
 function inSet(value: unknown, set: ReadonlySet<string>): boolean {
-  hashKey(value);
   return typeof value === "string" && set.has(value);
 }
 
@@ -162,7 +125,7 @@ function pyNumber(n: number): string {
   return String(n);
 }
 
-/** `repr(value)` */
+/** A value inside a list or mapping: strings quoted. */
 function pyRepr(value: unknown): string {
   if (typeof value === "string") return quote(value);
   if (Array.isArray(value)) return `[${value.map(pyRepr).join(", ")}]`;
@@ -170,7 +133,7 @@ function pyRepr(value: unknown): string {
   return pyStr(value);
 }
 
-/** `str(value)`, as an f-string prints it. */
+/** A value on its own in a message. */
 function pyStr(value: unknown): string {
   if (value === null || value === undefined) return "None";
   if (value === true) return "True";
@@ -181,8 +144,7 @@ function pyStr(value: unknown): string {
   return pyRepr(value);
 }
 
-/** `sorted(values)` for the string sets the validator prints. */
-function pySorted(values: Iterable<unknown>): unknown[] {
+function sortedForPrint(values: Iterable<unknown>): unknown[] {
   return [...values].sort((a, b) => {
     const x = typeof a === "string" ? a : pyStr(a);
     const y = typeof b === "string" ? b : pyStr(b);
@@ -190,9 +152,9 @@ function pySorted(values: Iterable<unknown>): unknown[] {
   });
 }
 
-// ---- The validator ------------------------------------------------------
+// ---- The validator ----------------------------------------------------------
 
-/** One function file, as the Python validator sees it. */
+/** One function file to validate. */
 export interface ProcessFunctionFile {
   /** Path relative to the repo root, e.g. `process/functions/ux/frame_problem.md`. */
   rel: string;
@@ -206,157 +168,211 @@ export interface ProcessFunctionFile {
 export interface ProcessFiles {
   templateText: string;
   artifactsText: string;
-  /** In the order the Python sorts them: by folder, then by file name. */
+  /** Sorted by folder, then by file name; the first file to use a name keeps it. */
   functionFiles: ProcessFunctionFile[];
 }
 
 export interface ValidationReport {
+  /** Sorted. */
   errors: string[];
-  /** Printed by the Python as `note: …`; called warnings in its source. */
+  /** Printed as `note: …`; sorted. */
   notes: string[];
+  /** Function files whose front matter could be read. */
   functionCount: number;
   artifactCount: number;
 }
 
-/** Parse front matter the way PyYAML's safe_load does, as closely as the yaml package allows. */
-function frontMatter(text: string): { fm: unknown; body: string } {
-  // Python's read_text opens in universal-newline mode: CRLF and a lone CR both become LF.
-  const { yaml, body } = splitFrontMatter(text.replace(/\r\n?/g, "\n"));
+/** Read front matter as YAML 1.1, like PyYAML; the reason as text when it cannot be read. */
+function readFrontMatter(text: string): { fm: Dict; body: string } | { error: string } {
+  let parts: { yaml: string; body: string };
+  try {
+    // CRLF and a lone CR both count as a line break.
+    parts = splitFrontMatter(text.replace(/\r\n?/g, "\n"));
+  } catch (error) {
+    return { error: (error as Error).message };
+  }
   let data: unknown;
   try {
-    data = parseYaml(yaml, { version: "1.1", uniqueKeys: false });
+    data = parseYaml(parts.yaml, { version: "1.1", uniqueKeys: false });
   } catch (error) {
-    throw new ValidatorCrash(`front matter is not valid YAML: ${(error as Error).message}`);
+    const firstLine = ((error as Error).message.split("\n")[0] ?? "").replace(/:$/, "");
+    return { error: `front matter is not valid YAML: ${firstLine}` };
   }
-  return { fm: or(data, {}), body };
+  const fm = or(data, {});
+  if (!isDict(fm)) return { error: "front matter is not a mapping" };
+  return { fm, body: parts.body };
 }
 
-/** Run every check in checks/validate_functions.py over one process tree. */
+interface CheckedFunction {
+  rel: string;
+  /** Artifact ids in `outputs`. */
+  outputs: unknown[];
+  /** Artifact ids in `inputs` and `context`. */
+  reads: unknown[];
+}
+
+/** Check one process tree: the template version, the artifact list and every function file. */
 export function validateProcess(files: ProcessFiles): ValidationReport {
   const errors: string[] = [];
   const notes: string[] = [];
-  const version = get(frontMatter(files.templateText).fm, "template");
 
-  const artMeta = frontMatter(files.artifactsText).fm;
-  const artifacts = new Map<string, { id: unknown; entry: unknown }>();
-  for (const a of iter(get(artMeta, "artifacts", []))) {
-    const id = index(a, "id");
-    if (artifacts.has(hashKey(id))) errors.push(`artifacts.md: duplicate id ${pyStr(id)}`);
-    artifacts.set(hashKey(id), { id, entry: a });
-    for (const key of ARTIFACT_KEYS) {
-      if (!hasKey(a, key)) errors.push(`artifacts.md: ${pyStr(id)} has no ${key}`);
+  let version: unknown = null;
+  const template = readFrontMatter(files.templateText);
+  if ("error" in template) errors.push(`template.md: ${template.error}`);
+  else version = get(template.fm, "template");
+
+  const artErr: Report = (msg) => errors.push(`artifacts.md: ${msg}`);
+  const artifacts = new Map<string, { id: unknown; entry: Dict }>();
+  const artMeta = readFrontMatter(files.artifactsText);
+  if ("error" in artMeta) artErr(artMeta.error);
+  const entries = "error" in artMeta ? [] : (list(get(artMeta.fm, "artifacts"), "artifacts", artErr) ?? []);
+  entries.forEach((a, i) => {
+    if (!isDict(a)) return artErr(`artifacts item ${i + 1} must be a mapping`);
+    const id = get(a, "id");
+    if (id === null || id === "") return artErr(`artifacts item ${i + 1} has no id`);
+    if (Array.isArray(id) || isDict(id)) return artErr(`artifacts item ${i + 1} has an id that is not a single value`);
+    if (artifacts.has(key(id))) artErr(`duplicate id ${pyStr(id)}`);
+    artifacts.set(key(id), { id, entry: a });
+    for (const k of ARTIFACT_KEYS) {
+      if (!Object.hasOwn(a, k)) artErr(`${pyStr(id)} has no ${k}`);
     }
-  }
-  const artifact = (aid: unknown) => artifacts.get(hashKey(aid));
+  });
 
-  const functions = new Map<string, { rel: string; fm: unknown }>();
+  const checked: CheckedFunction[] = [];
+  const byName = new Map<string, CheckedFunction>();
   for (const file of files.functionFiles) {
     const { rel } = file;
-    let fm: unknown;
-    let body: string;
-    try {
-      ({ fm, body } = frontMatter(file.text));
-    } catch (error) {
-      if (error instanceof ValidatorCrash) throw error;
-      errors.push(`${rel}: ${(error as Error).message}`);
+    const err: Report = (msg) => errors.push(`${rel}: ${msg}`);
+    const parsed = readFrontMatter(file.text);
+    if ("error" in parsed) {
+      err(parsed.error);
       continue;
     }
-    functions.set(hashKey(get(fm, "name")), { rel, fm });
-    const err = (msg: string) => errors.push(`${rel}: ${msg}`);
+    const { fm, body } = parsed;
+    const record: CheckedFunction = { rel, outputs: [], reads: [] };
+    checked.push(record);
 
-    for (const key of REQUIRED) {
-      if (!hasKey(fm, key)) err(`missing field '${key}'`);
+    for (const k of REQUIRED) {
+      if (!Object.hasOwn(fm, k)) err(`missing field '${k}'`);
     }
-    if (!pyEq(get(fm, "template"), version)) {
-      err(`template is ${pyStr(get(fm, "template"))}, current version is ${pyStr(version)}`);
+    // A YAML 1.1 boolean such as `yes` is not a version number.
+    const fileVersion = get(fm, "template");
+    if (typeof fileVersion === "boolean" || !same(fileVersion, version)) {
+      err(`template is ${pyStr(fileVersion)}, current version is ${pyStr(version)}`);
     }
-    if (!pyEq(get(fm, "name"), file.stem)) {
-      err(`name '${pyStr(get(fm, "name"))}' does not match file name '${file.stem}'`);
+    const name = get(fm, "name");
+    if (!same(name, file.stem)) {
+      err(`name '${pyStr(name)}' does not match file name '${file.stem}'`);
     }
-    if (!pyEq(get(fm, "role"), file.folder) || !inSet(get(fm, "role"), ROLES)) {
-      err(
-        `role '${pyStr(get(fm, "role"))}' must match folder '${file.folder}' and be one of ${pyRepr(pySorted(ROLES))}`,
-      );
+    if (typeof name === "string") {
+      const earlier = byName.get(name);
+      if (earlier) err(`name '${name}' is already used by ${earlier.rel}`);
+      else byName.set(name, record);
+    }
+    const role = get(fm, "role");
+    if (!same(role, file.folder) || !inSet(role, ROLES)) {
+      err(`role '${pyStr(role)}' must match folder '${file.folder}' and be one of ${pyRepr(sortedForPrint(ROLES))}`);
     }
 
     for (const section of ["inputs", "context", "outputs"]) {
-      for (const item of iter(or(get(fm, section), []))) {
+      (list(get(fm, section), section, err) ?? []).forEach((item, i) => {
+        if (!isDict(item)) return err(`${section} item ${i + 1} must be a mapping`);
         const aid = get(item, "artifact");
-        const known = artifact(aid);
-        if (!known) {
-          err(`${section}: unknown artifact '${pyStr(aid)}'`);
-          continue;
-        }
-        if (section === "inputs" && !hasKey(item, "required")) {
+        (section === "outputs" ? record.outputs : record.reads).push(aid);
+        const known = artifacts.get(key(aid));
+        if (!known) return err(`${section}: unknown artifact '${pyStr(aid)}'`);
+        if (section === "inputs" && !Object.hasOwn(item, "required")) {
           err(`inputs: '${pyStr(aid)}' has no 'required'`);
         }
-        if (section === "inputs" || section === "context") {
+        // An artifact without made_by is reported once, in artifacts.md.
+        if (section !== "outputs" && Object.hasOwn(known.entry, "made_by")) {
           const src = get(item, "from");
-          const madeBy = index(known.entry, "made_by");
-          if (!pyEq(src, madeBy)) {
+          const madeBy = known.entry.made_by;
+          if (!same(src, madeBy)) {
             err(`${section}: '${pyStr(aid)}' says from '${pyStr(src)}', artifacts.md says made_by '${pyStr(madeBy)}'`);
           }
         }
+      });
+    }
+
+    const checks = mapping(get(fm, "checks"), "checks", err);
+    if (checks) {
+      for (const layer of CHECK_LAYERS) {
+        const rules = list(get(checks, layer), `checks.${layer}`, err);
+        if (!rules) continue;
+        if (rules.length === 0) err(`checks.${layer} is empty`);
+        rules.forEach((rule, i) => {
+          if (!isDict(rule)) return err(`checks.${layer} item ${i + 1} must be a mapping`);
+          if (!truthy(get(rule, "id")) || !truthy(get(rule, "rule"))) {
+            err(`checks.${layer}: every rule needs id and rule`);
+          }
+          const where = `checks.${layer}.${pyStr(get(rule, "id"))}`;
+          if (Object.hasOwn(rule, "severity")) {
+            const severity = rule.severity;
+            if (severity === null || severity === "") {
+              err(`${where}: severity is empty; write error or warning, or leave it out`);
+            } else if (!SEVERITIES.some((s) => same(severity, s))) {
+              err(`${where}: severity must be error or warning`);
+            }
+            if (layer === "consistency") err(`${where}: severity is only for structural rules`);
+          }
+        });
+      }
+      const human = mapping(get(checks, "human"), "checks.human", err);
+      for (const k of HUMAN_CHECK_KEYS) {
+        if (human && !truthy(get(human, k))) err(`checks.human has no ${k}`);
       }
     }
 
-    const checks = or(get(fm, "checks"), {});
-    for (const layer of CHECK_LAYERS) {
-      const rules = or(get(checks, layer), []);
-      if (!truthy(rules)) err(`checks.${layer} is empty`);
-      for (const rule of iter(rules)) {
-        if (!truthy(get(rule, "id")) || !truthy(get(rule, "rule"))) {
-          err(`checks.${layer}: every rule needs id and rule`);
-        }
-        const severity = get(rule, "severity", "error");
-        if (!SEVERITIES.some((s) => pyEq(severity, s))) {
-          err(`checks.${layer}.${pyStr(get(rule, "id"))}: severity must be error or warning`);
-        }
-        if (layer === "consistency" && hasKey(rule, "severity")) {
-          err(`checks.consistency.${pyStr(get(rule, "id"))}: severity is only for structural rules`);
-        }
-      }
-    }
-    const human = or(get(checks, "human"), {});
-    for (const key of HUMAN_CHECK_KEYS) {
-      if (!truthy(get(human, key))) err(`checks.human has no ${key}`);
-    }
-
-    const modes = or(get(fm, "modes"), {});
-    // set(...): insertion order here; Python's order is its hash order.
+    const modes = mapping(get(fm, "modes"), "modes", err);
+    const allowedList = modes ? list(get(modes, "allowed"), "modes.allowed", err) : null;
     const allowed = new Map<string, unknown>();
-    for (const mode of iter(or(get(modes, "allowed"), []))) {
-      if (!allowed.has(hashKey(mode))) allowed.set(hashKey(mode), mode);
+    for (const mode of allowedList ?? []) {
+      if (!allowed.has(key(mode))) allowed.set(key(mode), mode);
     }
     const unknownModes = [...allowed.values()].filter((mode) => !inSet(mode, MODES));
     if (unknownModes.length > 0) {
-      err(`modes.allowed has unknown modes ${pyRepr(pySorted(unknownModes))}`);
+      err(`modes.allowed has unknown modes ${pyRepr(sortedForPrint(unknownModes))}`);
     }
-    if (!allowed.has(hashKey(get(modes, "default")))) {
+    if (modes && allowedList && !allowed.has(key(get(modes, "default")))) {
       err("modes.default is not in modes.allowed");
     }
-    const protocols = or(get(fm, "protocols"), {});
-    for (const mode of allowed.values()) {
-      const p = get(protocols, pyStr(mode));
-      if (!truthy(p)) {
-        err(`protocols: no protocol for allowed mode '${pyStr(mode)}'`);
-        continue;
-      }
-      for (const key of PROTOCOL_KEYS) {
-        if (!inSet(get(p, key), ACTORS)) {
-          err(`protocols.${pyStr(mode)}.${key} must be one of ${pyRepr(pySorted(ACTORS))}`);
+
+    const protocols = mapping(get(fm, "protocols"), "protocols", err);
+    if (protocols) {
+      const allowedNames = new Set([...allowed.values()].map(pyStr));
+      for (const mode of allowedNames) {
+        const p = get(protocols, mode);
+        if (!truthy(p)) {
+          err(`protocols: no protocol for allowed mode '${mode}'`);
+          continue;
+        }
+        if (!isDict(p)) continue; // reported below
+        for (const k of PROTOCOL_KEYS) {
+          if (!inSet(get(p, k), ACTORS)) {
+            err(`protocols.${mode}.${k} must be one of ${pyRepr(sortedForPrint(ACTORS))}`);
+          }
         }
       }
-      if (!pyEq(get(p, "decides"), "human")) {
-        err(`protocols.${pyStr(mode)}.decides must be human`);
+      // A human decides in every protocol, whether or not its mode is allowed.
+      for (const [mode, p] of Object.entries(protocols)) {
+        if (!truthy(p) && allowedNames.has(mode)) continue; // reported above
+        if (truthy(p) && !isDict(p)) {
+          err(`protocols.${mode} must be a mapping`);
+          continue;
+        }
+        if (!same(isDict(p) ? get(p, "decides") : null, "human")) {
+          err(`protocols.${mode}.decides must be human`);
+        }
       }
     }
 
-    for (const item of iter(or(get(fm, "writes_back"), []))) {
-      if (!artifact(get(item, "artifact"))) {
+    (list(get(fm, "writes_back"), "writes_back", err) ?? []).forEach((item, i) => {
+      if (!isDict(item)) return err(`writes_back item ${i + 1} must be a mapping`);
+      if (!artifacts.has(key(get(item, "artifact")))) {
         err(`writes_back: unknown artifact '${pyStr(get(item, "artifact"))}'`);
       }
-    }
+    });
 
     for (const heading of FUNCTION_BODY_SECTIONS) {
       if (!body.includes(heading)) err(`body has no '${heading}' section`);
@@ -364,34 +380,23 @@ export function validateProcess(files: ProcessFiles): ValidationReport {
   }
 
   // Cross-checks between functions and the artifact list
-  const outputIds = (fm: unknown) => iter(or(get(fm, "outputs"), [])).map((o) => get(o, "artifact"));
-  // `(inputs or []) + (context or [])`: Python can only add two lists.
-  const readIds = (fm: unknown) => {
-    const inputs = or(get(fm, "inputs"), []);
-    const context = or(get(fm, "context"), []);
-    if (!Array.isArray(inputs) || !Array.isArray(context)) {
-      throw new ValidatorCrash("can only concatenate list to list");
-    }
-    return [...inputs, ...context].map((i) => get(i, "artifact"));
-  };
   for (const { id: aid, entry } of artifacts.values()) {
-    const maker = index(entry, "made_by");
-    const made = functions.get(hashKey(maker));
-    if (made && !outputIds(made.fm).some((o) => pyEq(o, aid))) {
-      errors.push(`artifacts.md: ${pyStr(aid)} made_by ${pyStr(maker)}, but ${made.rel} does not output it`);
+    if (!Object.hasOwn(entry, "made_by")) continue; // reported above
+    const maker = entry.made_by;
+    const made = typeof maker === "string" ? byName.get(maker) : undefined;
+    if (!made) continue;
+    if (!made.outputs.some((o) => same(o, aid))) {
+      errors.push(`artifacts.md: ${pyStr(aid)} made_by ${maker}, but ${made.rel} does not output it`);
     }
-    const used = [...functions.values()].some(({ fm }) =>
-      readIds(fm).some((i) => pyEq(i, aid)),
-    );
-    if (made && !used) {
-      notes.push(`${pyStr(aid)} is made by ${pyStr(maker)} but no drafted function reads it yet`);
+    if (!checked.some((f) => f.reads.some((i) => same(i, aid)))) {
+      notes.push(`${pyStr(aid)} is made by ${maker} but no drafted function reads it yet`);
     }
   }
 
-  return { errors, notes, functionCount: functions.size, artifactCount: artifacts.size };
+  return { errors: errors.sort(), notes: notes.sort(), functionCount: checked.length, artifactCount: artifacts.size };
 }
 
-/** The lines the Python validator prints, in its order. */
+/** The lines `pnpm validate` prints: notes, then errors, then a summary. */
 export function formatReport(report: ValidationReport): string[] {
   return [
     ...report.notes.map((n) => `note: ${n}`),

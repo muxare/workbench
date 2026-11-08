@@ -11,7 +11,7 @@ The full plan is in `docs/plan.md`. The claude.ai project "Collabborating with A
 | `process/template.md` | The function template, version 1. Read this first. |
 | `process/artifacts.md` | Every artifact the functions read or write, with owner, maker and required fields. |
 | `process/functions/<role>/<name>.md` | One file per function. |
-| `checks/validate_functions.py` | Checks every function file against the template and the artifact list. |
+| `packages/shared/src/functionValidator.ts` | Checks every function file against the template and the artifact list (`pnpm validate`). |
 | `docs/next.md` | Where the work stands, what waits for Mikael, what comes next. Read this first. |
 | `docs/plan.md` | Goal, decisions and phases. |
 | `docs/architecture.md` | The app: stack, layout, domain model, first slice. |
@@ -47,8 +47,7 @@ pnpm check    # lint, typecheck, tests and the process validator
 ## Check the process files
 
 ```
-pip install -r requirements.txt
-python3 checks/validate_functions.py
+pnpm validate
 ```
 
 It prints errors (the file breaks the template) and notes (outputs that no drafted function reads yet; expected while only one segment exists).

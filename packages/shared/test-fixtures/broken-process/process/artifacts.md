@@ -1,5 +1,5 @@
 ---
-# Invented fixture for the validator parity test (packages/shared/src/functionValidator.test.ts).
+# Invented fixture for the validator tests (packages/shared/src/functionValidator.test.ts).
 # Not the real artifact list; every entry is made up and some are broken on purpose.
 template: 1
 artifacts:
@@ -23,7 +23,7 @@ artifacts:
   - id: notes
     name: Notes
     made_by: draft_sketch
-  # Output by draft_sketch but read by no function: a note, not an error
+  # Output and read by draft_sketch
   - id: plan
     name: Plan
     owner: ux
@@ -34,6 +34,24 @@ artifacts:
     owner: team
     made_by: external
     fields: [rules]
+  # Output by draft_sketch but read by no function: a note, not an error
+  - id: handout
+    name: Handout
+    owner: ux
+    made_by: draft_sketch
+    fields: [pages]
+  # No made_by, and draft_sketch reads it: reported once, here
+  - id: loose_notes
+    name: Loose notes
+    owner: ux
+    fields: [text]
+  # Not a mapping
+  - just a string
+  # No id
+  - name: Nameless
+    owner: ux
+    made_by: external
+    fields: []
 ---
 
 # Artifacts (invented fixture)

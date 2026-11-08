@@ -44,7 +44,7 @@ export function loadFunctionFiles(functionsDir: string): LoadedFunctionFile[] {
 }
 
 /**
- * Run the port of checks/validate_functions.py over `<root>/process`, where
+ * Run the process validator over `<root>/process`, where
  * root is the repo root (or a copy of its layout, as the tests use).
  */
 export function validateProcessDir(root: string): ValidationReport {
@@ -56,7 +56,7 @@ export function validateProcessDir(root: string): ValidationReport {
       stem: path.basename(filePath, ".md"),
       text: readFileSync(filePath, "utf8"),
     }))
-    // Python sorts paths part by part, so `be/x.md` comes before `be-a/y.md`.
+    // Sorted part by part, so `be/x.md` comes before `be-a/y.md`.
     .sort((a, b) => compare(a.folder, b.folder) || compare(a.stem + ".md", b.stem + ".md"));
   return validateProcess({
     templateText: readFileSync(path.join(processDir, "template.md"), "utf8"),

@@ -11,7 +11,7 @@ Each function lives in `process/functions/<role>/<name>.md`. The file is markdow
 
 How artifacts, approvals and proposals are stored during a run is described in `docs/runs.md`.
 
-Run `python3 checks/validate_functions.py` after any change. It checks every function file against this template and against `process/artifacts.md`.
+Run `pnpm validate` after any change. It checks every function file against this template and against `process/artifacts.md`.
 
 ## Front matter fields
 

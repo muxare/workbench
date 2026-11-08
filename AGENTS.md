@@ -37,7 +37,7 @@ Rules:
 
 - Read `process/template.md` before editing any function file. Follow its fields and body sections exactly.
 - Refer to artifacts by `id` from `process/artifacts.md`. Add new artifacts there first.
-- After any change under `process/`, run `python3 checks/validate_functions.py` and fix every error.
+- After any change under `process/`, run `pnpm validate` and fix every error.
 - In every protocol, `decides` is `human`. Never change that.
 - Do not invent facts about real clients or projects. Mark examples as invented.
 - A change that needs a new template field: bump the version in `process/template.md`, update every function file, and add an entry to `docs/decisions.md`.

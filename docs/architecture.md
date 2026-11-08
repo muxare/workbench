@@ -53,7 +53,7 @@ The app has its own board for now. Card storage sits behind an interface so GitH
 
 ## Checks
 
-Structural checks run in the API on every draft, so they move from `checks/validate_functions.py` into `packages/shared`. Keep the Python validator in CI until the TypeScript version gives the same results on every function file.
+Structural checks run in the API on every draft, so they live in `packages/shared` (`functionValidator.ts`); `pnpm validate` runs the same checks from the command line. The Python validator they were ported from was removed on 2026-11-08.
 
 ## First slice
 
