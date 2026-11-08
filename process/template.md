@@ -31,7 +31,7 @@ Run `pnpm validate` after any change. It checks every function file against this
 | `checks.human` | yes | `approver` (who signs off), `where` (in the tool, in a meeting), `criteria` (what they confirm). |
 | `modes.default` | yes | The suggested mode: `manual`, `assist` or `delegate`. |
 | `modes.allowed` | yes | Which modes the team allows for this step. |
-| `protocols` | yes | One entry per allowed mode, with four roles: `opens`, `asks`, `writes`, `decides`. Values: `human`, `ai`, `both`, or `none`. `decides` is always `human`. |
+| `protocols` | yes | One entry per allowed mode, with four roles: `opens`, `asks`, `writes`, `decides`. Values: `human`, `ai`, `both`, or `none`. `decides` is always `human`. Each entry may also have an optional `note`: prose on how the mode plays out for this step. |
 | `decision_log` | yes | What is kept from the conversation after the step is done. |
 | `writes_back` | no | Tacit knowledge to carry into a context artifact after the step, so the next run starts with it. Each: `artifact`, `what`. It creates a **proposal**; the role that owns the artifact accepts or rejects it (see `docs/runs.md`). |
 

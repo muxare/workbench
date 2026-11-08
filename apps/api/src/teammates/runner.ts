@@ -42,7 +42,7 @@ export async function eligibleCards(
 ): Promise<Eligibility[]> {
   const teammates = await listTeammates(db);
   const cards = await listCards(db);
-  return Promise.all(cards.map(async (card) => checkEligibility(card, await cardLog(db, card.id), definitions, teammates)));
+  return Promise.all(cards.map(async (card) => checkEligibility(card, await cardLog(db, card.id), definitions, teammates, cards)));
 }
 
 /**

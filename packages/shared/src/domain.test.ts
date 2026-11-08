@@ -1,6 +1,6 @@
 // All example data here is invented.
 import { describe, expect, it } from "vitest";
-import { card, cardEvent, cycle, decidedByHuman, question, status, teammate, type Teammate } from "./domain.ts";
+import { card, cardEvent, cycle, decidedByHuman, question, status, teammate, unfinishedDependencies, type Card, type Teammate } from "./domain.ts";
 
 const at = "2026-11-08T09:41:00Z";
 
@@ -128,5 +128,26 @@ describe("cycle", () => {
   it("rejects a window that ends before it starts", () => {
     const c = { id: "invented-s14", name: "Invented sprint", starts_at: "2026-11-16T08:00:00Z", ends_at: "2026-11-02T08:00:00Z" };
     expect(cycle.safeParse(c).success).toBe(false);
+  });
+});
+
+describe("unfinishedDependencies", () => {
+  const make = (id: string, state: "ready" | "done", links: string[] = []): Card => ({
+    id,
+    title: "Invented",
+    function_id: "define_api_contract",
+    owner: "invented-be",
+    status: { state },
+    links: links.map((card_id) => ({ relation: "depends_on" as const, card_id })),
+  });
+
+  it("lists dependencies that are not done, and unknown ones", () => {
+    const cards = [make("invented-1", "done"), make("invented-2", "ready"), make("invented-3", "ready", ["invented-1", "invented-2", "invented-9"])];
+    expect(unfinishedDependencies(cards[2]!, cards)).toEqual(["invented-2", "invented-9"]);
+  });
+
+  it("is empty when every dependency is done", () => {
+    const cards = [make("invented-1", "done"), make("invented-3", "ready", ["invented-1"])];
+    expect(unfinishedDependencies(cards[1]!, cards)).toEqual([]);
   });
 });

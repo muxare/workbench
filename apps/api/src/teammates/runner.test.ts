@@ -45,10 +45,12 @@ describe("eligibility from process/", () => {
   it("lets the AI pick only Ready cards whose owner works the function in assist", async () => {
     const db = await freshDb();
     const result = await eligibleCards(db, definitions);
-    expect(result.filter((e) => e.eligible).map((e) => e.card.id)).toEqual(["invented-152"]);
+    expect(result.filter((e) => e.eligible).map((e) => e.card.id)).toEqual(["invented-154"]);
     const reasons = Object.fromEntries(result.filter((e) => !e.eligible).map((e) => [e.card.id, e.eligible ? "" : e.reason]));
     expect(reasons["invented-151"]).toMatch(/needs_input, not ready/);
     expect(reasons["invented-153"]).toMatch(/backlog, not ready/);
+    // #152 is Ready, but it depends on #151, which waits on a person.
+    expect(reasons["invented-152"]).toMatch(/depends on invented-151, which is not done/);
   });
 
   it("refuses a card whose function does not allow assist", async () => {
@@ -58,15 +60,15 @@ describe("eligibility from process/", () => {
       return { ...fm, modes: { default: "delegate", allowed: ["manual", "delegate"] } };
     });
     await expect(
-      runTeammate(db, { teammateId: AI, provider: stubProvider, cardId: "invented-152", definitions: noAssist, newId, now }),
+      runTeammate(db, { teammateId: AI, provider: stubProvider, cardId: "invented-154", definitions: noAssist, newId, now }),
     ).rejects.toThrow(/mode 'assist' is not in define_api_contract's modes.allowed/);
     expect(await runTeammate(db, { teammateId: AI, provider: stubProvider, definitions: noAssist })).toBeNull();
-    expect((await cardStatus(db, "invented-152")).state).toBe("ready");
+    expect((await cardStatus(db, "invented-154")).state).toBe("ready");
   });
 
   it("refuses when the owner chose another mode", async () => {
     const db = await freshDb(seedWithProfile(BE, { define_api_contract: "delegate" }));
-    await expect(runTeammate(db, { teammateId: AI, provider: stubProvider, cardId: "invented-152" })).rejects.toThrow(
+    await expect(runTeammate(db, { teammateId: AI, provider: stubProvider, cardId: "invented-154" })).rejects.toThrow(
       /works define_api_contract in 'delegate'/,
     );
   });
@@ -74,7 +76,7 @@ describe("eligibility from process/", () => {
   it("uses the function's default mode when the owner has not chosen one", async () => {
     const db = await freshDb(seedWithProfile(BE, {}));
     const run = await runTeammate(db, { teammateId: AI, provider: stubProvider, newId, now });
-    expect(run?.card.id).toBe("invented-152");
+    expect(run?.card.id).toBe("invented-154");
     expect(run?.events[0]).toMatchObject({ type: "picked", mode: definitions.get("define_api_contract")?.modes.default });
   });
 
@@ -85,7 +87,7 @@ describe("eligibility from process/", () => {
       return fm;
     });
     await expect(
-      runTeammate(db, { teammateId: AI, provider: stubProvider, cardId: "invented-152", definitions: silent }),
+      runTeammate(db, { teammateId: AI, provider: stubProvider, cardId: "invented-154", definitions: silent }),
     ).rejects.toThrow(/asks is 'none'/);
   });
 
@@ -119,11 +121,11 @@ describe("a run with the stub provider", () => {
   });
 
   it("appends the pick, the report, the question and the move to Needs input", async () => {
-    const before = (await cardLog(db, "invented-152")).length;
+    const before = (await cardLog(db, "invented-154")).length;
     const run = await runTeammate(db, { teammateId: AI, provider: stubProvider, newId, now });
-    expect(run?.card.id).toBe("invented-152");
+    expect(run?.card.id).toBe("invented-154");
 
-    const log = await cardLog(db, "invented-152");
+    const log = await cardLog(db, "invented-154");
     const added = log.slice(before);
     expect(added.map((e) => e.type)).toEqual(["picked", "status_changed", "report_posted", "asked", "status_changed"]);
     expect(added.every((e) => e.actor === AI)).toBe(true);
@@ -142,7 +144,7 @@ describe("a run with the stub provider", () => {
       from: "in_progress",
       to: { state: "needs_input", waiting_on: BE, question_id: asked.question_id },
     });
-    expect(await cardStatus(db, "invented-152")).toEqual({
+    expect(await cardStatus(db, "invented-154")).toEqual({
       state: "needs_input",
       waiting_on: BE,
       question_id: asked.question_id,
@@ -155,7 +157,7 @@ describe("a run with the stub provider", () => {
     await runTeammate(db, { teammateId: AI, provider: stubProvider, newId, now });
     expect(await runTeammate(db, { teammateId: AI, provider: stubProvider, newId, now })).toBeNull();
     await expect(
-      runTeammate(db, { teammateId: AI, provider: stubProvider, cardId: "invented-152", newId, now }),
+      runTeammate(db, { teammateId: AI, provider: stubProvider, cardId: "invented-154", newId, now }),
     ).rejects.toThrow(/needs_input, not ready/);
   });
 
@@ -167,9 +169,9 @@ describe("a run with the stub provider", () => {
         return { ...step, question: { ...step.question, asked_of: context.self.id } };
       },
     };
-    const before = (await cardLog(db, "invented-152")).length;
+    const before = (await cardLog(db, "invented-154")).length;
     await expect(runTeammate(db, { teammateId: AI, provider: asksItself, newId, now })).rejects.toThrow(/decides is human/);
-    expect(await cardLog(db, "invented-152")).toHaveLength(before);
-    expect((await cardStatus(db, "invented-152")).state).toBe("ready");
+    expect(await cardLog(db, "invented-154")).toHaveLength(before);
+    expect((await cardStatus(db, "invented-154")).state).toBe("ready");
   });
 });

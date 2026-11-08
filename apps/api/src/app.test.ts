@@ -101,7 +101,7 @@ describe("POST /api/cards", () => {
 
 describe("POST /api/cards/:id/pick", () => {
   it("moves a ready card to in_progress in its owner's mode", async () => {
-    const res = await post("/api/cards/invented-152/pick", { actor: AI });
+    const res = await post("/api/cards/invented-154/pick", { actor: AI });
     expect(res.status).toBe(200);
     const out = writeResponse.parse(await res.json());
     expect(out.card.status).toEqual({ state: "in_progress" });
@@ -109,8 +109,14 @@ describe("POST /api/cards/:id/pick", () => {
     expect(out.events[0]).toMatchObject({ type: "picked", mode: "assist", actor: AI, at: "2026-11-07T10:00:00.000Z" });
   });
 
+  it("refuses a card that depends on a card not done, and appends nothing", async () => {
+    const before = await lastSeq(db);
+    await expectProblem(await post("/api/cards/invented-152/pick", { actor: AI }), 409, "conflict", /depends on invented-151/);
+    expect(await lastSeq(db)).toBe(before);
+  });
+
   it("refuses a mode other than the owner's", async () => {
-    await expectProblem(await post("/api/cards/invented-152/pick", { actor: AI, mode: "delegate" }), 422, "rule_violation", /assist/);
+    await expectProblem(await post("/api/cards/invented-154/pick", { actor: AI, mode: "delegate" }), 422, "rule_violation", /assist/);
   });
 
   it("refuses a card that is not ready, and appends nothing", async () => {
@@ -120,13 +126,13 @@ describe("POST /api/cards/:id/pick", () => {
   });
 
   it("explains a malformed body", async () => {
-    const body = await expectProblem(await post("/api/cards/invented-152/pick", { mode: "assist" }), 400, "invalid_request", /actor/);
+    const body = await expectProblem(await post("/api/cards/invented-154/pick", { mode: "assist" }), 400, "invalid_request", /actor/);
     expect(body.issues?.[0]?.path).toBe("actor");
-    await expectProblem(await post("/api/cards/invented-152/pick", "{not json", true), 400, "invalid_request", /JSON/);
+    await expectProblem(await post("/api/cards/invented-154/pick", "{not json", true), 400, "invalid_request", /JSON/);
   });
 
   it("refuses an unknown actor and an unknown card", async () => {
-    await expectProblem(await post("/api/cards/invented-152/pick", { actor: "invented-ghost" }), 422, "rule_violation", /ghost/);
+    await expectProblem(await post("/api/cards/invented-154/pick", { actor: "invented-ghost" }), 422, "rule_violation", /ghost/);
     await expectProblem(await post("/api/cards/invented-nope/pick", { actor: AI }), 404, "not_found");
   });
 });
@@ -247,7 +253,7 @@ describe("GET /api/events", () => {
     expect(a.headers.get("Content-Type")).toBe("text/event-stream");
     const ra = sseReader(a);
     const rb = sseReader(b);
-    await post("/api/cards/invented-152/pick", { actor: AI });
+    await post("/api/cards/invented-154/pick", { actor: AI });
     const seq = inventedSeed.events.length;
     for (const r of [ra, rb]) {
       const first = await r.next();
