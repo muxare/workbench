@@ -1,13 +1,14 @@
 // Runs one step of the AI teammate: choose a card it may pick, ask the
 // provider for the work, then append the pick, the report, the question and
-// the move to Needs input through the store's `appendEvent`. The runner never
+// the move to Needs input as one write through the store's `appendEvents`, so
+// a run lands whole or not at all. The runner never
 // answers a question and never moves a card past Needs input: in every
 // protocol `decides` is human, so the next move belongs to the person asked.
 import { randomUUID } from "node:crypto";
 import type { Card, CardEvent, FunctionFrontMatter } from "@workbench/shared";
 import type { Db } from "../db/client.ts";
 import { loadFunctionDefinitions } from "../process.ts";
-import { appendEvent, cardLog, listCards, listTeammates } from "../store.ts";
+import { appendEvents, cardLog, listCards, listTeammates } from "../store.ts";
 import { checkEligibility, type Eligibility } from "./eligibility.ts";
 import type { TeammateProvider, WorkStep } from "./provider.ts";
 
@@ -49,7 +50,10 @@ export async function eligibleCards(
  * Run one step. Returns the run, or `null` when no card is eligible. With
  * `cardId`, throws TeammateRefusal when that card is not eligible. The
  * provider is called before anything is appended, so a failing provider
- * leaves the card as it was.
+ * leaves the card as it was. The five events are appended in one
+ * `appendEvents` write: if any is refused, for example because someone moved
+ * the card while the provider worked, none is stored and the store's error is
+ * thrown.
  */
 export async function runTeammate(db: Db, options: RunOptions): Promise<TeammateRun | null> {
   const definitions = options.definitions ?? loadFunctionDefinitions();
@@ -105,6 +109,6 @@ export async function runTeammate(db: Db, options: RunOptions): Promise<Teammate
       to: { state: "needs_input", waiting_on: askedOf.id, question_id: questionId },
     },
   ];
-  for (const event of events) await appendEvent(db, event);
+  await appendEvents(db, events);
   return { card, step, events };
 }

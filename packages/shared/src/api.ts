@@ -106,6 +106,18 @@ export type CardResponse = z.infer<typeof cardResponse>;
 export const writeResponse = z.object({ card, events: z.array(cardEvent) });
 export type WriteResponse = z.infer<typeof writeResponse>;
 
+/**
+ * `POST /teammates/:id/run`: run one step of an AI teammate. It takes no body;
+ * the teammate chooses the first card it may pick, works it with its
+ * provider, and appends the pick, the move to In progress, its report, its
+ * question and the move to Needs input as one write. The answer is the card
+ * as it now stands and those five events. Refusals: 404 for an unknown
+ * teammate, 422 for a teammate that is not an AI, 409 when no card is
+ * eligible or the card changed while the teammate worked.
+ */
+export const teammateRunResponse = writeResponse;
+export type TeammateRunResponse = WriteResponse;
+
 export const apiErrorCode = z.enum(["invalid_request", "not_found", "conflict", "forbidden", "rule_violation"]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
