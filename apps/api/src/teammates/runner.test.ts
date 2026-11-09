@@ -4,7 +4,7 @@ import type { FunctionFrontMatter } from "@workbench/shared";
 import { openDb, type Db } from "../db/client.ts";
 import { loadFunctionDefinitions, loadFunctionIds } from "../process.ts";
 import { inventedSeed } from "../seed/invented.ts";
-import { appendEvent, cardLog, cardStatus, seed, type SeedData } from "../store.ts";
+import { appendEvent, cardLog, cardStatus, seed, StoreError, type SeedData } from "../store.ts";
 import type { TeammateProvider } from "./provider.ts";
 import { eligibleCards, runTeammate, TeammateRefusal } from "./runner.ts";
 import { stubProvider } from "./stubProvider.ts";
@@ -171,6 +171,48 @@ describe("a run with the stub provider", () => {
     };
     const before = (await cardLog(db, "invented-154")).length;
     await expect(runTeammate(db, { teammateId: AI, provider: asksItself, newId, now })).rejects.toThrow(/decides is human/);
+    expect(await cardLog(db, "invented-154")).toHaveLength(before);
+    expect((await cardStatus(db, "invented-154")).state).toBe("ready");
+  });
+
+  it("stores no part of the run when the card moves while the provider works", async () => {
+    // Someone moves the card back to backlog after the runner chose it. The
+    // pick itself passes the store's checks, but the move out of Ready does
+    // not; appended one by one, the pick would have been left behind.
+    const movesCardMeanwhile: TeammateProvider = {
+      name: "invented-race",
+      async work(context) {
+        await appendEvent(db, {
+          id: "invented-race-move",
+          type: "status_changed",
+          card_id: context.card.id,
+          actor: BE,
+          at: "2026-11-08T09:59:00Z",
+          from: "ready",
+          to: { state: "backlog" },
+        });
+        return stubProvider.work(context);
+      },
+    };
+    const before = await cardLog(db, "invented-154");
+    const err = await runTeammate(db, { teammateId: AI, provider: movesCardMeanwhile, newId, now }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StoreError);
+    expect((err as StoreError).code).toBe("conflict");
+    const after = await cardLog(db, "invented-154");
+    expect(after.map((e) => e.id)).toEqual([...before.map((e) => e.id), "invented-race-move"]);
+    expect(after.some((e) => e.actor === AI)).toBe(false);
+    expect((await cardStatus(db, "invented-154")).state).toBe("backlog");
+  });
+
+  it("stores no part of the run when a later event fails its schema", async () => {
+    const emptyNote: TeammateProvider = {
+      name: "invented-empty-note",
+      async work(context) {
+        return { ...(await stubProvider.work(context)), note: "" };
+      },
+    };
+    const before = (await cardLog(db, "invented-154")).length;
+    await expect(runTeammate(db, { teammateId: AI, provider: emptyNote, newId, now })).rejects.toThrow();
     expect(await cardLog(db, "invented-154")).toHaveLength(before);
     expect((await cardStatus(db, "invented-154")).state).toBe("ready");
   });

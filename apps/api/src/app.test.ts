@@ -1,7 +1,7 @@
 // Route tests against an in-memory database loaded with the invented seed.
 // All example data in these tests is invented.
 import { beforeEach, describe, expect, it } from "vitest";
-import { apiError, boardResponse, cardEvent, cardResponse, writeResponse, type CardEvent } from "@workbench/shared";
+import { apiError, boardResponse, cardEvent, cardResponse, teammateRunResponse, writeResponse, type CardEvent } from "@workbench/shared";
 import { createApp } from "./app.ts";
 import { openDb, type Db } from "./db/client.ts";
 import { loadFunctionIds } from "./process.ts";
@@ -306,5 +306,47 @@ describe("GET /api/events", () => {
     ]);
     expect(first.value).toBe(": open\n\n");
     await reader.cancel();
+  });
+});
+
+describe("POST /api/teammates/:id/run", () => {
+  const run = (id: string) => app.request(`/api/teammates/${id}/run`, { method: "POST" });
+
+  it("runs one step: the five events land together, reach SSE clients, and the card waits on its owner", async () => {
+    const r = sseReader(await app.request("/api/events"));
+    const res = await run(AI);
+    expect(res.status).toBe(200);
+    const body = teammateRunResponse.parse(await res.json());
+    expect(body.card.id).toBe("invented-154");
+    expect(body.events.map((e) => e.type)).toEqual(["picked", "status_changed", "report_posted", "asked", "status_changed"]);
+    expect(body.events.every((e) => e.actor === AI)).toBe(true);
+    const asked = body.events[3];
+    if (asked?.type !== "asked") throw new Error("expected asked");
+    expect(body.card.status).toEqual({ state: "needs_input", waiting_on: BE, question_id: asked.question_id });
+
+    const seq = inventedSeed.events.length;
+    const streamed = [];
+    for (let i = 0; i < 5; i++) streamed.push(await r.next());
+    expect(streamed.map((m) => m.id)).toEqual([1, 2, 3, 4, 5].map((n) => String(seq + n)));
+    expect(streamed.map((m) => m.event.id)).toEqual(body.events.map((e) => e.id));
+    await r.close();
+  });
+
+  it("answers 409 when no card is eligible, and appends nothing", async () => {
+    expect((await run(AI)).status).toBe(200);
+    const before = await lastSeq(db);
+    await expectProblem(await run(AI), 409, "conflict", /no card it may pick/);
+    expect(await lastSeq(db)).toBe(before);
+  });
+
+  it("answers 404 for an unknown teammate", async () => {
+    await expectProblem(await run("invented-nobody"), 404, "not_found");
+  });
+
+  it("answers 422 for a teammate that is not an AI, and appends nothing", async () => {
+    const before = await lastSeq(db);
+    await expectProblem(await run(BE), 422, "rule_violation", /not an AI/);
+    expect(await lastSeq(db)).toBe(before);
+    expect((await cardStatus(db, "invented-154")).state).toBe("ready");
   });
 });

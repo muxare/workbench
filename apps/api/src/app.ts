@@ -2,6 +2,8 @@
 // through `appendEvents`, which checks them against the stream; the board,
 // card and question views are queries over the same stream, and
 // `GET /api/events` streams each appended event to every connected client.
+// `POST /api/teammates/:id/run` runs one step of an AI teammate through the
+// same store, so its events reach the stream like any other write.
 // Request and response shapes live in @workbench/shared (api.ts).
 import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
@@ -21,7 +23,9 @@ import {
   type Card,
   type CardEvent,
   type CardResponse,
+  type FunctionFrontMatter,
   type Teammate,
+  type TeammateRunResponse,
   type WriteResponse,
 } from "@workbench/shared";
 import type { Db } from "./db/client.ts";
@@ -40,6 +44,9 @@ import {
   StoreError,
   type StoreErrorCode,
 } from "./store.ts";
+import type { TeammateProvider } from "./teammates/provider.ts";
+import { runTeammate } from "./teammates/runner.ts";
+import { stubProvider } from "./teammates/stubProvider.ts";
 
 export interface AppDeps {
   db: Db;
@@ -49,6 +56,10 @@ export interface AppDeps {
   now?: () => Date;
   /** New card, question and event ids. */
   newId?: () => string;
+  /** What does the AI teammates' work. Defaults to the deterministic stub. */
+  teammateProvider?: TeammateProvider;
+  /** Function definitions for the AI teammate. Defaults to process/functions, read on each run. */
+  definitions?: ReadonlyMap<string, FunctionFrontMatter>;
 }
 
 /** How many of the latest events `GET /board` returns as its log. */
@@ -105,6 +116,7 @@ export function createApp(deps: AppDeps) {
   const { db, functionIds } = deps;
   const now = deps.now ?? (() => new Date());
   const newId = deps.newId ?? randomUUID;
+  const teammateProvider = deps.teammateProvider ?? stubProvider;
 
   async function cardOr404(id: string): Promise<Card> {
     const card = await getCard(db, id);
@@ -262,6 +274,23 @@ export function createApp(deps: AppDeps) {
       return c.json(
         await write(card.id, [{ ...base(card.id, req.actor), type: "status_changed", from: req.from, to: req.to }]),
       );
+    })
+
+    .post("/teammates/:id/run", async (c) => {
+      const id = c.req.param("id");
+      const self = await getTeammate(db, id);
+      if (!self) throw new ApiProblem("not_found", `no teammate '${id}'`);
+      if (self.kind !== "ai") throw new ApiProblem("rule_violation", `${id} is not an AI teammate; only an AI teammate is run`);
+      const run = await runTeammate(db, {
+        teammateId: id,
+        provider: teammateProvider,
+        now,
+        newId,
+        ...(deps.definitions === undefined ? {} : { definitions: deps.definitions }),
+      });
+      if (!run) throw new ApiProblem("conflict", `${id} has no card it may pick`);
+      const response: TeammateRunResponse = { card: await cardOr404(run.card.id), events: run.events };
+      return c.json(response);
     })
 
     .get("/events", async (c) => {
