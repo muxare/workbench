@@ -2,6 +2,12 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-09: The demo is frozen at a tag, and the app moves on to the development loop (with Mikael)
+
+- **The ConCon demo runs from the annotated tag `concon-demo` at `35beb00`**, the commit `docs/demo.md` was last dry-run against. Mikael wants a demo that can be controlled and repeated, but he does not want the product shaped around it. A tag gives both: work on `main` continues freely, and the demo machine checks out the tag. The tag is local until Mikael asks for it to be pushed. Would change if the demo needs a fix, in which case the fix is made on a branch from the tag and the tag is moved.
+- **The next direction is the development loop**: a card on the board is linked to the place where its work happens, someone or the AI does the work there, and the result returns to the board as events, with teammates' approval before the card is done. The workbench so far covers the coordination around the work but not the work itself. The proposal is drawn in the artifact "Workbench Development Loop" (claude.ai, private to Mikael).
+- **GitHub is the first workspace.** Issues were already the planned external source of cards (2026-11-08), and branches, pull requests and reviews supply the events for doing the work, opening it for review and approving it, with little new machinery. Figma and documents follow once the loop holds for code. Would change if the first real project keeps its work outside GitHub.
+
 ## 2026-11-09: The invented seed has a running cycle, Sprint 4, set when the seed runs (with Mikael)
 
 - **Sprint 4 starts at 06:00 UTC two days before the seed runs and lasts two weeks** (`runningCycle` in `apps/api/src/seed/invented.ts`), never starting before Sprint 3 ends on 2026-10-12. Seeded on any day from 2026-11-07 to the morning of 2026-11-18, it holds both the seed day and ConCon, so the AI run, the answer, the mode change and the filter change made on stage all land in the cycle log under the board. This settles the open consequence recorded in the entry below: Mikael chose a running invented cycle over leaving the demo with an ended Sprint 3. Two days rather than more keeps a database seeded a week and a half early usable, and the dates show the cycle as already under way rather than starting on the demo day. Would change if the demo moves, or if a real project replaces the seed with its own cycles.

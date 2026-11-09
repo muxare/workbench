@@ -12,6 +12,8 @@ All data is the invented laundry room project (`examples/laundry-room/`, seeded 
 
 ## Before the talk
 
+The demo runs from the git tag `concon-demo` (set on 2026-11-09 at `35beb00`), so work merged to `main` after that cannot change it. Check it out first with `git checkout concon-demo`.
+
 Run these from the repository root on the demo machine. The default database is `apps/api/data/workbench.db` (relative to `apps/api`, because `pnpm --filter` runs scripts there); the seed refuses a database that already holds teammates, so a fresh demo always starts by deleting it.
 
 ```sh
