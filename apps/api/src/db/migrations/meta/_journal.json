@@ -15,6 +15,13 @@
       "when": 1794214294108,
       "tag": "0001_teammate_role",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794229592154,
+      "tag": "0002_teammate_events",
+      "breakpoints": true
     }
   ]
 }

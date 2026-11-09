@@ -58,8 +58,17 @@ function StepRow({
 }
 
 /** The Profile artboard: a person's chain of steps with a mode per step. */
-export function ProfileView({ teammateId, onChanged }: { teammateId: string; onChanged: (() => void) | undefined }) {
-  const state = useProfile(teammateId, onChanged);
+export function ProfileView({
+  teammateId,
+  onChanged,
+  liveKey,
+}: {
+  teammateId: string;
+  onChanged: (() => void) | undefined;
+  /** Changes when the board's stream brings a mode change for this person (`profileLiveKey`). */
+  liveKey?: string | undefined;
+}) {
+  const state = useProfile(teammateId, onChanged, liveKey);
 
   if (state.phase === "loading") {
     return (

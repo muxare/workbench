@@ -8,13 +8,13 @@ import {
   type FunctionFrontMatter,
   type HumanTeammate,
   type Mode,
-  type Teammate,
+  type StreamEvent,
 } from "@workbench/shared";
 import { createApp } from "./app.ts";
 import { openDb, type Db } from "./db/client.ts";
 import { loadFunctionDefinitions } from "./process.ts";
 import { buildProfile } from "./profile.ts";
-import { getTeammate, lastSeq, seed } from "./store.ts";
+import { boardLog, cardLog, getTeammate, lastSeq, onAppend, profileEvents, seed, type TeammateRecord } from "./store.ts";
 
 const base = [...loadFunctionDefinitions().values()][0];
 if (!base) throw new Error("process/functions holds no function file");
@@ -52,11 +52,13 @@ const fePerson: HumanTeammate = {
   role: "fe",
   process_profile: { polish_widget: "delegate", plan_sprint: "assist", gone_function: "manual" },
 };
-const teammates: Teammate[] = [
-  fePerson,
-  { kind: "human", id: UX, name: "Invented designer", role: "ux", process_profile: {} },
+const teammates: TeammateRecord[] = [
+  { kind: "human", id: FE, name: fePerson.name, role: "fe" },
+  { kind: "human", id: UX, name: "Invented designer", role: "ux" },
   { kind: "ai", id: AI, name: "Invented AI teammate" },
 ];
+/** FE's profile as mode_changed events; gone_function stands for a function file removed since. */
+const feModes = profileEvents(FE, fePerson.process_profile, "2026-11-01T09:00:00Z");
 
 describe("buildProfile", () => {
   const profile = buildProfile(fePerson, definitions);
@@ -107,8 +109,15 @@ describe("profile routes", () => {
   let app: ReturnType<typeof createApp>;
   beforeEach(async () => {
     db = await openDb(":memory:");
-    await seed(db, { teammates, cycles: [], cards: [], events: [] }, new Set(definitions.keys()));
-    app = createApp({ db, functionIds: new Set(definitions.keys()), definitions });
+    await seed(db, { teammates, cycles: [], cards: [], events: feModes }, new Set(definitions.keys()));
+    let n = 0;
+    app = createApp({
+      db,
+      functionIds: new Set(definitions.keys()),
+      definitions,
+      now: () => new Date("2026-11-09T10:00:00Z"),
+      newId: () => `invented-new-${++n}`,
+    });
   });
 
   const setMode = (id: string, payload: unknown) =>
@@ -138,18 +147,70 @@ describe("profile routes", () => {
     await expectProblem(await app.request(`/api/teammates/${AI}/profile`), 422, "rule_violation", /no process profile/);
   });
 
-  it("POST /api/teammates/:id/modes stores the mode, answers with the new profile and appends no event", async () => {
+  it("GET derives the person's modes from their mode_changed events", async () => {
+    const body = teammateProfileResponse.parse(await (await app.request(`/api/teammates/${FE}/profile`)).json());
+    expect(body.teammate.process_profile).toEqual(fePerson.process_profile);
+    expect(body).toEqual(buildProfile(fePerson, definitions));
+  });
+
+  it("POST /api/teammates/:id/modes appends a mode_changed event, answers with the new profile, and reaches the stream", async () => {
+    const streamed: StreamEvent[] = [];
+    const stop = onAppend(db, (s) => streamed.push(s.event));
+    const before = await lastSeq(db);
     const res = await setMode(FE, { actor: FE, function_id: "shape_widget", mode: "delegate" });
+    stop();
     expect(res.status).toBe(200);
     const body = teammateProfileResponse.parse(await res.json());
     expect(body.steps.find((s) => s.function_id === "shape_widget")).toMatchObject({ mode: "delegate", mode_is_default: false, ai_may_pick: false });
     const stored = await getTeammate(db, FE);
     expect(stored?.kind === "human" && stored.process_profile.shape_widget).toBe("delegate");
-    expect(await lastSeq(db)).toBe(0);
+    const event: StreamEvent = {
+      id: "invented-new-1",
+      type: "mode_changed",
+      teammate_id: FE,
+      actor: FE,
+      at: "2026-11-09T10:00:00.000Z",
+      function_id: "shape_widget",
+      from: null,
+      to: "delegate",
+    };
+    expect(await lastSeq(db)).toBe(before + 1);
+    expect((await boardLog(db)).at(-1)).toEqual(event);
+    expect(streamed).toEqual([event]);
   });
 
-  it("POST refuses a mode the function file does not allow", async () => {
+  it("POST records the mode it replaces as `from`, and the latest change wins", async () => {
+    await setMode(FE, { actor: FE, function_id: "polish_widget", mode: "manual" });
+    const body = teammateProfileResponse.parse(await (await setMode(FE, { actor: FE, function_id: "polish_widget", mode: "delegate" })).json());
+    expect(body.steps.find((s) => s.function_id === "polish_widget")).toMatchObject({ mode: "delegate", mode_is_default: false });
+    const changes = (await boardLog(db)).filter((e) => e.type === "mode_changed" && e.function_id === "polish_widget");
+    expect(changes.map((e) => (e.type === "mode_changed" ? [e.from, e.to] : []))).toEqual([
+      [null, "delegate"],
+      ["delegate", "manual"],
+      ["manual", "delegate"],
+    ]);
+  });
+
+  it("POST appends nothing when the mode is already the person's choice, but records choosing the default", async () => {
+    const before = await lastSeq(db);
+    const same = await setMode(FE, { actor: FE, function_id: "polish_widget", mode: "delegate" });
+    expect(same.status).toBe(200);
+    expect(await lastSeq(db)).toBe(before);
+    // shape_widget's default is assist; choosing it makes it the person's own, so later default changes no longer apply.
+    const body = teammateProfileResponse.parse(await (await setMode(FE, { actor: FE, function_id: "shape_widget", mode: "assist" })).json());
+    expect(body.steps.find((s) => s.function_id === "shape_widget")).toMatchObject({ mode: "assist", mode_is_default: false });
+    expect(await lastSeq(db)).toBe(before + 1);
+  });
+
+  it("POST keeps the change out of every card log", async () => {
+    await setMode(FE, { actor: FE, function_id: "shape_widget", mode: "delegate" });
+    expect(await cardLog(db, "invented-any-card")).toEqual([]);
+  });
+
+  it("POST refuses a mode the function file does not allow, and appends nothing", async () => {
+    const before = await lastSeq(db);
     await expectProblem(await setMode(FE, { actor: FE, function_id: "polish_widget", mode: "assist" }), 422, "rule_violation", /allows manual, delegate/);
+    expect(await lastSeq(db)).toBe(before);
   });
 
   it("POST refuses a function that is not in process/", async () => {

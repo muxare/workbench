@@ -3,7 +3,7 @@
 // shows a change to this card: a new event on it or a new status. The card
 // screen therefore needs no stream of its own.
 import { useCallback, useEffect, useState } from "react";
-import type { BoardResponse, CardResponse } from "@workbench/shared";
+import { isCardEvent, type BoardResponse, type CardResponse } from "@workbench/shared";
 import { ApiRequestError, fetchCard } from "../api/client.ts";
 
 export type CardDetailState =
@@ -16,7 +16,7 @@ export type CardDetailState =
  * log and its status. When this changes, the card detail is out of date.
  */
 export function refreshKey(cardId: string, board: BoardResponse): string {
-  const events = board.log.filter((e) => e.card_id === cardId).map((e) => e.id);
+  const events = board.log.filter((e) => isCardEvent(e) && e.card_id === cardId).map((e) => e.id);
   const status = board.cards.find((c) => c.id === cardId)?.status;
   return JSON.stringify([events, status ?? null]);
 }

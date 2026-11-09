@@ -15,15 +15,18 @@
 //   function, and #106 needs a card to depend on.
 // A card's links have no events, so #106 depends on #107 from the start,
 // although the history adds the link only after #106 was picked on 2026-09-29.
-// Each owner has one mode per function, so Alex's manual step (#105) and Pat's
-// delegate step (#104) are recorded in their `picked` events, while the
-// profiles hold the modes of the latest steps.
+// Each person's modes are `mode_changed` events, as in the app: everyone sets
+// the mode of their first step on 2026-09-01, Alex switches refine_ui_spec to
+// manual for #105 and back to assist when it is done, and Pat switches
+// define_api_contract from delegate (#104) to assist before picking #106. The
+// history gives the mode of each step; when exactly each change was made is
+// invented, placed just before the pick that needs it.
 //
 // This is the only module that holds seed data. A real project (the Phase 2
 // run, see docs/decisions.md, 2026-11-08) replaces it by exporting another
 // `SeedData`; nothing else needs to change. Function ids must be names of
 // files in process/functions; `seed()` checks them against process/.
-import type { CardEvent, CardStatus, Mode } from "@workbench/shared";
+import type { CardStatus, Mode, StreamEvent } from "@workbench/shared";
 import type { SeedData } from "../store.ts";
 
 const PO = "invented-po";
@@ -34,8 +37,8 @@ const AI = "invented-ai";
 
 const milestone = "Laundry room service, first version (invented)";
 
-/** A card event without its id, one variant at a time. */
-type NewEvent = CardEvent extends infer E ? (E extends CardEvent ? Omit<E, "id"> : never) : never;
+/** An event without its id, one variant at a time. */
+type NewEvent = StreamEvent extends infer E ? (E extends StreamEvent ? Omit<E, "id"> : never) : never;
 
 /** The states a card can be moved out of without answering a question. */
 type Settled = Exclude<CardStatus, "needs_input" | "done">;
@@ -75,9 +78,21 @@ function pick(card_id: string, actor: string, when: string, mode: Mode): NewEven
   return [{ type: "picked", card_id, actor, at: when, mode }, move(card_id, actor, when, "ready", "in_progress")];
 }
 
+/** A person sets the mode they work a function in; `from` is null when they had not chosen one. */
+function setMode(person: string, when: string, function_id: string, from: Mode | null, to: Mode): NewEvent {
+  return { type: "mode_changed", teammate_id: person, actor: person, at: when, function_id, from, to };
+}
+
 // The history, step by step. Each step's events are in order; the steps
 // overlap in time, so the stream is sorted by time below.
 const steps: NewEvent[][] = [
+  // Before step 1, everyone sets the mode of the first step they own.
+  [
+    setMode(PO, at("09-01", "08:00"), "write_issues", null, "delegate"),
+    setMode(UX, at("09-01", "08:00"), "frame_problem", null, "assist"),
+    setMode(FE, at("09-01", "08:00"), "refine_ui_spec", null, "assist"),
+    setMode(BE, at("09-01", "08:00"), "define_api_contract", null, "delegate"),
+  ],
   // Step 1. frame_problem: Sam (ux), assist, 2026-09-02 to 2026-09-10.
   [
     move("invented-101", PO, at("09-01", "09:00"), "backlog", "ready"),
@@ -317,6 +332,7 @@ const steps: NewEvent[][] = [
 
   // Step 6. refine_ui_spec for I-4 and I-5, faults: Alex (fe), manual, 2026-09-25 to 2026-09-28.
   [
+    setMode(FE, at("09-25", "08:00"), "refine_ui_spec", "assist", "manual"),
     ...pick("invented-105", FE, at("09-25", "08:30"), "manual"),
     report(
       "invented-105",
@@ -348,12 +364,14 @@ const steps: NewEvent[][] = [
     move("invented-105", FE, at("09-28", "10:05"), "in_progress", "review"),
     check("invented-105", FE, at("09-28", "10:30"), "human", true, "Invented: Alex approved; no design question blocks the build."),
     move("invented-105", FE, at("09-28", "10:35"), "review", "done"),
+    setMode(FE, at("09-28", "10:40"), "refine_ui_spec", "manual", "assist"),
   ],
 
   // Step 7. define_api_contract for I-7, fault status: Pat (be), assist, from 2026-09-29.
   // The snapshot ends before Lee's reply on 2026-10-07.
   [
     move("invented-106", PO, at("09-28", "12:00"), "backlog", "ready"),
+    setMode(BE, at("09-29", "08:00"), "define_api_contract", "delegate", "assist"),
     ...pick("invented-106", BE, at("09-29", "08:30"), "assist"),
     report(
       "invented-106",
@@ -378,21 +396,21 @@ const steps: NewEvent[][] = [
 
 let n = 0;
 /** The events in time order, each with the next invented id. */
-const events: CardEvent[] = steps
+const events: StreamEvent[] = steps
   .flat()
   .map((event, index) => ({ event, index }))
   .sort((a, b) => Date.parse(a.event.at) - Date.parse(b.event.at) || a.index - b.index)
   .map(({ event }) => {
     n += 1;
-    return { ...event, id: `invented-e${String(n).padStart(3, "0")}` } as CardEvent;
+    return { ...event, id: `invented-e${String(n).padStart(3, "0")}` } as StreamEvent;
   });
 
 export const inventedSeed: SeedData = {
   teammates: [
-    { kind: "human", id: PO, name: "Robin Example (invented product owner)", role: "po", process_profile: { write_issues: "delegate" } },
-    { kind: "human", id: UX, name: "Sam Example (invented UX designer)", role: "ux", process_profile: { frame_problem: "assist" } },
-    { kind: "human", id: FE, name: "Alex Example (invented frontend developer)", role: "fe", process_profile: { refine_ui_spec: "assist" } },
-    { kind: "human", id: BE, name: "Pat Example (invented backend developer)", role: "be", process_profile: { define_api_contract: "assist" } },
+    { kind: "human", id: PO, name: "Robin Example (invented product owner)", role: "po" },
+    { kind: "human", id: UX, name: "Sam Example (invented UX designer)", role: "ux" },
+    { kind: "human", id: FE, name: "Alex Example (invented frontend developer)", role: "fe" },
+    { kind: "human", id: BE, name: "Pat Example (invented backend developer)", role: "be" },
     { kind: "ai", id: AI, name: "AI teammate (invented)" },
   ],
 

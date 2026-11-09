@@ -1,6 +1,7 @@
 import { useBoard } from "./api/useBoard.ts";
 import { BoardView } from "./board/BoardView.tsx";
 import { ProfileView } from "./profile/ProfileView.tsx";
+import { profileLiveKey } from "./profile/liveKey.ts";
 import { CardDetailView } from "./card/CardDetailView.tsx";
 import { useRoute } from "./route.ts";
 
@@ -9,7 +10,14 @@ export function App() {
   const route = useRoute();
 
   if (route.view === "teammate") {
-    return <ProfileView teammateId={route.teammateId} onChanged={state.phase === "ready" ? state.refresh : undefined} />;
+    const ready = state.phase === "ready";
+    return (
+      <ProfileView
+        teammateId={route.teammateId}
+        onChanged={ready ? state.refresh : undefined}
+        liveKey={profileLiveKey(route.teammateId, ready ? state.board : undefined)}
+      />
+    );
   }
 
   if (state.phase === "loading") {

@@ -12,6 +12,7 @@ import {
   humanTeammate,
   mode,
   question,
+  streamEvent,
   teammate,
   teammateId,
   type CardStatus,
@@ -86,12 +87,16 @@ export type MoveStatusRequest = z.infer<typeof moveStatusRequest>;
 /** A question rebuilt from its `asked` and `answered` events. */
 export const questionView = question;
 
-/** `GET /board`. `last_seq` is where to start the event stream (`GET /events?after=`). */
+/**
+ * `GET /board`. `last_seq` is where to start the event stream (`GET /events?after=`).
+ * The log is the board log: card and teammate events alike. Each teammate's
+ * `process_profile` is derived from their `mode_changed` events.
+ */
 export const boardResponse = z.object({
   cards: z.array(card),
   teammates: z.array(teammate),
   open_questions: z.array(questionView),
-  log: z.array(cardEvent),
+  log: z.array(streamEvent),
   last_seq: z.number().int().nonnegative(),
 });
 export type BoardResponse = z.infer<typeof boardResponse>;
@@ -167,7 +172,9 @@ export type TeammateProfileResponse = z.infer<typeof teammateProfileResponse>;
  * `POST /teammates/:id/modes`: a person sets the mode they work one step in.
  * The mode must be in the function's `modes.allowed`, and only the person may
  * change their own profile, since there is no sign-in yet to say who is
- * asking. The answer is the profile as it now stands.
+ * asking. A change appends a `mode_changed` event, which reaches every board
+ * over `GET /events`; setting the mode the person has already chosen appends
+ * nothing. The answer is the profile as it now stands.
  */
 export const setModeRequest = z.strictObject({ actor: teammateId, function_id: functionId, mode });
 export type SetModeRequest = z.infer<typeof setModeRequest>;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CardEvent, CardResponse, FunctionFrontMatter } from "@workbench/shared";
+import { isCardEvent, type CardEvent, type CardResponse, type FunctionFrontMatter } from "@workbench/shared";
 import { AI, BE, card, PO, testBoard, UX } from "../board/testBoard.ts";
 import {
   actorText,
@@ -57,7 +57,7 @@ function detail(over: Partial<CardResponse> = {}): CardResponse {
   const board = testBoard();
   return {
     card: board.cards.find((c) => c.id === "c-151")!,
-    log: board.log.filter((e) => e.card_id === "c-151"),
+    log: board.log.filter(isCardEvent).filter((e) => e.card_id === "c-151"),
     questions: board.open_questions.filter((q) => q.card_id === "c-151"),
     function: fn,
     ...over,

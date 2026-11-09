@@ -36,11 +36,11 @@ checks/         # Python validator, until ported to packages/shared
 ## Domain model
 
 - **Teammate**: `kind` is `human` or `ai`. A human has a role (`po`, `ux`, `fe` or `be`) and a process profile.
-- **Process profile**: a mode (`manual`, `assist`, `delegate`) for each function the person owns. The AI works on a step in the mode of the step's owner.
+- **Process profile**: a mode (`manual`, `assist`, `delegate`) for each function the person owns. The AI works on a step in the mode of the step's owner. It is derived from the person's `mode_changed` events, not stored; a function with no such event is worked in its `modes.default`.
 - **Card**: id, title, function (from `process/functions/`), owner, status, milestone, links to other cards.
 - **Status**: `backlog`, `ready`, `in_progress`, `needs_input`, `review`, `done`. `needs_input` carries `waiting_on` (a teammate, human or AI) and the open question.
 - **Question**: asked by, asked of, card, text, why it blocks, answer, decided by. Answers go into the card's decision log; tacit knowledge goes into `writes_back` proposals.
-- **Event**: picked, asked, answered, check_ran, status_changed, report_posted. Append-only. A card's current status is derived from its `status_changed` events rather than stored.
+- **Event**: append-only, with a subject that is a card, a teammate or the team. Card events (`card_id`): picked, asked, answered, check_ran, status_changed, report_posted. Teammate events (`teammate_id`): mode_changed. A card's current status is derived from its `status_changed` events rather than stored, as a person's process profile is from their `mode_changed` events.
 - **Cycle**: a named time window on the board, such as a sprint. The cycle log is the events that fall inside it.
 
 ## Logs are views of one event stream

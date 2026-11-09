@@ -1,5 +1,6 @@
-// The cycle log under the board: one line per event, newest first.
-import type { BoardResponse, CardEvent } from "@workbench/shared";
+// The cycle log under the board: one line per event, newest first. Events
+// about a card and events about a teammate, such as a mode change, share it.
+import type { BoardResponse, StreamEvent } from "@workbench/shared";
 import { columnLabel } from "./columns.ts";
 import { modeLabel } from "./modes.ts";
 import { cardRef, labelOf } from "./teammates.ts";
@@ -14,8 +15,13 @@ export function formatTime(at: string, timeZone?: string): string {
   }).format(new Date(at));
 }
 
-export function describeEvent(e: CardEvent, board: BoardResponse): string {
+export function describeEvent(e: StreamEvent, board: BoardResponse): string {
   const who = labelOf(board, e.actor);
+  if (e.type === "mode_changed") {
+    const whose = e.teammate_id === e.actor ? "their" : `${labelOf(board, e.teammate_id)}'s`;
+    const was = e.from === null ? "the default" : modeLabel[e.from];
+    return `${who} changed ${whose} mode for ${e.function_id} to ${modeLabel[e.to]} · was: ${was}`;
+  }
   const card = cardRef(e.card_id);
   switch (e.type) {
     case "picked":

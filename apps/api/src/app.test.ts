@@ -1,11 +1,12 @@
 // Route tests against an in-memory database loaded with the invented seed.
 // All example data in these tests is invented.
 import { beforeEach, describe, expect, it } from "vitest";
-import { apiError, boardResponse, cardEvent, cardResponse, teammateRunResponse, writeResponse, type CardEvent } from "@workbench/shared";
+import { apiError, boardResponse, cardResponse, streamEvent, teammateRunResponse, writeResponse, type StreamEvent } from "@workbench/shared";
 import { createApp } from "./app.ts";
 import { openDb, type Db } from "./db/client.ts";
 import { loadFunctionDefinitions, loadFunctionIds } from "./process.ts";
 import { inventedSeed } from "./seed/invented.ts";
+import { withProfile } from "./seed/withProfile.ts";
 import { appendEvent, cardStatus, lastSeq, seed, type SeedData } from "./store.ts";
 
 const functionIds = loadFunctionIds();
@@ -178,10 +179,7 @@ describe("POST /api/cards/:id/pick", () => {
   describe("when the owner has no mode of their own for the function", () => {
     /** The app over the invented seed with FE's process profile replaced. */
     async function withFeProfile(profile: Record<string, "manual" | "assist" | "delegate">) {
-      const data: SeedData = {
-        ...inventedSeed,
-        teammates: inventedSeed.teammates.map((t) => (t.id === FE && t.kind === "human" ? { ...t, process_profile: profile } : t)),
-      };
+      const data: SeedData = withProfile(inventedSeed, FE, profile);
       const fresh = await openDb(":memory:");
       await seed(fresh, data, functionIds);
       return createApp({ db: fresh, functionIds, definitions, now: () => new Date("2026-11-07T10:00:00Z") });
@@ -307,7 +305,7 @@ function sseReader(res: Response) {
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
   return {
-    async next(timeoutMs = 2000): Promise<{ id: string; event: CardEvent }> {
+    async next(timeoutMs = 2000): Promise<{ id: string; event: StreamEvent }> {
       const deadline = Date.now() + timeoutMs;
       for (;;) {
         const end = buffer.indexOf("\n\n");
@@ -321,7 +319,7 @@ function sseReader(res: Response) {
               .filter((l) => l.startsWith(`${name}: `))
               .map((l) => l.slice(name.length + 2))
               .join("\n");
-          return { id: field("id"), event: cardEvent.parse(JSON.parse(field("data"))) };
+          return { id: field("id"), event: streamEvent.parse(JSON.parse(field("data"))) };
         }
         const left = deadline - Date.now();
         if (left <= 0) throw new Error("no SSE message in time");
@@ -439,5 +437,45 @@ describe("POST /api/teammates/:id/run", () => {
     await expectProblem(await run(BE), 422, "rule_violation", /not an AI/);
     expect(await lastSeq(db)).toBe(before);
     expect((await cardStatus(db, "invented-108")).state).toBe("ready");
+  });
+});
+
+describe("mode changes as teammate events", () => {
+  /** Alex (FE) owns #108, a Ready refine_ui_spec card, and works refine_ui_spec in assist. */
+  const setFeMode = (mode: string) => post(`/api/teammates/${FE}/modes`, { actor: FE, function_id: "refine_ui_spec", mode });
+
+  it("the board shows the change in its log and in the person's derived profile", async () => {
+    expect((await setFeMode("manual")).status).toBe(200);
+    const board = boardResponse.parse(await (await app.request("/api/board")).json());
+    const fe = board.teammates.find((t) => t.id === FE);
+    expect(fe?.kind === "human" && fe.process_profile).toEqual({ refine_ui_spec: "manual" });
+    expect(board.log.at(-1)).toMatchObject({ type: "mode_changed", teammate_id: FE, function_id: "refine_ui_spec", from: "assist", to: "manual" });
+    expect(board.last_seq).toBe(inventedSeed.events.length + 1);
+  });
+
+  it("reaches SSE clients like a card event", async () => {
+    const r = sseReader(await app.request("/api/events"));
+    await setFeMode("manual");
+    const message = await r.next();
+    expect(message.id).toBe(String(inventedSeed.events.length + 1));
+    expect(message.event).toMatchObject({ type: "mode_changed", teammate_id: FE, actor: FE, from: "assist", to: "manual" });
+    await r.close();
+  });
+
+  it("is what a pick uses: the owner's latest mode", async () => {
+    await setFeMode("manual");
+    const res = await post("/api/cards/invented-108/pick", { actor: FE });
+    expect(res.status).toBe(200);
+    const body = writeResponse.parse(await res.json());
+    expect(body.events[0]).toMatchObject({ type: "picked", mode: "manual" });
+  });
+
+  it("is what the AI's eligibility uses: no card once the owner stops working in assist, and one again after", async () => {
+    await setFeMode("manual");
+    await expectProblem(await app.request(`/api/teammates/${AI}/run`, { method: "POST" }), 409, "conflict", /no card it may pick/);
+    await setFeMode("assist");
+    const res = await app.request(`/api/teammates/${AI}/run`, { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(teammateRunResponse.parse(await res.json()).card.id).toBe("invented-108");
   });
 });
