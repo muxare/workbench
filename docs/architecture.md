@@ -45,7 +45,7 @@ checks/         # Python validator, until ported to packages/shared
 
 ## Logs are views of one event stream
 
-The card log, the board log and the cycle log are three queries over the same events. Store events, not three logs. The lines between teammates on the board come from open questions plus who is working on which card. The learning layer (phase 5) reads the same events.
+The card log, the board log and the cycle log are three queries over the same events. Store events, not three logs. Changes to how the team works, such as a person's mode for a step, are events in the same stream, and each log has a filter, set by its users, over which event types it shows (decided 2026-11-09). The lines between teammates on the board come from open questions plus who is working on which card. The learning layer (phase 5) reads the same events.
 
 ## Cards and external trackers
 

@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-09: Every change is an event, and each log chooses which events it shows (with Mikael)
+
+- **A change to how the team works is an event, like a change to a card.** That covers a person's mode for a step first (`mode_changed`), and from now on any setting people change in the app: profile settings, roles, and later the "Bring me in when" and AI-pick choices the profile artboard draws. Nothing is changed in place without an event saying who changed what, from what, and when. The current setting is derived from the events, as a card's status already is. The reason is the one behind the event store: the demo and the learning layer are about who decided what, and a change that leaves no trace cannot be shown or learned from.
+- **Events are no longer only card events.** A teammate or team event has no `card_id`, so the stream needs a subject that can be a card, a teammate or the team. The card, board and cycle logs stay queries over that one stream.
+- **What a log shows is configurable by its users.** Each log (card, board, cycle, and a teammate's own) has a filter over event types, so a team can, for example, keep mode changes out of the board log but show them in the cycle log. The filter is a view setting; it never hides an event from the store or from the learning layer. Changing a filter is itself a setting change, so it is recorded as an event too.
+- **Open for the build:** whether a filter is set per person or per team, and the defaults. The first build will use one team-wide filter per log with every event type shown, and record the choice in this file.
+- What would change it: event volume making the logs or the stream slow. Then the answer is better queries or snapshots, not settings stored in place.
+
 ## 2026-11-09: Card detail and the answer flow (by Claude)
 
 - **`GET /api/cards/:id` now returns the card's function front matter as `function`, or null when `process/` no longer defines it.** The Card artboard shows who opens, asks, writes and decides, what the card reads and writes, and who signs off, and all of that is in the function file. Sending it with the card keeps the rule that the app never hardcodes a function's fields, and costs one field rather than a new endpoint. It is read from `process/functions` on each request, as the AI teammate's run already does, so an edited function file shows without a restart. Would change if the teammate profile needs every function at once; then a `GET /api/functions` would serve both screens.
