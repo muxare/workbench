@@ -2,6 +2,13 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-09: How the laundry room example is laid out (by Claude)
+
+- **The example lives in `examples/laundry-room/`**, with the four external artifacts, `history.md` as the answer key and a `README.md` with the cast and a table from each stress point to the step where it lands. The cooperative is Birchview Housing Cooperative (invented).
+- **The team keeps the first names of the existing invented seed** (Robin po, Sam ux, Alex fe, Pat be), so the rebuilt seed and the board tell the same story without renaming. The stakeholders are Morgan (board chair), Kim (residents' representative) and Lee (caretaker, outside the team), all "Example" surnames so nobody mistakes them for real people.
+- **The external artifacts are written as they stood when the project started on 2026-09-01.** Proposals accepted during the project are told in the history, not applied to the files, so a run starts from the same inputs the team had. A list-shaped artifact puts its rows under one key (`goals:` in `business_goals`), as `success_criteria` does with `criteria:` in `docs/runs.md`.
+- **Gaps found while writing it are listed in the example's README, not fixed in `process/`**: `refine_ui_spec` cannot propose a change to `constraints`, the example has no `domain_rules` although `define_api_contract` requires it, a card cannot wait on someone outside the team, open proposals are invisible to later steps, and `business_goals` cannot say whose goal is whose. Phase 2 decides which of them matter. Would change if Mikael wants any of them fixed before ConCon.
+
 ## 2026-11-09: An invented example project for development and the demo (with Mikael)
 
 - **The workbench gets one invented example project, a housing cooperative's laundry room booking and fault reporting, to develop and demo against.** The current seed is a set of unrelated cards (onboarding, invites, account recovery) with no shared client, brief or goal, so the chain never runs end to end on it. One coherent project gives every function real inputs. Because it is invented, it can be committed and shown at ConCon on 2026-11-18. The domain also matches the "repeat calls about the same fault" example already in `docs/runs.md`, and the caretaker who owns the fault data gives the backend a real dependency.
