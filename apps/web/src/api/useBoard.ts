@@ -28,7 +28,7 @@ export type BoardState =
       phase: "ready";
       board: BoardResponse;
       connection: BoardConnection;
-      /** Refetch the board, for a change that reaches no event stream, such as a person's modes. */
+      /** Refetch the board now. Changes reach it over the stream; this is for a caller that wants it sooner. */
       refresh: () => void;
     };
 

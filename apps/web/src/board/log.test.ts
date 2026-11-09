@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeEvent, formatTime, logLines } from "./log.ts";
+import { BOARD_PANEL_LOG, describeEvent, formatTime, logLines } from "./log.ts";
 import { testBoard } from "./testBoard.ts";
 
 const board = testBoard();
@@ -24,6 +24,33 @@ describe("describeEvent", () => {
       describeEvent({ id: "a", type: "answered", card_id: "c-151", actor: "t-be", at: "2026-11-06T09:50:00Z", question_id: "q-151", answer: "Invented: a cursor." }, board),
     ).toBe("BE answered on #151: Invented: a cursor.");
   });
+
+  it("describes a mode change, which has no card", () => {
+    const change = { id: "m", type: "mode_changed", teammate_id: "t-be", actor: "t-be", at: "2026-11-06T09:55:00Z", function_id: "define_api_contract" } as const;
+    expect(describeEvent({ ...change, from: "delegate", to: "assist" }, board)).toBe(
+      "BE changed their mode for define_api_contract to AI assists · was: AI does it",
+    );
+    expect(describeEvent({ ...change, actor: "t-ux", from: null, to: "manual" }, board)).toBe(
+      "UX changed BE's mode for define_api_contract to I do it · was: the default",
+    );
+  });
+
+  it("describes a filter change, which is about the team", () => {
+    const change = { id: "f", type: "log_filter_changed", actor: "t-po", at: "2026-11-06T09:56:00Z", log: "board" } as const;
+    expect(describeEvent({ ...change, hidden: ["mode_changed", "report_posted"], was_hidden: [] }, board)).toBe(
+      "PO changed the board log filter · now hides mode_changed, report_posted",
+    );
+    expect(describeEvent({ ...change, log: "card", hidden: [], was_hidden: ["picked"] }, board)).toBe(
+      "PO changed the card log filter · now shows every event type",
+    );
+  });
+
+  it("lists a mode change in the log among card events", () => {
+    const withChange = testBoard({
+      log: [...board.log, { id: "m", type: "mode_changed", teammate_id: "t-be", actor: "t-be", at: "2026-11-06T09:55:00Z", function_id: "define_api_contract", from: "delegate", to: "assist" }],
+    });
+    expect(logLines(withChange, "UTC")[0]).toMatchObject({ id: "m", time: "09:55", text: expect.stringContaining("changed their mode") });
+  });
 });
 
 describe("logLines", () => {
@@ -34,5 +61,11 @@ describe("logLines", () => {
   });
   it("is empty for an empty log", () => {
     expect(logLines(testBoard({ log: [] }))).toEqual([]);
+  });
+  it("takes the board log's filter, not another log's, and leaves the board's own log whole", () => {
+    const filtered = testBoard({ log_filters: { ...board.log_filters, board: ["picked", "status_changed"], cycle: ["asked"], card: ["asked"] } });
+    expect(BOARD_PANEL_LOG).toBe("board");
+    expect(logLines(filtered, "UTC").map((l) => l.id)).toEqual(["e7", "e4", "e3"]);
+    expect(filtered.log).toHaveLength(board.log.length);
   });
 });

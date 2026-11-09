@@ -4,14 +4,18 @@
 import { z } from "zod";
 import { functionFrontMatter, functionRole } from "./functionFile.ts";
 import {
+  aiTeammate,
   card,
   cardEvent,
   cardLink,
   cardStatus,
   functionId,
+  hiddenEventTypes,
   humanTeammate,
+  logFilters,
   mode,
   question,
+  streamEvent,
   teammate,
   teammateId,
   type CardStatus,
@@ -86,15 +90,40 @@ export type MoveStatusRequest = z.infer<typeof moveStatusRequest>;
 /** A question rebuilt from its `asked` and `answered` events. */
 export const questionView = question;
 
-/** `GET /board`. `last_seq` is where to start the event stream (`GET /events?after=`). */
+/**
+ * `GET /board`. `last_seq` is where to start the event stream (`GET /events?after=`).
+ * The log is the board log: card, teammate and team events alike, unfiltered.
+ * Each teammate's `process_profile` is derived from their `mode_changed`
+ * events. `log_filters` is the team's filter for each log, derived from the
+ * `log_filter_changed` events; the screens apply it where they show a log,
+ * because the log here is also what the board follows the stream with.
+ */
 export const boardResponse = z.object({
   cards: z.array(card),
   teammates: z.array(teammate),
   open_questions: z.array(questionView),
-  log: z.array(cardEvent),
+  log: z.array(streamEvent),
+  log_filters: logFilters,
   last_seq: z.number().int().nonnegative(),
 });
 export type BoardResponse = z.infer<typeof boardResponse>;
+
+/**
+ * `POST /logs/:log/filter`: a person sets the event types one log hides for
+ * the whole team. `hidden` is the whole set, in any order; an empty list shows
+ * everything. `was_hidden` is the set the person's view showed as hidden when
+ * they made the change; if the log hides something else by now, someone
+ * changed it in between and the request is refused with 409, so two browsers
+ * cannot silently overwrite each other. The actor must be a person. A change
+ * appends one `log_filter_changed` event, which reaches every board over
+ * `GET /events`; asking for the filter the log already has appends nothing.
+ * The answer is every log's filter as it now stands.
+ */
+export const setLogFilterRequest = z.strictObject({ actor: teammateId, hidden: hiddenEventTypes, was_hidden: hiddenEventTypes });
+export type SetLogFilterRequest = z.infer<typeof setLogFilterRequest>;
+
+export const logFiltersResponse = z.object({ log_filters: logFilters });
+export type LogFiltersResponse = z.infer<typeof logFiltersResponse>;
 
 /**
  * `GET /cards/:id`. `function` is the front matter of the card's function as
@@ -164,10 +193,76 @@ export const teammateProfileResponse = z.object({
 export type TeammateProfileResponse = z.infer<typeof teammateProfileResponse>;
 
 /**
+ * How one person's mode for a step decides whether the AI teammate may work
+ * it. `mode` is the person's mode for the function (their choice, or the
+ * function's default); `reason` says why the AI may not pick, and is null when
+ * it may.
+ */
+export const aiStepOwner = z.object({
+  teammate_id: teammateId,
+  mode,
+  ai_may_pick: z.boolean(),
+  reason: z.string().min(1).nullable(),
+});
+export type AiStepOwner = z.infer<typeof aiStepOwner>;
+
+/**
+ * One function on an AI teammate's profile: what process/functions says about
+ * it, and, for each person who owns cards on it, whether the AI may pick those
+ * cards. The people are those whose own profile lists the step (the same
+ * rule as `GET /teammates/:id/profile`), then anyone else who owns a card on it.
+ */
+export const aiProfileStep = z.object({
+  function_id: functionId,
+  role: functionRole,
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  owners: z.array(aiStepOwner),
+});
+export type AiProfileStep = z.infer<typeof aiProfileStep>;
+
+/** A card on an AI teammate's profile, with the mode it is or would be worked in. */
+export const aiProfileCard = z.object({ card, mode });
+export type AiProfileCard = z.infer<typeof aiProfileCard>;
+
+/**
+ * `GET /teammates/:id/profile` for an AI teammate. The same route answers a
+ * person with `teammateProfileResponse`; `teammate.kind` tells them apart.
+ * An AI teammate has no modes of its own: it works in the mode each owner
+ * set, so its steps are derived from the people's modes, the function files
+ * and the eligibility rules the runner uses.
+ *
+ * - `works_in`: the modes this teammate can work in at all.
+ * - `provider`: what does its work ("stub" until a model is plugged in).
+ * - `timer`: the interval it runs on by itself, or null when it runs only on
+ *   `POST /teammates/:id/run`.
+ * - `now`: cards it picked that are in progress, waiting for input or in review.
+ * - `next`: Ready cards it may pick, in the order a run takes them.
+ * - `not_next`: Ready cards it may not pick, and why.
+ * - `questions`: questions it asked, open ones first, then the latest first.
+ * - `recent`: its latest events, newest first.
+ */
+export const aiTeammateProfileResponse = z.object({
+  teammate: aiTeammate,
+  works_in: z.array(mode),
+  provider: z.string().min(1),
+  timer: z.object({ interval_ms: z.number().int().positive() }).nullable(),
+  steps: z.array(aiProfileStep),
+  now: z.array(aiProfileCard),
+  next: z.array(aiProfileCard),
+  not_next: z.array(z.object({ card, reason: z.string().min(1) })),
+  questions: z.array(questionView),
+  recent: z.array(cardEvent),
+});
+export type AiTeammateProfileResponse = z.infer<typeof aiTeammateProfileResponse>;
+
+/**
  * `POST /teammates/:id/modes`: a person sets the mode they work one step in.
  * The mode must be in the function's `modes.allowed`, and only the person may
  * change their own profile, since there is no sign-in yet to say who is
- * asking. The answer is the profile as it now stands.
+ * asking. A change appends a `mode_changed` event, which reaches every board
+ * over `GET /events`; setting the mode the person has already chosen appends
+ * nothing. The answer is the profile as it now stands.
  */
 export const setModeRequest = z.strictObject({ actor: teammateId, function_id: functionId, mode });
 export type SetModeRequest = z.infer<typeof setModeRequest>;

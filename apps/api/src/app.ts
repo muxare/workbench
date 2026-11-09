@@ -4,10 +4,15 @@
 // `GET /api/events` streams each appended event to every connected client.
 // `POST /api/teammates/:id/run` runs one step of an AI teammate through the
 // same store, so its events reach the stream like any other write.
-// The one write that appends no event is `POST /api/teammates/:id/modes`: a
-// person's process profile is their current setting, not part of a card's
-// history, so it is updated in place. `GET /api/teammates/:id/profile` reads
-// the person's chain of steps from process/functions on each request.
+// `POST /api/teammates/:id/modes` appends a `mode_changed` event about the
+// person, and a person's process profile is derived from those events, so a
+// mode change reaches the logs and the stream like a card change.
+// `POST /api/logs/:log/filter` appends a `log_filter_changed` event about the
+// team, and each log's filter is derived from those events; the API never
+// applies a filter to what it returns, because a filter is a view setting.
+// `GET /api/teammates/:id/profile` reads the person's chain of steps from
+// process/functions on each request; for an AI teammate it answers a
+// separate, derived profile (aiProfile.ts).
 // Request and response shapes live in @workbench/shared (api.ts).
 import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
@@ -15,15 +20,21 @@ import { z } from "zod";
 import {
   answerRequest,
   askRequest,
+  cardEvent,
   cardStatus,
   createCardRequest,
   isManualMove,
+  logName,
+  normalizeEventTypes,
   moveStatusRequest,
   pickRequest,
+  sameEventTypes,
+  setLogFilterRequest,
   setModeRequest,
   unfinishedDependencies,
   type HumanTeammate,
   type TeammateProfileResponse,
+  type AiTeammateProfileResponse,
   type ApiError,
   type ApiErrorCode,
   type BoardResponse,
@@ -31,12 +42,14 @@ import {
   type CardEvent,
   type CardResponse,
   type FunctionFrontMatter,
+  type LogFiltersResponse,
   type Teammate,
   type TeammateRunResponse,
   type WriteResponse,
 } from "@workbench/shared";
 import type { Db } from "./db/client.ts";
 import { loadFunctionDefinitions } from "./process.ts";
+import { buildAiProfile } from "./aiProfile.ts";
 import { buildProfile } from "./profile.ts";
 import { eventStream, startingPoint } from "./sse.ts";
 import {
@@ -50,7 +63,7 @@ import {
   listCards,
   listQuestions,
   listTeammates,
-  setProcessProfileMode,
+  logFilters,
   StoreError,
   type StoreErrorCode,
 } from "./store.ts";
@@ -74,6 +87,8 @@ export interface AppDeps {
    * process/functions, read on each run and each card request.
    */
   definitions?: ReadonlyMap<string, FunctionFrontMatter>;
+  /** The optional timer (TEAMMATE_INTERVAL_MS) and the AI teammate it runs, for that teammate's profile. */
+  teammateTimer?: { teammateId: string; intervalMs: number };
 }
 
 /** How many of the latest events `GET /board` returns as its log. */
@@ -158,7 +173,7 @@ export function createApp(deps: AppDeps) {
   /** Append the events, then answer with the card as it now stands. */
   async function write(cardId: string, events: CardEvent[]): Promise<WriteResponse> {
     const stored = await appendEvents(db, events);
-    return { card: await cardOr404(cardId), events: stored.map((s) => s.event) };
+    return { card: await cardOr404(cardId), events: stored.map((s) => cardEvent.parse(s.event)) };
   }
 
   const base = (cardId: string, actor: string) => ({ id: newId(), card_id: cardId, actor, at: now().toISOString() });
@@ -173,6 +188,7 @@ export function createApp(deps: AppDeps) {
         teammates: await listTeammates(db),
         open_questions: (await listQuestions(db)).filter((q) => q.answer === undefined),
         log: await boardLog(db, { limit: BOARD_LOG_LIMIT }),
+        log_filters: await logFilters(db),
         last_seq: await lastSeq(db),
       };
       return c.json(response);
@@ -308,7 +324,18 @@ export function createApp(deps: AppDeps) {
     })
 
     .get("/teammates/:id/profile", async (c) => {
-      const person = await personOr404(c.req.param("id"));
+      const id = c.req.param("id");
+      const self = await getTeammate(db, id);
+      if (self?.kind === "ai") {
+        const timer = deps.teammateTimer?.teammateId === self.id ? deps.teammateTimer.intervalMs : undefined;
+        const response: AiTeammateProfileResponse = await buildAiProfile(db, self, {
+          definitions: definitions(),
+          provider: teammateProvider.name,
+          timerIntervalMs: timer,
+        });
+        return c.json(response);
+      }
+      const person = await personOr404(id);
       const response: TeammateProfileResponse = buildProfile(person, definitions());
       return c.json(response);
     })
@@ -329,9 +356,48 @@ export function createApp(deps: AppDeps) {
           `${req.function_id} allows ${definition.modes.allowed.join(", ")}, not ${req.mode}`,
         );
       }
-      const updated = await setProcessProfileMode(db, person.id, req.function_id, req.mode);
-      if (updated.kind !== "human") throw new ApiProblem("rule_violation", `${person.id} is not a person`);
-      const response: TeammateProfileResponse = buildProfile(updated, defs);
+      // Setting the mode the person has already chosen changes nothing, so it records nothing.
+      const from = person.process_profile[req.function_id] ?? null;
+      if (from !== req.mode) {
+        await appendEvents(db, [
+          {
+            id: newId(),
+            type: "mode_changed",
+            teammate_id: person.id,
+            actor: req.actor,
+            at: now().toISOString(),
+            function_id: req.function_id,
+            from,
+            to: req.mode,
+          },
+        ]);
+      }
+      const response: TeammateProfileResponse = buildProfile(await personOr404(person.id), defs);
+      return c.json(response);
+    })
+
+    .post("/logs/:log/filter", async (c) => {
+      const log = logName.safeParse(c.req.param("log"));
+      if (!log.success) throw new ApiProblem("not_found", `no log '${c.req.param("log")}'; the logs are ${logName.options.join(", ")}`);
+      const req = await body(c, setLogFilterRequest);
+      const actor = await teammateOr422(req.actor, "actor");
+      if (actor.kind !== "human") throw new ApiProblem("forbidden", `a log's filter is set by a person, not ${actor.id}`);
+      // Asking for the filter the log already has changes nothing, so it records nothing.
+      // Otherwise `was_hidden` is what the caller saw; the store refuses it with 409 if the log has moved on.
+      if (!sameEventTypes((await logFilters(db))[log.data], req.hidden)) {
+        await appendEvents(db, [
+          {
+            id: newId(),
+            type: "log_filter_changed",
+            actor: actor.id,
+            at: now().toISOString(),
+            log: log.data,
+            hidden: normalizeEventTypes(req.hidden),
+            was_hidden: normalizeEventTypes(req.was_hidden),
+          },
+        ]);
+      }
+      const response: LogFiltersResponse = { log_filters: await logFilters(db) };
       return c.json(response);
     })
 

@@ -1,11 +1,22 @@
 // Route tests against an in-memory database loaded with the invented seed.
 // All example data in these tests is invented.
 import { beforeEach, describe, expect, it } from "vitest";
-import { apiError, boardResponse, cardEvent, cardResponse, teammateRunResponse, writeResponse, type CardEvent } from "@workbench/shared";
+import {
+  apiError,
+  boardResponse,
+  cardResponse,
+  logFiltersResponse,
+  streamEvent,
+  streamEventType,
+  teammateRunResponse,
+  writeResponse,
+  type StreamEvent,
+} from "@workbench/shared";
 import { createApp } from "./app.ts";
 import { openDb, type Db } from "./db/client.ts";
 import { loadFunctionDefinitions, loadFunctionIds } from "./process.ts";
 import { inventedSeed } from "./seed/invented.ts";
+import { withProfile } from "./seed/withProfile.ts";
 import { appendEvent, cardStatus, lastSeq, seed, type SeedData } from "./store.ts";
 
 const functionIds = loadFunctionIds();
@@ -178,10 +189,7 @@ describe("POST /api/cards/:id/pick", () => {
   describe("when the owner has no mode of their own for the function", () => {
     /** The app over the invented seed with FE's process profile replaced. */
     async function withFeProfile(profile: Record<string, "manual" | "assist" | "delegate">) {
-      const data: SeedData = {
-        ...inventedSeed,
-        teammates: inventedSeed.teammates.map((t) => (t.id === FE && t.kind === "human" ? { ...t, process_profile: profile } : t)),
-      };
+      const data: SeedData = withProfile(inventedSeed, FE, profile);
       const fresh = await openDb(":memory:");
       await seed(fresh, data, functionIds);
       return createApp({ db: fresh, functionIds, definitions, now: () => new Date("2026-11-07T10:00:00Z") });
@@ -307,7 +315,7 @@ function sseReader(res: Response) {
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
   return {
-    async next(timeoutMs = 2000): Promise<{ id: string; event: CardEvent }> {
+    async next(timeoutMs = 2000): Promise<{ id: string; event: StreamEvent }> {
       const deadline = Date.now() + timeoutMs;
       for (;;) {
         const end = buffer.indexOf("\n\n");
@@ -321,7 +329,7 @@ function sseReader(res: Response) {
               .filter((l) => l.startsWith(`${name}: `))
               .map((l) => l.slice(name.length + 2))
               .join("\n");
-          return { id: field("id"), event: cardEvent.parse(JSON.parse(field("data"))) };
+          return { id: field("id"), event: streamEvent.parse(JSON.parse(field("data"))) };
         }
         const left = deadline - Date.now();
         if (left <= 0) throw new Error("no SSE message in time");
@@ -439,5 +447,158 @@ describe("POST /api/teammates/:id/run", () => {
     await expectProblem(await run(BE), 422, "rule_violation", /not an AI/);
     expect(await lastSeq(db)).toBe(before);
     expect((await cardStatus(db, "invented-108")).state).toBe("ready");
+  });
+});
+
+describe("mode changes as teammate events", () => {
+  /** Alex (FE) owns #108, a Ready refine_ui_spec card, and works refine_ui_spec in assist. */
+  const setFeMode = (mode: string) => post(`/api/teammates/${FE}/modes`, { actor: FE, function_id: "refine_ui_spec", mode });
+
+  it("the board shows the change in its log and in the person's derived profile", async () => {
+    expect((await setFeMode("manual")).status).toBe(200);
+    const board = boardResponse.parse(await (await app.request("/api/board")).json());
+    const fe = board.teammates.find((t) => t.id === FE);
+    expect(fe?.kind === "human" && fe.process_profile).toEqual({ refine_ui_spec: "manual" });
+    expect(board.log.at(-1)).toMatchObject({ type: "mode_changed", teammate_id: FE, function_id: "refine_ui_spec", from: "assist", to: "manual" });
+    expect(board.last_seq).toBe(inventedSeed.events.length + 1);
+  });
+
+  it("reaches SSE clients like a card event", async () => {
+    const r = sseReader(await app.request("/api/events"));
+    await setFeMode("manual");
+    const message = await r.next();
+    expect(message.id).toBe(String(inventedSeed.events.length + 1));
+    expect(message.event).toMatchObject({ type: "mode_changed", teammate_id: FE, actor: FE, from: "assist", to: "manual" });
+    await r.close();
+  });
+
+  it("is what a pick uses: the owner's latest mode", async () => {
+    await setFeMode("manual");
+    const res = await post("/api/cards/invented-108/pick", { actor: FE });
+    expect(res.status).toBe(200);
+    const body = writeResponse.parse(await res.json());
+    expect(body.events[0]).toMatchObject({ type: "picked", mode: "manual" });
+  });
+
+  it("is what the AI's eligibility uses: no card once the owner stops working in assist, and one again after", async () => {
+    await setFeMode("manual");
+    await expectProblem(await app.request(`/api/teammates/${AI}/run`, { method: "POST" }), 409, "conflict", /no card it may pick/);
+    await setFeMode("assist");
+    const res = await app.request(`/api/teammates/${AI}/run`, { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(teammateRunResponse.parse(await res.json()).card.id).toBe("invented-108");
+  });
+});
+
+describe("POST /api/logs/:log/filter", () => {
+  const board = async () => boardResponse.parse(await (await app.request("/api/board")).json());
+  /** A change made from an up-to-date view, unless `wasHidden` says what a (possibly stale) view showed. */
+  const setFilter = async (log: string, actor: string, hidden: unknown, wasHidden?: unknown) => {
+    const current = wasHidden ?? (await board()).log_filters[log as "board"] ?? [];
+    return post(`/api/logs/${log}/filter`, { actor, hidden, was_hidden: current });
+  };
+
+  it("every log shows every event type until someone changes its filter", async () => {
+    expect((await board()).log_filters).toEqual({ card: [], board: [], cycle: [], teammate: [] });
+  });
+
+  it("refuses a change made from a stale view with 409, so two browsers cannot overwrite each other", async () => {
+    // Both browsers show the board log hiding nothing.
+    const first = await setFilter("board", UX, ["picked"], []);
+    expect(first.status).toBe(200);
+    await expectProblem(await setFilter("board", BE, ["asked"], []), 409, "conflict", /hides picked, not nothing/);
+    // Asking for a set equal to what the stale view saw is refused too, rather than undoing the other change.
+    await expectProblem(await setFilter("board", BE, [], []), 409, "conflict");
+    expect((await board()).log_filters.board).toEqual(["picked"]);
+    expect(await lastSeq(db)).toBe(inventedSeed.events.length + 1);
+    // Reloaded, the second browser's change goes through on top of the first.
+    expect((await setFilter("board", BE, ["picked", "asked"], ["picked"])).status).toBe(200);
+    expect((await board()).log_filters.board).toEqual(["picked", "asked"]);
+  });
+
+  it("appends nothing when a stale view asks for what the log already hides", async () => {
+    await setFilter("board", UX, ["picked"], []);
+    expect((await setFilter("board", BE, ["picked"], [])).status).toBe(200);
+    expect(await lastSeq(db)).toBe(inventedSeed.events.length + 1);
+  });
+
+  it("appends one team event and answers with every log's filter", async () => {
+    const res = await setFilter("board", UX, ["mode_changed", "report_posted"]);
+    expect(res.status).toBe(200);
+    const body = logFiltersResponse.parse(await res.json());
+    // Stored in schema order, whatever order the request gave.
+    expect(body.log_filters).toEqual({ card: [], board: ["report_posted", "mode_changed"], cycle: [], teammate: [] });
+    const after = await board();
+    expect(after.log_filters).toEqual(body.log_filters);
+    expect(after.log.at(-1)).toEqual({
+      id: "invented-new-1",
+      type: "log_filter_changed",
+      actor: UX,
+      at: "2026-11-07T10:00:00.000Z",
+      log: "board",
+      hidden: ["report_posted", "mode_changed"],
+      was_hidden: [],
+    });
+    expect(after.last_seq).toBe(inventedSeed.events.length + 1);
+  });
+
+  it("never filters what the API returns: the board log, the card log and the stream keep every event", async () => {
+    await setFilter("board", UX, ["status_changed", "mode_changed"]);
+    await setFilter("card", UX, ["status_changed"]);
+    const after = await board();
+    const expected = [...inventedSeed.events.map((e) => e.id), "invented-new-1", "invented-new-2"].slice(-50);
+    expect(after.log.map((e) => e.id)).toEqual(expected);
+    const card = cardResponse.parse(await (await app.request("/api/cards/invented-106")).json());
+    expect(card.log.some((e) => e.type === "status_changed")).toBe(true);
+    const r = sseReader(await app.request("/api/events?after=0"));
+    expect((await r.next()).event.id).toBe(inventedSeed.events[0]!.id);
+    await r.close();
+  });
+
+  it("does not change what the AI teammate reads", async () => {
+    await setFilter("board", PO, streamEventType.options);
+    await setFilter("teammate", PO, streamEventType.options);
+    const res = await app.request(`/api/teammates/${AI}/run`, { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(teammateRunResponse.parse(await res.json()).card.id).toBe("invented-108");
+  });
+
+  it("reaches SSE clients like any other event", async () => {
+    const r = sseReader(await app.request("/api/events"));
+    await setFilter("cycle", BE, ["picked"]);
+    const message = await r.next();
+    expect(message.id).toBe(String(inventedSeed.events.length + 1));
+    expect(message.event).toMatchObject({ type: "log_filter_changed", log: "cycle", hidden: ["picked"], was_hidden: [] });
+    await r.close();
+  });
+
+  it("appends nothing when the log already has that filter, in any order", async () => {
+    await setFilter("board", UX, ["picked", "asked"]);
+    const res = await setFilter("board", PO, ["asked", "picked"]);
+    expect(res.status).toBe(200);
+    expect(await lastSeq(db)).toBe(inventedSeed.events.length + 1);
+    expect((await setFilter("card", PO, [])).status).toBe(200);
+    expect(await lastSeq(db)).toBe(inventedSeed.events.length + 1);
+  });
+
+  it("shows everything again when every type is shown, recording what was hidden", async () => {
+    await setFilter("board", UX, ["picked"]);
+    await setFilter("board", FE, []);
+    const after = await board();
+    expect(after.log_filters.board).toEqual([]);
+    expect(after.log.at(-1)).toMatchObject({ actor: FE, hidden: [], was_hidden: ["picked"] });
+  });
+
+  it("refuses an AI actor with 403, an unknown actor with 422 and an unknown log with 404, appending nothing", async () => {
+    await expectProblem(await setFilter("board", AI, ["picked"]), 403, "forbidden", /set by a person/);
+    await expectProblem(await setFilter("board", "invented-nobody", ["picked"]), 422, "rule_violation");
+    await expectProblem(await setFilter("sprint", UX, ["picked"]), 404, "not_found", /no log 'sprint'/);
+    expect(await lastSeq(db)).toBe(inventedSeed.events.length);
+  });
+
+  it("refuses an unknown event type, a type listed twice and an unknown field with 400", async () => {
+    await expectProblem(await setFilter("board", UX, ["comment_added"]), 400, "invalid_request");
+    await expectProblem(await setFilter("board", UX, ["picked", "picked"]), 400, "invalid_request");
+    await expectProblem(await post("/api/logs/board/filter", { actor: UX, hidden: [], extra: 1 }), 400, "invalid_request");
   });
 });

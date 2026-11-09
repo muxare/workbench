@@ -2,6 +2,7 @@ import type { BoardResponse, CardResponse } from "@workbench/shared";
 import type { BoardConnection } from "../api/useBoard.ts";
 import { columnLabel } from "../board/columns.ts";
 import { ConnectionIndicator } from "../board/ConnectionIndicator.tsx";
+import { LogFilter } from "../board/LogFilter.tsx";
 import { cardRef, labelOf } from "../board/teammates.ts";
 import { boardHref, cardHref } from "../route.ts";
 import {
@@ -31,7 +32,17 @@ function Breadcrumb({ trail }: { trail?: string }) {
 }
 
 /** The Card artboard: one card, its open question, how it is worked, checks, log and linked work. */
-export function CardDetailView({ cardId, board, connection }: { cardId: string; board: BoardResponse; connection: BoardConnection }) {
+export function CardDetailView({
+  cardId,
+  board,
+  connection,
+  onFilterChanged,
+}: {
+  cardId: string;
+  board: BoardResponse;
+  connection: BoardConnection;
+  onFilterChanged?: (() => void) | undefined;
+}) {
   const state = useCardDetail(cardId, board);
 
   if (state.phase === "loading") {
@@ -62,7 +73,9 @@ export function CardDetailView({ cardId, board, connection }: { cardId: string; 
     );
   }
 
-  return <Detail detail={state.detail} board={board} connection={connection} reload={state.reload} />;
+  return (
+    <Detail detail={state.detail} board={board} connection={connection} reload={state.reload} onFilterChanged={onFilterChanged} />
+  );
 }
 
 function Detail({
@@ -70,11 +83,13 @@ function Detail({
   board,
   connection,
   reload,
+  onFilterChanged,
 }: {
   detail: CardResponse;
   board: BoardResponse;
   connection: BoardConnection;
   reload: () => void;
+  onFilterChanged: (() => void) | undefined;
 }) {
   const { card, function: fn } = detail;
   const owner = longLabel(board, card.owner);
@@ -186,11 +201,16 @@ function Detail({
 
         <aside className="detail__side">
           <section className="panel" aria-labelledby="log-head">
-            <h2 id="log-head" className="panel__title">
-              Card log
-            </h2>
+            <div className="panel__row">
+              <h2 id="log-head" className="panel__title">
+                Card log
+              </h2>
+              <LogFilter log="card" board={board} onChanged={onFilterChanged} />
+            </div>
             {log.length === 0 ? (
-              <p className="detail__meta">Nothing has happened on this card yet.</p>
+              <p className="detail__meta">
+                {detail.log.length === 0 ? "Nothing has happened on this card yet." : "The filter hides every event on this card."}
+              </p>
             ) : (
               <ol className="card-log">
                 {log.map((l) => (

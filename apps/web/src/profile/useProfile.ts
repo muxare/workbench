@@ -1,9 +1,12 @@
 // A person's profile from the API, and setting the mode of one step. A change
 // is shown once the API has stored it and answered with the new profile; the
 // step's buttons are busy meanwhile, so a failed change never looks saved.
-import { useCallback, useEffect, useState } from "react";
+// A change made anywhere else arrives as a `mode_changed` event on the board's
+// stream; `liveKey` (profileLiveKey) then changes and the profile is reloaded.
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Mode, TeammateProfileResponse } from "@workbench/shared";
 import { ApiRequestError, fetchProfile, setMode } from "../api/client.ts";
+import { followLiveKey } from "./liveKey.ts";
 
 export type ProfileState =
   | { phase: "loading" }
@@ -24,7 +27,7 @@ function reasonOf(err: unknown, fallback: string): string {
 }
 
 /** `onChanged` runs after a change is stored, so the board can refresh its mode counts. */
-export function useProfile(teammateId: string, onChanged: (() => void) | undefined): ProfileState {
+export function useProfile(teammateId: string, onChanged: (() => void) | undefined, liveKey?: string): ProfileState {
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   const [profile, setProfile] = useState<TeammateProfileResponse | undefined>();
@@ -42,6 +45,19 @@ export function useProfile(teammateId: string, onChanged: (() => void) | undefin
     });
     return () => abort.abort();
   }, [teammateId, attempt]);
+
+  // Reload in place, keeping the profile shown, when the stream brings a mode change for this person.
+  const seenKey = useRef(liveKey);
+  useEffect(() => {
+    const next = followLiveKey(seenKey.current, liveKey);
+    seenKey.current = next.seen;
+    if (!next.reload) return;
+    const abort = new AbortController();
+    fetchProfile(teammateId, abort.signal).then(setProfile, () => {
+      // Keep the profile shown; the next change on the stream tries again.
+    });
+    return () => abort.abort();
+  }, [teammateId, liveKey]);
 
   const choose = useCallback(
     (functionId: string, mode: Mode) => {

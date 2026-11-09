@@ -1,8 +1,14 @@
 // The pure half of `useBoard`: how a streamed event and a refetched board are
 // merged into the board the UI shows, and when a refetch starts. Card status
 // is derived from events on the server, so this module never folds events
-// into cards; it only keeps the log current between refetches.
-import { cardEvent, type BoardResponse, type CardEvent } from "@workbench/shared";
+// into cards; it keeps the log current between refetches. A `mode_changed`
+// event is folded into its teammate's process profile at once, as the server
+// derives it, so the board's mode pills and counts follow it without a refetch.
+// A `log_filter_changed` event replaces its log's filter at once in the same
+// way, so a filter changed in another browser applies here as soon as it
+// streams in. The filter only decides what a log shows; the log kept here
+// holds every event, hidden or not.
+import { streamEvent, type BoardResponse, type StreamEvent } from "@workbench/shared";
 
 /** The API's `GET /board` log length (BOARD_LOG_LIMIT in apps/api/src/app.ts). */
 export const BOARD_LOG_LIMIT = 50;
@@ -10,7 +16,7 @@ export const BOARD_LOG_LIMIT = 50;
 /** One message from `GET /api/events`: the event and its stream position (the SSE `id`). */
 export interface LiveEvent {
   seq: number;
-  event: CardEvent;
+  event: StreamEvent;
 }
 
 /**
@@ -39,15 +45,35 @@ export function parseStreamMessage(data: string, lastEventId: string): LiveEvent
   } catch {
     return undefined;
   }
-  const parsed = cardEvent.safeParse(raw);
+  const parsed = streamEvent.safeParse(raw);
   return parsed.success ? { seq: Number(lastEventId), event: parsed.data } : undefined;
+}
+
+/** The teammates with a `mode_changed` event applied: the latest change for a function wins. */
+function applyToTeammates(teammates: BoardResponse["teammates"], e: StreamEvent): BoardResponse["teammates"] {
+  if (e.type !== "mode_changed") return teammates;
+  return teammates.map((t) =>
+    t.id === e.teammate_id && t.kind === "human" ? { ...t, process_profile: { ...t.process_profile, [e.function_id]: e.to } } : t,
+  );
+}
+
+/** The filters with a `log_filter_changed` event applied: the latest change for a log wins. */
+function applyToFilters(filters: BoardResponse["log_filters"], e: StreamEvent): BoardResponse["log_filters"] {
+  if (e.type !== "log_filter_changed") return filters;
+  return { ...filters, [e.log]: e.hidden };
 }
 
 function appendToBoard(board: BoardResponse, live: LiveEvent): BoardResponse {
   if (live.seq <= board.last_seq) return board;
   if (board.log.some((e) => e.id === live.event.id)) return { ...board, last_seq: live.seq };
   const log = [...board.log, live.event];
-  return { ...board, log: log.slice(-BOARD_LOG_LIMIT), last_seq: live.seq };
+  return {
+    ...board,
+    teammates: applyToTeammates(board.teammates, live.event),
+    log_filters: applyToFilters(board.log_filters, live.event),
+    log: log.slice(-BOARD_LOG_LIMIT),
+    last_seq: live.seq,
+  };
 }
 
 /**

@@ -7,7 +7,15 @@ import { ConnectionIndicator } from "./ConnectionIndicator.tsx";
 import { CycleLog } from "./CycleLog.tsx";
 
 /** The board panel: header with milestone progress, six columns, the cycle log. */
-export function Board({ board, connection }: { board: BoardResponse; connection: BoardConnection }) {
+export function Board({
+  board,
+  connection,
+  onFilterChanged,
+}: {
+  board: BoardResponse;
+  connection: BoardConnection;
+  onFilterChanged?: (() => void) | undefined;
+}) {
   const progress = milestoneProgress(board.cards);
   return (
     <section className="board" aria-label="Team board">
@@ -33,7 +41,7 @@ export function Board({ board, connection }: { board: BoardResponse; connection:
           <BoardColumn key={col.status} board={board} column={col} />
         ))}
       </div>
-      <CycleLog board={board} />
+      <CycleLog board={board} onFilterChanged={onFilterChanged} />
     </section>
   );
 }

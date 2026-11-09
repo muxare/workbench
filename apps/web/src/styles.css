@@ -808,6 +808,125 @@ a:hover {
   cursor: pointer;
 }
 
+.cycle-log__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+/*
+ * A log's filter. No artboard draws it, so it borrows the cycle log's mono
+ * label and the panels' surface, line and radius, and stays closed until asked.
+ */
+
+.log-filter {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.log-filter__summary {
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+}
+.log-filter__summary::-webkit-details-marker {
+  display: none;
+}
+.log-filter__summary::after {
+  content: " ▾";
+}
+.log-filter[open] .log-filter__summary::after {
+  content: " ▴";
+}
+.log-filter__summary:hover,
+.log-filter__summary:focus-visible {
+  color: var(--fg);
+}
+
+.log-filter__body {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 2;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px var(--board-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.log-filter__types {
+  margin: 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.log-filter__types[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+.log-filter__legend {
+  padding: 0 0 4px;
+  font-family: var(--font-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.log-filter__type {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.log-filter__type input {
+  margin: 0;
+  accent-color: var(--fg);
+}
+
+.log-filter__as {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--font-text);
+  font-size: 12.5px;
+}
+.log-filter__as select {
+  width: 100%;
+  max-width: 260px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.log-filter__status {
+  font-family: var(--font-text);
+  font-size: 12.5px;
+}
+.log-filter__failure {
+  font-family: var(--font-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
 @media (max-width: 720px) {
   .page {
     padding: 32px 16px;

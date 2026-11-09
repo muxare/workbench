@@ -4,6 +4,7 @@ import type { FunctionFrontMatter } from "@workbench/shared";
 import { openDb, type Db } from "../db/client.ts";
 import { loadFunctionDefinitions, loadFunctionIds } from "../process.ts";
 import { inventedSeed } from "../seed/invented.ts";
+import { withProfile } from "../seed/withProfile.ts";
 import { appendEvent, cardLog, cardStatus, seed, StoreError, type SeedData } from "../store.ts";
 import type { TeammateProvider } from "./provider.ts";
 import { eligibleCards, runTeammate, TeammateRefusal } from "./runner.ts";
@@ -29,12 +30,9 @@ function withFunction(name: string, change: (fm: FunctionFrontMatter) => Functio
   return copy;
 }
 
-/** The invented seed with one teammate's profile replaced. */
+/** The invented seed with one teammate's profile replaced (their mode_changed events). */
 function seedWithProfile(id: string, profile: Record<string, "manual" | "assist" | "delegate">): SeedData {
-  return {
-    ...inventedSeed,
-    teammates: inventedSeed.teammates.map((t) => (t.id === id && t.kind === "human" ? { ...t, process_profile: profile } : t)),
-  };
+  return withProfile(inventedSeed, id, profile);
 }
 
 async function freshDb(data: SeedData = inventedSeed): Promise<Db> {
