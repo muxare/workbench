@@ -3,11 +3,13 @@
 // here instead of rendering half a board. Paths are relative: Vite proxies
 // `/api` to the API in development.
 import {
+  aiTeammateProfileResponse,
   apiError,
   boardResponse,
   cardResponse,
   teammateProfileResponse,
   writeResponse,
+  type AiTeammateProfileResponse,
   type AnswerRequest,
   type ApiErrorCode,
   type BoardResponse,
@@ -83,6 +85,16 @@ export async function fetchProfile(teammateId: string, signal?: AbortSignal): Pr
 /** `POST /api/teammates/:id/modes`: the person sets the mode for one step; answers with the new profile. */
 export async function setMode(teammateId: string, request: SetModeRequest): Promise<TeammateProfileResponse> {
   return parseProfile(await postJson(`/teammates/${encodeURIComponent(teammateId)}/modes`, request));
+}
+
+/**
+ * `GET /api/teammates/:id/profile` for an AI teammate: the same route as a
+ * person's profile, answered in the AI teammate's own shape.
+ */
+export async function fetchAiProfile(teammateId: string, signal?: AbortSignal): Promise<AiTeammateProfileResponse> {
+  const parsed = aiTeammateProfileResponse.safeParse(await getJson(`/teammates/${encodeURIComponent(teammateId)}/profile`, signal));
+  if (!parsed.success) throw new ApiRequestError("bad_response", "the AI teammate's profile from the API does not match the shared schema");
+  return parsed.data;
 }
 
 function parseProfile(body: unknown): TeammateProfileResponse {

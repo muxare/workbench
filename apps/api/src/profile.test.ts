@@ -133,9 +133,9 @@ describe("profile routes", () => {
     expect(body.steps.map((s) => [s.function_id, s.mode, s.mode_is_default])).toEqual([["design_widget", "assist", true]]);
   });
 
-  it("GET answers 404 for an unknown teammate and 422 for an AI teammate", async () => {
+  // An AI teammate's profile has its own shape; see aiProfile.test.ts.
+  it("GET answers 404 for an unknown teammate", async () => {
     await expectProblem(await app.request("/api/teammates/invented-nobody/profile"), 404, "not_found");
-    await expectProblem(await app.request(`/api/teammates/${AI}/profile`), 422, "rule_violation", /no process profile/);
   });
 
   it("POST /api/teammates/:id/modes stores the mode, answers with the new profile and appends no event", async () => {

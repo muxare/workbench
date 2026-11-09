@@ -1,5 +1,7 @@
 import { useBoard } from "./api/useBoard.ts";
 import { BoardView } from "./board/BoardView.tsx";
+import { findTeammate } from "./board/teammates.ts";
+import { AiProfileView } from "./profile/AiProfileView.tsx";
 import { ProfileView } from "./profile/ProfileView.tsx";
 import { CardDetailView } from "./card/CardDetailView.tsx";
 import { useRoute } from "./route.ts";
@@ -8,8 +10,15 @@ export function App() {
   const state = useBoard();
   const route = useRoute();
 
+  // An AI teammate's profile has its own shape and screen, and follows the
+  // live board, so it waits for the board; a person's profile does not.
   if (route.view === "teammate") {
-    return <ProfileView teammateId={route.teammateId} onChanged={state.phase === "ready" ? state.refresh : undefined} />;
+    if (state.phase === "ready" && findTeammate(state.board, route.teammateId)?.kind === "ai") {
+      return <AiProfileView teammateId={route.teammateId} board={state.board} />;
+    }
+    if (state.phase !== "loading") {
+      return <ProfileView teammateId={route.teammateId} onChanged={state.phase === "ready" ? state.refresh : undefined} />;
+    }
   }
 
   if (state.phase === "loading") {

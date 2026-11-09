@@ -7,7 +7,8 @@
 // The one write that appends no event is `POST /api/teammates/:id/modes`: a
 // person's process profile is their current setting, not part of a card's
 // history, so it is updated in place. `GET /api/teammates/:id/profile` reads
-// the person's chain of steps from process/functions on each request.
+// the person's chain of steps from process/functions on each request; for an
+// AI teammate it answers a separate, derived profile (aiProfile.ts).
 // Request and response shapes live in @workbench/shared (api.ts).
 import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
@@ -24,6 +25,7 @@ import {
   unfinishedDependencies,
   type HumanTeammate,
   type TeammateProfileResponse,
+  type AiTeammateProfileResponse,
   type ApiError,
   type ApiErrorCode,
   type BoardResponse,
@@ -37,6 +39,7 @@ import {
 } from "@workbench/shared";
 import type { Db } from "./db/client.ts";
 import { loadFunctionDefinitions } from "./process.ts";
+import { buildAiProfile } from "./aiProfile.ts";
 import { buildProfile } from "./profile.ts";
 import { eventStream, startingPoint } from "./sse.ts";
 import {
@@ -74,6 +77,8 @@ export interface AppDeps {
    * process/functions, read on each run and each card request.
    */
   definitions?: ReadonlyMap<string, FunctionFrontMatter>;
+  /** The optional timer (TEAMMATE_INTERVAL_MS) and the AI teammate it runs, for that teammate's profile. */
+  teammateTimer?: { teammateId: string; intervalMs: number };
 }
 
 /** How many of the latest events `GET /board` returns as its log. */
@@ -308,7 +313,18 @@ export function createApp(deps: AppDeps) {
     })
 
     .get("/teammates/:id/profile", async (c) => {
-      const person = await personOr404(c.req.param("id"));
+      const id = c.req.param("id");
+      const self = await getTeammate(db, id);
+      if (self?.kind === "ai") {
+        const timer = deps.teammateTimer?.teammateId === self.id ? deps.teammateTimer.intervalMs : undefined;
+        const response: AiTeammateProfileResponse = await buildAiProfile(db, self, {
+          definitions: definitions(),
+          provider: teammateProvider.name,
+          timerIntervalMs: timer,
+        });
+        return c.json(response);
+      }
+      const person = await personOr404(id);
       const response: TeammateProfileResponse = buildProfile(person, definitions());
       return c.json(response);
     })

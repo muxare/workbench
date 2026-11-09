@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { functionFrontMatter, functionRole } from "./functionFile.ts";
 import {
+  aiTeammate,
   card,
   cardEvent,
   cardLink,
@@ -162,6 +163,70 @@ export const teammateProfileResponse = z.object({
   unknown_functions: z.array(functionId),
 });
 export type TeammateProfileResponse = z.infer<typeof teammateProfileResponse>;
+
+/**
+ * How one person's mode for a step decides whether the AI teammate may work
+ * it. `mode` is the person's mode for the function (their choice, or the
+ * function's default); `reason` says why the AI may not pick, and is null when
+ * it may.
+ */
+export const aiStepOwner = z.object({
+  teammate_id: teammateId,
+  mode,
+  ai_may_pick: z.boolean(),
+  reason: z.string().min(1).nullable(),
+});
+export type AiStepOwner = z.infer<typeof aiStepOwner>;
+
+/**
+ * One function on an AI teammate's profile: what process/functions says about
+ * it, and, for each person who owns cards on it, whether the AI may pick those
+ * cards. The people are those whose role is the function's role, or every
+ * person for a `team` function.
+ */
+export const aiProfileStep = z.object({
+  function_id: functionId,
+  role: functionRole,
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  owners: z.array(aiStepOwner),
+});
+export type AiProfileStep = z.infer<typeof aiProfileStep>;
+
+/** A card on an AI teammate's profile, with the mode it is or would be worked in. */
+export const aiProfileCard = z.object({ card, mode });
+export type AiProfileCard = z.infer<typeof aiProfileCard>;
+
+/**
+ * `GET /teammates/:id/profile` for an AI teammate. The same route answers a
+ * person with `teammateProfileResponse`; `teammate.kind` tells them apart.
+ * An AI teammate has no modes of its own: it works in the mode each owner
+ * set, so its steps are derived from the people's modes, the function files
+ * and the eligibility rules the runner uses.
+ *
+ * - `works_in`: the modes this teammate can work in at all.
+ * - `provider`: what does its work ("stub" until a model is plugged in).
+ * - `timer`: the interval it runs on by itself, or null when it runs only on
+ *   `POST /teammates/:id/run`.
+ * - `now`: cards it picked that are in progress, waiting for input or in review.
+ * - `next`: Ready cards it may pick, in the order a run takes them.
+ * - `not_next`: Ready cards it may not pick, and why.
+ * - `questions`: questions it asked, open ones first, then the latest first.
+ * - `recent`: its latest events, newest first.
+ */
+export const aiTeammateProfileResponse = z.object({
+  teammate: aiTeammate,
+  works_in: z.array(mode),
+  provider: z.string().min(1),
+  timer: z.object({ interval_ms: z.number().int().positive() }).nullable(),
+  steps: z.array(aiProfileStep),
+  now: z.array(aiProfileCard),
+  next: z.array(aiProfileCard),
+  not_next: z.array(z.object({ card, reason: z.string().min(1) })),
+  questions: z.array(questionView),
+  recent: z.array(cardEvent),
+});
+export type AiTeammateProfileResponse = z.infer<typeof aiTeammateProfileResponse>;
 
 /**
  * `POST /teammates/:id/modes`: a person sets the mode they work one step in.
