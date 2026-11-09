@@ -1,7 +1,7 @@
 // INVENTED test data: the steps, cards and questions below are made up for
 // the test and name no real function file, client or project.
 import { describe, expect, it } from "vitest";
-import type { AiTeammateProfileResponse } from "@workbench/shared";
+import type { AiTeammateProfileResponse, CardEvent } from "@workbench/shared";
 import { AI, BE, PO, UX, card, testBoard } from "../board/testBoard.ts";
 import {
   aiProfileRefreshKey,
@@ -144,11 +144,30 @@ describe("questionItems and recentLines", () => {
 });
 
 describe("aiProfileRefreshKey", () => {
-  it("changes with a new event and with a changed teammate, not otherwise", () => {
-    const key = aiProfileRefreshKey(board);
-    expect(aiProfileRefreshKey(testBoard())).toBe(key);
-    expect(aiProfileRefreshKey(testBoard({ last_seq: board.last_seq + 1 }))).not.toBe(key);
+  const key = aiProfileRefreshKey(board, AI);
+  const withEvent = (e: CardEvent) => testBoard({ log: [...board.log, e], last_seq: board.last_seq + 1 });
+  const base = { card_id: "c-142", at: "2026-11-06T10:00:00Z" };
+
+  it("stays the same for the same board", () => {
+    expect(aiProfileRefreshKey(testBoard(), AI)).toBe(key);
+  });
+
+  it("changes with a teammate, a card's status or owner, a pick, a question, an answer and any event of the AI's", () => {
     const teammates = board.teammates.map((t) => (t.kind === "human" && t.id === UX ? { ...t, process_profile: {} } : t));
-    expect(aiProfileRefreshKey(testBoard({ teammates }))).not.toBe(key);
+    expect(aiProfileRefreshKey(testBoard({ teammates }), AI)).not.toBe(key);
+    const moved = board.cards.map((c) => (c.id === "c-142" ? { ...c, status: { state: "review" as const } } : c));
+    expect(aiProfileRefreshKey(testBoard({ cards: moved }), AI)).not.toBe(key);
+    const handed = board.cards.map((c) => (c.id === "c-142" ? { ...c, owner: BE } : c));
+    expect(aiProfileRefreshKey(testBoard({ cards: handed }), AI)).not.toBe(key);
+    expect(aiProfileRefreshKey(withEvent({ ...base, id: "n1", actor: UX, type: "picked", mode: "manual" }), AI)).not.toBe(key);
+    expect(aiProfileRefreshKey(withEvent({ ...base, id: "n2", actor: BE, type: "answered", question_id: "q-151", answer: "Invented." }), AI)).not.toBe(key);
+    expect(aiProfileRefreshKey(withEvent({ ...base, id: "n3", actor: AI, type: "report_posted", text: "Invented." }), AI)).not.toBe(key);
+  });
+
+  it("ignores a check or a report by someone else", () => {
+    expect(
+      aiProfileRefreshKey(withEvent({ ...base, id: "n4", actor: UX, type: "check_ran", check: "structural", passed: true, summary: "Invented." }), AI),
+    ).toBe(key);
+    expect(aiProfileRefreshKey(withEvent({ ...base, id: "n5", actor: UX, type: "report_posted", text: "Invented." }), AI)).toBe(key);
   });
 });

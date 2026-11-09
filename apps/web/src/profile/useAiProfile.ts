@@ -1,7 +1,7 @@
 // The AI teammate's profile from the API, kept current like card detail: it
 // loads again whenever the live board (which follows the SSE stream in
-// `useBoard`) shows a new event or a changed teammate, so it needs no stream
-// of its own.
+// `useBoard`) shows a change the profile is built from (`aiProfileRefreshKey`),
+// so it needs no stream of its own.
 import { useCallback, useEffect, useState } from "react";
 import type { AiTeammateProfileResponse, BoardResponse } from "@workbench/shared";
 import { ApiRequestError, fetchAiProfile } from "../api/client.ts";
@@ -13,7 +13,7 @@ export type AiProfileState =
   | { phase: "ready"; profile: AiTeammateProfileResponse };
 
 export function useAiProfile(teammateId: string, board: BoardResponse): AiProfileState {
-  const key = aiProfileRefreshKey(board);
+  const key = aiProfileRefreshKey(board, teammateId);
   const [reloads, setReloads] = useState(0);
   const retry = useCallback(() => setReloads((n) => n + 1), []);
   const [state, setState] = useState<AiProfileState>({ phase: "loading" });

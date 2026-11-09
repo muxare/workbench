@@ -174,9 +174,18 @@ export function recentLines(profile: AiTeammateProfileResponse, board: BoardResp
 }
 
 /**
- * When the profile is out of date: a new event on the board's stream, or a
- * change to the teammates (a person's mode decides where the AI may pick).
+ * When the profile is out of date. Only what the profile is built from counts:
+ * each card's status and owner (which cards are Ready, in hand or done, and
+ * whose mode applies), the teammates (a person's mode decides where the AI
+ * may pick), every pick, question and answer (who has a card, what the AI
+ * asked and how it was answered), and every event of the AI's own. A check or
+ * a report by someone else changes nothing on the profile, so it does not
+ * cause a refetch.
  */
-export function aiProfileRefreshKey(board: BoardResponse): string {
-  return JSON.stringify([board.last_seq, board.teammates]);
+export function aiProfileRefreshKey(board: BoardResponse, aiId: string): string {
+  const cards = board.cards.map((c) => [c.id, c.owner, c.status]);
+  const events = board.log
+    .filter((e) => e.actor === aiId || e.type === "picked" || e.type === "asked" || e.type === "answered")
+    .map((e) => e.id);
+  return JSON.stringify([cards, board.teammates, events]);
 }

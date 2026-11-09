@@ -17,6 +17,7 @@ import type {
   Teammate,
 } from "@workbench/shared";
 import type { Db } from "./db/client.ts";
+import { chainOf } from "./profile.ts";
 import { boardLog, listCards, listQuestions, listTeammates } from "./store.ts";
 import { ownerMode, TEAMMATE_MODES, workableMode, type HumanTeammate } from "./teammates/eligibility.ts";
 import { eligibleCards } from "./teammates/runner.ts";
@@ -27,9 +28,22 @@ export const RECENT_LIMIT = 10;
 /** Statuses in which a card the AI picked is still being worked. */
 const ACTIVE: readonly CardStatus[] = ["in_progress", "needs_input", "review"];
 
-/** The people who own cards on `definition`: its role's people, or everyone for a `team` function. */
-function ownersOf(definition: FunctionFrontMatter, people: readonly HumanTeammate[]): HumanTeammate[] {
-  return definition.role === "team" ? [...people] : people.filter((p) => p.role === definition.role);
+/**
+ * The people who own `definition`: everyone whose own profile lists it
+ * (`chainOf`, the rule the person's profile uses), then anyone else who owns
+ * a card on it, since eligibility reads the mode of `card.owner`.
+ */
+function ownersOf(
+  definition: FunctionFrontMatter,
+  people: readonly HumanTeammate[],
+  definitions: ReadonlyMap<string, FunctionFrontMatter>,
+  cards: readonly Card[],
+): HumanTeammate[] {
+  const listed = people.filter((p) => chainOf(p, definitions).some((d) => d.name === definition.name));
+  const byCard = people.filter(
+    (p) => !listed.includes(p) && cards.some((c) => c.function_id === definition.name && c.owner === p.id),
+  );
+  return [...listed, ...byCard];
 }
 
 /**
@@ -40,6 +54,7 @@ function ownersOf(definition: FunctionFrontMatter, people: readonly HumanTeammat
 export function aiSteps(
   definitions: ReadonlyMap<string, FunctionFrontMatter>,
   teammates: readonly Teammate[],
+  cards: readonly Card[],
 ): AiProfileStep[] {
   const people = teammates.filter((t): t is HumanTeammate => t.kind === "human");
   return [...definitions.values()].map((definition) => ({
@@ -47,7 +62,7 @@ export function aiSteps(
     role: definition.role,
     title: definition.title,
     summary: definition.summary,
-    owners: ownersOf(definition, people).map((person) => {
+    owners: ownersOf(definition, people, definitions, cards).map((person) => {
       const mode = ownerMode(person, definition);
       const work = workableMode(definition, mode);
       return { teammate_id: person.id, mode, ai_may_pick: work.ok, reason: work.ok ? null : work.reason };
@@ -100,7 +115,7 @@ export async function buildAiProfile(db: Db, self: AiTeammate, options: AiProfil
     works_in: [...TEAMMATE_MODES],
     provider: options.provider,
     timer: options.timerIntervalMs === undefined ? null : { interval_ms: options.timerIntervalMs },
-    steps: aiSteps(definitions, teammates),
+    steps: aiSteps(definitions, teammates, cards),
     now: cardsInHand(self.id, cards, log),
     next: ready.flatMap((e) => (e.eligible ? [{ card: e.card, mode: e.mode }] : [])),
     not_next: ready.flatMap((e) => {

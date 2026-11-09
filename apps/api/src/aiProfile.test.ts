@@ -13,6 +13,7 @@ import {
 } from "@workbench/shared";
 import { aiSteps, cardsInHand, questionsAsked, recentEvents } from "./aiProfile.ts";
 import { createApp } from "./app.ts";
+import { buildProfile } from "./profile.ts";
 import { openDb } from "./db/client.ts";
 import { loadFunctionDefinitions, loadFunctionIds } from "./process.ts";
 import { inventedSeed } from "./seed/invented.ts";
@@ -47,17 +48,32 @@ const teammates: Teammate[] = [
   { kind: "ai", id: AI, name: "Invented AI teammate" },
 ];
 
+/** A card owned by UX on a team step UX's own profile does not list. */
+const uxPlanCard: Card = { id: "invented-c9", title: "Invented plan", function_id: "plan_sprint", owner: UX, links: [], status: { state: "backlog" } };
+
 describe("aiSteps", () => {
-  const steps = aiSteps(definitions, teammates);
+  const steps = aiSteps(definitions, teammates, [uxPlanCard]);
 
   it("lists every function in file order, with fields read from its definition", () => {
     expect(steps.map((s) => s.function_id)).toEqual(["shape_widget", "polish_widget", "plan_sprint", "quiet_widget"]);
     expect(steps[0]).toMatchObject({ role: "fe", title: "Invented shape_widget", summary: "Invented summary of shape_widget." });
   });
 
-  it("lists a function's role's people, and every person for a team function", () => {
+  it("lists as owners exactly the people whose own profile lists the step, when no card says otherwise", () => {
+    const withoutCards = aiSteps(definitions, teammates, []);
+    for (const person of teammates) {
+      if (person.kind !== "human") continue;
+      const fromProfile = buildProfile(person, definitions).steps.map((s) => s.function_id).sort();
+      const fromAi = withoutCards.filter((s) => s.owners.some((o) => o.teammate_id === person.id)).map((s) => s.function_id).sort();
+      expect(fromAi).toEqual(fromProfile);
+    }
+  });
+
+  it("adds anyone who owns a card on the step after the people whose profile lists it", () => {
     const owners = Object.fromEntries(steps.map((s) => [s.function_id, s.owners.map((o) => o.teammate_id)]));
     expect(owners).toEqual({ shape_widget: [FE], polish_widget: [FE], plan_sprint: [FE, UX], quiet_widget: [UX] });
+    const withoutCards = aiSteps(definitions, teammates, []);
+    expect(withoutCards.find((s) => s.function_id === "plan_sprint")?.owners.map((o) => o.teammate_id)).toEqual([FE]);
   });
 
   it("uses each owner's mode, or the default, and says why the AI may not pick", () => {
@@ -151,6 +167,27 @@ describe("GET /api/teammates/:id/profile for an AI teammate", () => {
     expect(aiTeammateProfileResponse.parse(await (await on.request("/api/teammates/invented-ai/profile")).json()).timer).toEqual({ interval_ms: 5000 });
     const other = await app({ teammateTimer: { teammateId: "invented-other-ai", intervalMs: 5000 } });
     expect(aiTeammateProfileResponse.parse(await (await other.request("/api/teammates/invented-ai/profile")).json()).timer).toBeNull();
+  });
+
+  it("lists next in the order runs take the cards", async () => {
+    const api = await app();
+    const post = (path: string, payload: unknown) =>
+      api.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    // A second card the AI may pick: the frontend developer's own step, moved to Ready by them.
+    const fe = "invented-fe";
+    const created = await post("/api/cards", { actor: fe, title: "Invented second spec", function_id: "refine_ui_spec", owner: fe });
+    const { card } = (await created.json()) as { card: Card };
+    expect((await post(`/api/cards/${card.id}/status`, { actor: fe, from: "backlog", to: { state: "ready" } })).status).toBe(200);
+
+    const profile = async () => aiTeammateProfileResponse.parse(await (await api.request("/api/teammates/invented-ai/profile")).json());
+    const before = await profile();
+    expect(before.next).toHaveLength(2);
+    for (const expected of before.next.map((n) => n.card.id)) {
+      const current = await profile();
+      expect(current.next[0]?.card.id).toBe(expected);
+      const run = await api.request("/api/teammates/invented-ai/run", { method: "POST" });
+      expect(((await run.json()) as { card: Card }).card.id).toBe(expected);
+    }
   });
 
   it("shows a run: the card in hand, its open question first and its events newest first", async () => {

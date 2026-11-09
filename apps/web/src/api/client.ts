@@ -97,6 +97,18 @@ export async function fetchAiProfile(teammateId: string, signal?: AbortSignal): 
   return parsed.data;
 }
 
+/**
+ * Whether `GET /api/teammates/:id/profile` answers for a person or an AI
+ * teammate, read before the board has loaded. Only `teammate.kind` is read;
+ * the screen that is chosen parses the whole profile with the shared schema.
+ */
+export async function fetchProfileKind(teammateId: string, signal?: AbortSignal): Promise<"human" | "ai"> {
+  const body = await getJson(`/teammates/${encodeURIComponent(teammateId)}/profile`, signal);
+  const kind = (body as { teammate?: { kind?: unknown } } | undefined)?.teammate?.kind;
+  if (kind !== "human" && kind !== "ai") throw new ApiRequestError("bad_response", "the profile from the API names no teammate kind");
+  return kind;
+}
+
 function parseProfile(body: unknown): TeammateProfileResponse {
   const parsed = teammateProfileResponse.safeParse(body);
   if (!parsed.success) throw new ApiRequestError("bad_response", "the profile from the API does not match the shared schema");

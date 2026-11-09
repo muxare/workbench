@@ -181,8 +181,8 @@ export type AiStepOwner = z.infer<typeof aiStepOwner>;
 /**
  * One function on an AI teammate's profile: what process/functions says about
  * it, and, for each person who owns cards on it, whether the AI may pick those
- * cards. The people are those whose role is the function's role, or every
- * person for a `team` function.
+ * cards. The people are those whose own profile lists the step (the same
+ * rule as `GET /teammates/:id/profile`), then anyone else who owns a card on it.
  */
 export const aiProfileStep = z.object({
   function_id: functionId,
