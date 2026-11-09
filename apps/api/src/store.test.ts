@@ -1,6 +1,7 @@
 // All example data in these tests is invented.
 import { beforeEach, describe, expect, it } from "vitest";
-import type { CardEvent, Teammate } from "@workbench/shared";
+import type { CardEvent, Mode, StreamEvent } from "@workbench/shared";
+import { deriveProfile } from "@workbench/shared";
 import { openDb, type Db } from "./db/client.ts";
 import { loadFunctionDefinitions, loadFunctionIds } from "./process.ts";
 import { inventedSeed } from "./seed/invented.ts";
@@ -8,15 +9,20 @@ import {
   addCard,
   addTeammate,
   appendEvent,
+  appendEvents,
   boardLog,
   cardLog,
   cardStatus,
   cycleLog,
+  eventsAfter,
+  getTeammate,
   listCards,
   listTeammates,
+  profileEvents,
   seed,
   StoreError,
   type SeedData,
+  type TeammateRecord,
 } from "./store.ts";
 
 const functionIds = loadFunctionIds();
@@ -25,7 +31,7 @@ const at = (minute: number) => `2026-11-06T10:${String(minute).padStart(2, "0")}
 /** A small invented board: two cards, one human, one AI, two cycles. */
 const tiny: SeedData = {
   teammates: [
-    { kind: "human", id: "t-human", name: "Invented human", role: "ux", process_profile: { frame_problem: "assist" } },
+    { kind: "human", id: "t-human", name: "Invented human", role: "ux" },
     { kind: "ai", id: "t-ai", name: "Invented AI" },
   ],
   cycles: [
@@ -39,6 +45,8 @@ const tiny: SeedData = {
   ],
   events: [
     { id: "v1", type: "status_changed", card_id: "k1", actor: "t-human", at: at(0), from: "backlog", to: { state: "ready" } },
+    // A teammate event: its subject is the person, not a card.
+    { id: "m1", type: "mode_changed", teammate_id: "t-human", actor: "t-human", at: at(5), function_id: "frame_problem", from: null, to: "assist" },
     { id: "v2", type: "picked", card_id: "k1", actor: "t-ai", at: at(10), mode: "assist" },
     { id: "v3", type: "status_changed", card_id: "k2", actor: "t-human", at: at(20), from: "backlog", to: { state: "ready" } },
     {
@@ -64,7 +72,7 @@ const tiny: SeedData = {
   ],
 };
 
-const ids = (events: CardEvent[]) => events.map((e) => e.id);
+const ids = (events: readonly { id: string }[]) => events.map((e) => e.id);
 
 let db: Db;
 beforeEach(async () => {
@@ -75,14 +83,19 @@ beforeEach(async () => {
 describe("teammates", () => {
   it("stores a person's role and reads it back, and gives an AI teammate none", async () => {
     const byId = new Map((await listTeammates(db)).map((t) => [t.id, t]));
-    expect(byId.get("t-human")).toEqual(tiny.teammates[0]);
+    expect(byId.get("t-human")).toEqual({ ...tiny.teammates[0], process_profile: { frame_problem: "assist" } });
     expect(byId.get("t-ai")).toEqual(tiny.teammates[1]);
     expect(byId.get("t-ai")).not.toHaveProperty("role");
   });
 
   it("refuses a person without a role", async () => {
-    const roleless = { kind: "human", id: "t-new", name: "Invented", process_profile: {} } as unknown as Teammate;
+    const roleless = { kind: "human", id: "t-new", name: "Invented" } as unknown as TeammateRecord;
     await expect(addTeammate(db, roleless)).rejects.toThrow();
+  });
+
+  it("refuses a stored process profile, which only events may set", async () => {
+    const withProfile = { kind: "human", id: "t-new", name: "Invented", role: "ux", process_profile: {} } as unknown as TeammateRecord;
+    await expect(addTeammate(db, withProfile)).rejects.toThrow();
   });
 });
 
@@ -94,7 +107,7 @@ describe("card log", () => {
 
   it("returns events exactly as appended", async () => {
     const log = await cardLog(db, "k1");
-    expect(log).toEqual(tiny.events.filter((e) => e.card_id === "k1"));
+    expect(log).toEqual(tiny.events.filter((e) => "card_id" in e && e.card_id === "k1"));
   });
 
   it("is empty for a card with no events", async () => {
@@ -103,8 +116,9 @@ describe("card log", () => {
 });
 
 describe("board log", () => {
-  it("holds every event on the board, in stream order", async () => {
-    expect(ids(await boardLog(db))).toEqual(["v1", "v2", "v3", "v4", "v5"]);
+  it("holds every event on the board, teammate events included, in stream order", async () => {
+    expect(ids(await boardLog(db))).toEqual(["v1", "m1", "v2", "v3", "v4", "v5"]);
+    expect(await boardLog(db)).toEqual(tiny.events);
   });
 
   it("keeps the latest events, oldest first, with a limit", async () => {
@@ -114,7 +128,7 @@ describe("board log", () => {
 
 describe("cycle log", () => {
   it("holds the events whose time falls in the cycle, end excluded", async () => {
-    expect(ids(await cycleLog(db, "c-early"))).toEqual(["v1", "v2", "v3"]);
+    expect(ids(await cycleLog(db, "c-early"))).toEqual(["v1", "m1", "v2", "v3"]);
     expect(ids(await cycleLog(db, "c-late"))).toEqual(["v4", "v5"]);
   });
 
@@ -170,6 +184,60 @@ describe("appending events", () => {
   });
 });
 
+describe("mode changes", () => {
+  const change = (id: string, from: Mode | null, to: Mode, over: object = {}): StreamEvent => ({
+    id,
+    type: "mode_changed",
+    teammate_id: "t-human",
+    actor: "t-human",
+    at: at(50),
+    function_id: "frame_problem",
+    from,
+    to,
+    ...over,
+  });
+
+  it("derive the person's profile: the latest change for a function wins", async () => {
+    await appendEvents(db, [change("m2", "assist", "manual"), change("m3", null, "delegate", { function_id: "write_issues" })]);
+    const person = await getTeammate(db, "t-human");
+    expect(person?.kind === "human" && person.process_profile).toEqual({ frame_problem: "manual", write_issues: "delegate" });
+    const listed = (await listTeammates(db)).find((t) => t.id === "t-human");
+    expect(listed).toEqual(person);
+  });
+
+  it("stay out of the card log but reach the board log and the stream", async () => {
+    await appendEvent(db, change("m2", "assist", "manual"));
+    expect(ids(await cardLog(db, "k1"))).not.toContain("m2");
+    expect(ids(await boardLog(db)).at(-1)).toBe("m2");
+    expect((await eventsAfter(db, 0)).map((s) => s.event.id)).toContain("m2");
+  });
+
+  it("must name the person's current mode as `from`, null for the default", async () => {
+    await expect(appendEvent(db, change("m2", null, "manual"))).rejects.toMatchObject({ code: "conflict" });
+    await expect(appendEvent(db, change("m2", "delegate", "manual"))).rejects.toThrow(/works frame_problem in assist, not delegate/);
+  });
+
+  it("are checked against the earlier changes in the same write", async () => {
+    await appendEvents(db, [change("m2", "assist", "manual"), change("m3", "manual", "delegate")]);
+    await expect(appendEvents(db, [change("m4", "delegate", "manual"), change("m5", "delegate", "assist")])).rejects.toMatchObject({
+      code: "conflict",
+    });
+    expect(ids(await boardLog(db)).at(-1)).toBe("m3");
+  });
+
+  it("must change the mode, be about a person, and name a known teammate", async () => {
+    await expect(appendEvent(db, change("m2", "assist", "assist"))).rejects.toThrow(/must change the mode/);
+    await expect(appendEvent(db, change("m2", null, "assist", { teammate_id: "t-ai", actor: "t-ai" }))).rejects.toThrow(/not a person/);
+    await expect(appendEvent(db, change("m2", null, "assist", { teammate_id: "t-nobody" }))).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("are what profileEvents builds for a person starting with a profile", () => {
+    expect(profileEvents("t-human", { frame_problem: "assist" }, at(5), "x-")).toEqual([
+      { id: "x-t-human-frame_problem", type: "mode_changed", teammate_id: "t-human", actor: "t-human", at: at(5), function_id: "frame_problem", from: null, to: "assist" },
+    ]);
+  });
+});
+
 describe("cards", () => {
   it("must name a function that exists in process/functions", async () => {
     const card = { id: "k9", title: "Invented", function_id: "no_such_function", owner: "t-human", links: [] };
@@ -206,7 +274,8 @@ describe("invented seed", () => {
     const definitions = loadFunctionDefinitions();
     for (const t of inventedSeed.teammates) {
       if (t.kind !== "human") continue;
-      const owned = [...Object.keys(t.process_profile), ...inventedSeed.cards.filter((c) => c.owner === t.id).map((c) => c.function_id)];
+      const chosen = inventedSeed.events.flatMap((e) => (e.type === "mode_changed" && e.teammate_id === t.id ? [e.function_id] : []));
+      const owned = [...chosen, ...inventedSeed.cards.filter((c) => c.owner === t.id).map((c) => c.function_id)];
       for (const fn of owned) {
         const role = definitions.get(fn)?.role;
         if (role !== "team") expect(`${t.id} owns ${fn} (${role})`).toBe(`${t.id} owns ${fn} (${t.role})`);
@@ -214,22 +283,34 @@ describe("invented seed", () => {
     }
   });
 
-  it("picks in a mode the function allows, and an open card in the mode its owner now sets", async () => {
-    // A profile holds one mode per function, so a card finished earlier may
-    // have been picked in another mode, as #104 (delegate) and #105 (manual)
-    // were in the history. A card still open was picked in the current one.
+  it("picks every card in a mode the function allows, the one its owner had set at the time", () => {
+    // The owners' modes are mode_changed events, so the stream says which
+    // mode was set when each card was picked: #104 in delegate and #105 in
+    // manual, as in the history, though both owners work in assist now.
     const definitions = loadFunctionDefinitions();
     const owners = new Map(inventedSeed.teammates.map((t) => [t.id, t]));
-    const status = new Map((await listCards(seeded)).map((c) => [c.id, c.status.state]));
-    for (const event of inventedSeed.events) {
+    for (const [index, event] of inventedSeed.events.entries()) {
       if (event.type !== "picked") continue;
       const card = inventedSeed.cards.find((c) => c.id === event.card_id);
       const owner = card && owners.get(card.owner);
       expect(owner?.kind).toBe("human");
       if (!card || owner?.kind !== "human") continue;
       expect(definitions.get(card.function_id)?.modes.allowed).toContain(event.mode);
-      if (status.get(card.id) !== "done") expect(event.mode).toBe(owner.process_profile[card.function_id]);
+      const then = deriveProfile(inventedSeed.events.slice(0, index), owner.id);
+      expect(`${card.id} picked in ${event.mode}`).toBe(`${card.id} picked in ${then[card.function_id]}`);
     }
+  });
+
+  it("ends with each person's profile as the history leaves it", async () => {
+    const profiles = Object.fromEntries(
+      (await listTeammates(seeded)).flatMap((t) => (t.kind === "human" ? [[t.id, t.process_profile]] : [])),
+    );
+    expect(profiles).toEqual({
+      "invented-po": { write_issues: "delegate" },
+      "invented-ux": { frame_problem: "assist" },
+      "invented-fe": { refine_ui_spec: "assist" },
+      "invented-be": { define_api_contract: "assist" },
+    });
   });
 
   it("works in every mode at least once, as the example requires", () => {

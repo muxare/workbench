@@ -1,6 +1,6 @@
 // Which teammate is linked to which card, and how. The artboard's three line
 // styles: solid = works on a card, dashed = needs input, dotted = reports back.
-import type { BoardResponse, Card, CardStatus, Mode } from "@workbench/shared";
+import { isCardEvent, type BoardResponse, type Card, type CardStatus, type Mode } from "@workbench/shared";
 import { aiTeammate, cardRef, findTeammate, labelOf } from "./teammates.ts";
 
 /** Statuses in which someone is working on a card. */
@@ -104,7 +104,7 @@ export function linksFor(teammateId: string, board: BoardResponse): Link[] {
   const reported = new Set<string>();
   for (let i = board.log.length - 1; i >= 0 && reported.size < MAX_REPORTS; i -= 1) {
     const e = board.log[i]!;
-    if (e.actor !== teammateId || reported.has(e.card_id)) continue;
+    if (e.actor !== teammateId || !isCardEvent(e) || reported.has(e.card_id)) continue;
     if (e.type === "report_posted") {
       const done = board.cards.find((c) => c.id === e.card_id)?.status.state === "done";
       reported.add(e.card_id);

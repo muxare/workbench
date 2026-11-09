@@ -5,12 +5,18 @@ import {
   cardEvent,
   cycle,
   decidedByHuman,
+  deriveProfile,
+  eventSubject,
+  isCardEvent,
   question,
   status,
+  streamEvent,
   teammate,
+  teammateEvent,
   teammateRole,
   unfinishedDependencies,
   type Card,
+  type StreamEvent,
   type Teammate,
 } from "./domain.ts";
 import { functionRole } from "./functionFile.ts";
@@ -143,6 +149,59 @@ describe("cardEvent", () => {
   it("rejects a status change to needs_input without waiting_on", () => {
     const e = { ...base, type: "status_changed", from: "in_progress", to: { state: "needs_input", question_id: "invented-q1" } };
     expect(cardEvent.safeParse(e).success).toBe(false);
+  });
+});
+
+describe("teammate events", () => {
+  const change = {
+    id: "invented-m1",
+    type: "mode_changed",
+    teammate_id: "invented-be",
+    actor: "invented-be",
+    at,
+    function_id: "define_api_contract",
+    from: null,
+    to: "assist",
+  } as const;
+
+  it("accept a mode change with no card, from the default or from a mode", () => {
+    expect(teammateEvent.parse(change)).toEqual(change);
+    expect(streamEvent.parse({ ...change, from: "delegate" })).toEqual({ ...change, from: "delegate" });
+  });
+
+  it("refuse a mode change without its subject, function or target mode", () => {
+    expect(streamEvent.safeParse({ ...change, teammate_id: undefined }).success).toBe(false);
+    expect(streamEvent.safeParse({ ...change, function_id: "Define API" }).success).toBe(false);
+    expect(streamEvent.safeParse({ ...change, to: null }).success).toBe(false);
+    expect(streamEvent.safeParse({ ...change, to: "auto" }).success).toBe(false);
+  });
+
+  it("are not card events, and card events are stream events", () => {
+    expect(cardEvent.safeParse(change).success).toBe(false);
+    const report = { id: "invented-e1", type: "report_posted", card_id: "invented-151", actor: "invented-ai", at, text: "Invented." };
+    expect(streamEvent.parse(report)).toEqual(report);
+  });
+
+  it("name their subject: a card, a teammate, or the team", () => {
+    const report = streamEvent.parse({ id: "invented-e1", type: "report_posted", card_id: "invented-151", actor: "invented-ai", at, text: "Invented." });
+    expect(eventSubject(report)).toEqual({ kind: "card", id: "invented-151" });
+    expect(eventSubject(change)).toEqual({ kind: "teammate", id: "invented-be" });
+    expect(isCardEvent(report)).toBe(true);
+    expect(isCardEvent(change)).toBe(false);
+    // No event type is about the team yet; one with neither field would be.
+    const teamWide = Object.fromEntries(Object.entries(change).filter(([key]) => key !== "teammate_id"));
+    expect(eventSubject(teamWide as unknown as StreamEvent)).toEqual({ kind: "team" });
+  });
+
+  it("give a person's profile: the latest change per function, only their own", () => {
+    const events: StreamEvent[] = [
+      change,
+      { ...change, id: "invented-m2", from: "assist", to: "manual" },
+      { ...change, id: "invented-m3", function_id: "write_issues", to: "delegate" },
+      { ...change, id: "invented-m4", teammate_id: "invented-ux", actor: "invented-ux", to: "delegate" },
+    ];
+    expect(deriveProfile(events, "invented-be")).toEqual({ define_api_contract: "manual", write_issues: "delegate" });
+    expect(deriveProfile(events, "invented-po")).toEqual({});
   });
 });
 

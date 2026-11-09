@@ -5,9 +5,11 @@
 // Cards hold what does not change through the lifecycle (title, function,
 // owner, milestone, links). A card's status is not stored: it is derived from
 // its `status_changed` events, so the event stream stays the one record of
-// what happened. The card, board and cycle logs are queries over `events`.
+// what happened. A person's process profile is not stored either: it is
+// derived from their `mode_changed` events. The card, board and cycle logs are
+// queries over `events`.
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type { CardEventType, CardLink, ProcessProfile, Teammate, TeammateRole } from "@workbench/shared";
+import type { CardLink, StreamEventType, Teammate, TeammateRole } from "@workbench/shared";
 
 export const teammates = sqliteTable("teammates", {
   id: text("id").primaryKey(),
@@ -15,8 +17,6 @@ export const teammates = sqliteTable("teammates", {
   name: text("name").notNull(),
   /** Set for humans only: po, ux, fe or be. */
   role: text("role").$type<TeammateRole>(),
-  /** Set for humans only. */
-  processProfile: text("process_profile", { mode: "json" }).$type<ProcessProfile>(),
 });
 
 export const cycles = sqliteTable("cycles", {
@@ -43,7 +43,7 @@ export const cards = sqliteTable("cards", {
 
 /**
  * The fields of an event beyond the ones with their own column. Stored as
- * JSON and parsed back through the shared `cardEvent` schema when read.
+ * JSON and parsed back through the shared `streamEvent` schema when read.
  */
 export type EventPayload = Record<string, unknown>;
 
@@ -53,10 +53,13 @@ export const events = sqliteTable(
     /** Position in the stream. Logs are ordered by it. */
     seq: integer("seq").primaryKey({ autoIncrement: true }),
     id: text("id").notNull().unique(),
-    cardId: text("card_id")
-      .notNull()
-      .references(() => cards.id),
-    type: text("type").$type<CardEventType>().notNull(),
+    /**
+     * The event's subject. A card event sets `card_id`, a teammate event sets
+     * `teammate_id`, and an event about the whole team would set neither.
+     */
+    cardId: text("card_id").references(() => cards.id),
+    teammateId: text("teammate_id").references(() => teammates.id),
+    type: text("type").$type<StreamEventType>().notNull(),
     actor: text("actor")
       .notNull()
       .references(() => teammates.id),
@@ -65,5 +68,9 @@ export const events = sqliteTable(
     atMs: integer("at_ms").notNull(),
     payload: text("payload", { mode: "json" }).$type<EventPayload>().notNull(),
   },
-  (t) => [index("events_card_seq").on(t.cardId, t.seq), index("events_at_ms").on(t.atMs)],
+  (t) => [
+    index("events_card_seq").on(t.cardId, t.seq),
+    index("events_teammate_seq").on(t.teammateId, t.seq),
+    index("events_at_ms").on(t.atMs),
+  ],
 );

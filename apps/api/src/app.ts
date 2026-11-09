@@ -4,10 +4,11 @@
 // `GET /api/events` streams each appended event to every connected client.
 // `POST /api/teammates/:id/run` runs one step of an AI teammate through the
 // same store, so its events reach the stream like any other write.
-// The one write that appends no event is `POST /api/teammates/:id/modes`: a
-// person's process profile is their current setting, not part of a card's
-// history, so it is updated in place. `GET /api/teammates/:id/profile` reads
-// the person's chain of steps from process/functions on each request.
+// `POST /api/teammates/:id/modes` appends a `mode_changed` event about the
+// person, and a person's process profile is derived from those events, so a
+// mode change reaches the logs and the stream like a card change.
+// `GET /api/teammates/:id/profile` reads the person's chain of steps from
+// process/functions on each request.
 // Request and response shapes live in @workbench/shared (api.ts).
 import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
@@ -15,6 +16,7 @@ import { z } from "zod";
 import {
   answerRequest,
   askRequest,
+  cardEvent,
   cardStatus,
   createCardRequest,
   isManualMove,
@@ -50,7 +52,6 @@ import {
   listCards,
   listQuestions,
   listTeammates,
-  setProcessProfileMode,
   StoreError,
   type StoreErrorCode,
 } from "./store.ts";
@@ -158,7 +159,7 @@ export function createApp(deps: AppDeps) {
   /** Append the events, then answer with the card as it now stands. */
   async function write(cardId: string, events: CardEvent[]): Promise<WriteResponse> {
     const stored = await appendEvents(db, events);
-    return { card: await cardOr404(cardId), events: stored.map((s) => s.event) };
+    return { card: await cardOr404(cardId), events: stored.map((s) => cardEvent.parse(s.event)) };
   }
 
   const base = (cardId: string, actor: string) => ({ id: newId(), card_id: cardId, actor, at: now().toISOString() });
@@ -329,9 +330,23 @@ export function createApp(deps: AppDeps) {
           `${req.function_id} allows ${definition.modes.allowed.join(", ")}, not ${req.mode}`,
         );
       }
-      const updated = await setProcessProfileMode(db, person.id, req.function_id, req.mode);
-      if (updated.kind !== "human") throw new ApiProblem("rule_violation", `${person.id} is not a person`);
-      const response: TeammateProfileResponse = buildProfile(updated, defs);
+      // Setting the mode the person has already chosen changes nothing, so it records nothing.
+      const from = person.process_profile[req.function_id] ?? null;
+      if (from !== req.mode) {
+        await appendEvents(db, [
+          {
+            id: newId(),
+            type: "mode_changed",
+            teammate_id: person.id,
+            actor: req.actor,
+            at: now().toISOString(),
+            function_id: req.function_id,
+            from,
+            to: req.mode,
+          },
+        ]);
+      }
+      const response: TeammateProfileResponse = buildProfile(await personOr404(person.id), defs);
       return c.json(response);
     })
 

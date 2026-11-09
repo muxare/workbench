@@ -1,28 +1,48 @@
-// The event store: append-only card events plus the teammates, cycles and
-// cards they refer to. The card, board and cycle logs are three queries over
-// the one `events` table (docs/architecture.md, "Logs are views of one event
-// stream"); no log is stored on its own. A card's status is derived from its
-// `status_changed` events in the same way.
+// The event store: the append-only event stream plus the teammates, cycles
+// and cards it refers to. An event's subject is a card (`card_id`) or a
+// teammate (`teammate_id`). The card, board and cycle logs are three queries
+// over the one `events` table (docs/architecture.md, "Logs are views of one
+// event stream"); no log is stored on its own. A card's status is derived from
+// its `status_changed` events, and a person's process profile from their
+// `mode_changed` events, in the same way.
 import { and, asc, desc, eq, gt, gte, lt } from "drizzle-orm";
 import {
   card as cardSchema,
   cardEvent,
   cycle as cycleSchema,
+  deriveProfile,
+  humanTeammate,
+  streamEvent,
   teammate as teammateSchema,
   type Card,
   type CardEvent,
   type Cycle,
   type Mode,
+  type ModeChangedEvent,
+  type ProcessProfile,
   type Question,
   type Status,
+  type StreamEvent,
   type Teammate,
 } from "@workbench/shared";
+import { z } from "zod";
 import type { Db } from "./db/client.ts";
 import { cards, cycles, events, teammates, type EventPayload } from "./db/schema.ts";
 
 /** A card as stored: everything but its status, which comes from events. */
 export const cardRecord = cardSchema.omit({ status: true });
 export type CardRecord = Omit<Card, "status">;
+
+/**
+ * A teammate as stored: everything but a person's process profile, which
+ * comes from events. Strict, so a profile passed in by mistake is refused
+ * rather than silently dropped.
+ */
+export const teammateRecord = z.discriminatedUnion("kind", [
+  humanTeammate.omit({ process_profile: true }).strict(),
+  z.strictObject({ kind: z.literal("ai"), id: z.string().min(1), name: z.string().min(1) }),
+]);
+export type TeammateRecord = z.infer<typeof teammateRecord>;
 
 /** A card's status before any `status_changed` event. */
 export const INITIAL_STATUS: Status = { state: "backlog" };
@@ -48,37 +68,109 @@ export class StoreError extends Error {
 type EventRow = typeof events.$inferSelect;
 type EventInsert = typeof events.$inferInsert;
 
-function toRow(event: CardEvent): EventInsert {
-  const { id, card_id, actor, at, type, ...payload } = event;
-  return { id, cardId: card_id, actor, at, type, atMs: Date.parse(at), payload: payload as EventPayload };
+/** The columns that name an event's subject; an event about the whole team sets neither. */
+function subjectColumns(event: StreamEvent): { cardId: string | null; teammateId: string | null } {
+  return {
+    cardId: "card_id" in event ? event.card_id : null,
+    teammateId: "teammate_id" in event ? event.teammate_id : null,
+  };
 }
 
-function fromRow(row: EventRow): CardEvent {
-  return cardEvent.parse({ ...row.payload, id: row.id, card_id: row.cardId, actor: row.actor, at: row.at, type: row.type });
+const COLUMN_FIELDS = new Set(["id", "card_id", "teammate_id", "actor", "at", "type"]);
+
+function toRow(event: StreamEvent): EventInsert {
+  const { id, actor, at, type } = event;
+  const payload: EventPayload = Object.fromEntries(Object.entries(event).filter(([key]) => !COLUMN_FIELDS.has(key)));
+  return { id, ...subjectColumns(event), actor, at, type, atMs: Date.parse(at), payload };
 }
 
-function teammateFromRow(row: typeof teammates.$inferSelect): Teammate {
+function fromRow(row: EventRow): StreamEvent {
+  return streamEvent.parse({
+    ...row.payload,
+    id: row.id,
+    ...(row.cardId === null ? {} : { card_id: row.cardId }),
+    ...(row.teammateId === null ? {} : { teammate_id: row.teammateId }),
+    actor: row.actor,
+    at: row.at,
+    type: row.type,
+  });
+}
+
+function teammateFromRow(row: typeof teammates.$inferSelect, profile: ProcessProfile): Teammate {
   return teammateSchema.parse(
     row.kind === "human"
-      ? { kind: row.kind, id: row.id, name: row.name, role: row.role, process_profile: row.processProfile }
+      ? { kind: row.kind, id: row.id, name: row.name, role: row.role, process_profile: profile }
       : { kind: row.kind, id: row.id, name: row.name },
   );
 }
 
+/** Every `mode_changed` event, or one teammate's, in stream order. */
+async function modeChanges(db: Db, teammateId?: string): Promise<StreamEvent[]> {
+  const type = eq(events.type, "mode_changed");
+  const rows = await db
+    .select()
+    .from(events)
+    .where(teammateId === undefined ? type : and(type, eq(events.teammateId, teammateId)))
+    .orderBy(asc(events.seq));
+  return rows.map(fromRow);
+}
+
 /**
- * Check an event against the stream so far: it must parse, its `from` must be
- * the card's current state, and an answer must come from a human, because in
- * every protocol `decides` is human.
+ * The mode a person has chosen for one function, or null when they have not
+ * chosen one and the function's default applies.
  */
-async function checkEvent(db: Db, input: CardEvent, pending: Map<string, Status>): Promise<CardEvent> {
-  const event = cardEvent.parse(input);
+export async function chosenMode(db: Db, teammateId: string, functionId: string): Promise<Mode | null> {
+  return deriveProfile(await modeChanges(db, teammateId), teammateId)[functionId] ?? null;
+}
+
+interface Pending {
+  statuses: Map<string, Status>;
+  /** Keyed by teammate id and function id. */
+  modes: Map<string, Mode | null>;
+}
+
+/**
+ * A mode change must be about a person, must change the mode, and must name
+ * as `from` the mode the person has now, so two changes made from the same
+ * profile cannot both win.
+ */
+async function checkModeChange(db: Db, event: ModeChangedEvent, pending: Pending): Promise<void> {
+  const [subject] = await db.select().from(teammates).where(eq(teammates.id, event.teammate_id));
+  if (!subject) throw new StoreError(`${event.id}: no teammate '${event.teammate_id}'`, "not_found");
+  if (subject.kind !== "human") {
+    throw new StoreError(`${event.id}: ${event.teammate_id} is not a person and has no process profile`);
+  }
+  if (event.from === event.to) throw new StoreError(`${event.id}: a mode change must change the mode, not keep ${event.to}`);
+  const key = JSON.stringify([event.teammate_id, event.function_id]);
+  const current = pending.modes.has(key)
+    ? (pending.modes.get(key) ?? null)
+    : await chosenMode(db, event.teammate_id, event.function_id);
+  if (current !== event.from) {
+    throw new StoreError(
+      `${event.id}: ${event.teammate_id} works ${event.function_id} in ${current ?? "the default"}, not ${event.from ?? "the default"}`,
+      "conflict",
+    );
+  }
+  pending.modes.set(key, event.to);
+}
+
+/**
+ * Check an event against the stream so far: it must parse; a status change's
+ * `from` must be the card's current state; an answer must come from a human,
+ * because in every protocol `decides` is human; and a mode change must pass
+ * `checkModeChange`. `pending` holds what earlier events in the same write
+ * have changed.
+ */
+async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise<StreamEvent> {
+  const event = streamEvent.parse(input);
   if (event.type === "status_changed") {
-    const current = pending.get(event.card_id) ?? (await cardStatus(db, event.card_id));
+    const current = pending.statuses.get(event.card_id) ?? (await cardStatus(db, event.card_id));
     if (current.state !== event.from) {
       throw new StoreError(`${event.id}: card ${event.card_id} is ${current.state}, not ${event.from}`, "conflict");
     }
-    pending.set(event.card_id, event.to);
+    pending.statuses.set(event.card_id, event.to);
   }
+  if (event.type === "mode_changed") await checkModeChange(db, event, pending);
   if (event.type === "answered") {
     const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
     if (actor?.kind !== "human") {
@@ -91,7 +183,7 @@ async function checkEvent(db: Db, input: CardEvent, pending: Map<string, Status>
 /** An event with its position in the stream, which the SSE stream uses as its id. */
 export interface StoredEvent {
   seq: number;
-  event: CardEvent;
+  event: StreamEvent;
 }
 
 type Listener = (stored: StoredEvent) => void;
@@ -135,11 +227,11 @@ export function onAppend(db: Db, listener: Listener): () => void {
  * it would stand after the ones before it, and either all are stored or none.
  * Returns them with their positions in the stream.
  */
-export function appendEvents(db: Db, inputs: readonly CardEvent[]): Promise<StoredEvent[]> {
+export function appendEvents(db: Db, inputs: readonly StreamEvent[]): Promise<StoredEvent[]> {
   return serialized(db, async () => {
     if (inputs.length === 0) return [];
-    const pending = new Map<string, Status>();
-    const checked: CardEvent[] = [];
+    const pending: Pending = { statuses: new Map(), modes: new Map() };
+    const checked: StreamEvent[] = [];
     for (const input of inputs) checked.push(await checkEvent(db, input, pending));
     // One multi-row INSERT is one statement, so SQLite stores all rows or none.
     const inserted = await db.insert(events).values(checked.map(toRow)).returning({ seq: events.seq, id: events.id });
@@ -160,7 +252,7 @@ export function appendEvents(db: Db, inputs: readonly CardEvent[]): Promise<Stor
 }
 
 /** Append one event to the stream. Events are never updated or deleted. */
-export async function appendEvent(db: Db, input: CardEvent): Promise<void> {
+export async function appendEvent(db: Db, input: StreamEvent): Promise<void> {
   await appendEvents(db, [input]);
 }
 
@@ -176,15 +268,32 @@ export async function lastSeq(db: Db): Promise<number> {
   return row?.seq ?? 0;
 }
 
-export async function addTeammate(db: Db, input: Teammate): Promise<void> {
-  const t = teammateSchema.parse(input);
-  await db.insert(teammates).values({
-    id: t.id,
-    kind: t.kind,
-    name: t.name,
-    role: t.kind === "human" ? t.role : null,
-    processProfile: t.kind === "human" ? t.process_profile : null,
-  });
+/**
+ * Add a teammate. A person starts with no chosen modes; their process profile
+ * grows from `mode_changed` events (see `profileEvents`).
+ */
+export async function addTeammate(db: Db, input: TeammateRecord): Promise<void> {
+  const t = teammateRecord.parse(input);
+  await db.insert(teammates).values({ id: t.id, kind: t.kind, name: t.name, role: t.kind === "human" ? t.role : null });
+}
+
+/**
+ * The `mode_changed` events that give a person with no chosen modes the
+ * profile `profile`: one per function, from the default (`from: null`), made
+ * by the person at `at`, with the id `<idPrefix><teammate id>-<function id>`.
+ * Seeds and tests use it to start a person with a profile.
+ */
+export function profileEvents(teammateId: string, profile: ProcessProfile, at: string, idPrefix = "mode-"): ModeChangedEvent[] {
+  return Object.entries(profile).map(([function_id, to]) => ({
+    id: `${idPrefix}${teammateId}-${function_id}`,
+    type: "mode_changed",
+    teammate_id: teammateId,
+    actor: teammateId,
+    at,
+    function_id,
+    from: null,
+    to,
+  }));
 }
 
 export async function addCycle(db: Db, input: Cycle): Promise<void> {
@@ -218,29 +327,19 @@ export async function addCard(db: Db, input: CardRecord, functionIds: ReadonlySe
   });
 }
 
+/** One teammate; a person comes with their process profile derived from their `mode_changed` events. */
 export async function getTeammate(db: Db, teammateId: string): Promise<Teammate | undefined> {
   const [row] = await db.select().from(teammates).where(eq(teammates.id, teammateId));
-  return row && teammateFromRow(row);
+  if (!row) return undefined;
+  const changes = row.kind === "human" ? await modeChanges(db, teammateId) : [];
+  return teammateFromRow(row, deriveProfile(changes, teammateId));
 }
 
-/**
- * Set the mode a person works one function in, and return them as they now
- * stand. The profile is the person's current setting, not a log, so it is
- * updated in place; the event stream holds card events only. Whether the mode
- * is allowed for the function is the caller's check, against process/.
- */
-export async function setProcessProfileMode(db: Db, teammateId: string, functionId: string, mode: Mode): Promise<Teammate> {
-  const current = await getTeammate(db, teammateId);
-  if (!current) throw new StoreError(`no teammate '${teammateId}'`, "not_found");
-  if (current.kind !== "human") throw new StoreError(`${teammateId} is not a person and has no process profile`);
-  const profile = { ...current.process_profile, [functionId]: mode };
-  await db.update(teammates).set({ processProfile: profile }).where(eq(teammates.id, teammateId));
-  return { ...current, process_profile: profile };
-}
-
+/** Every teammate; people come with their process profiles derived from the stream. */
 export async function listTeammates(db: Db): Promise<Teammate[]> {
   const rows = await db.select().from(teammates).orderBy(asc(teammates.id));
-  return rows.map(teammateFromRow);
+  const changes = await modeChanges(db);
+  return rows.map((row) => teammateFromRow(row, deriveProfile(changes, row.id)));
 }
 
 export async function getCycle(db: Db, cycleId: string): Promise<Cycle | undefined> {
@@ -322,18 +421,18 @@ export async function listCards(db: Db): Promise<Card[]> {
   return rows.map((row) => cardFromRow(row, statusByCard.get(row.id) ?? INITIAL_STATUS));
 }
 
-/** The card log: every event on one card, oldest first. */
+/** The card log: every event whose subject is one card, oldest first. */
 export async function cardLog(db: Db, cardId: string): Promise<CardEvent[]> {
   const rows = await db.select().from(events).where(eq(events.cardId, cardId)).orderBy(asc(events.seq));
-  return rows.map(fromRow);
+  return rows.map((row) => cardEvent.parse(fromRow(row)));
 }
 
 /**
- * The board log: every event on every card, oldest first. With `limit`, only
- * the latest `limit` events, still oldest first. The app has one board, so the
- * board log is the whole stream.
+ * The board log: every event, whether about a card, a teammate or the team,
+ * oldest first. With `limit`, only the latest `limit` events, still oldest
+ * first. The app has one board, so the board log is the whole stream.
  */
-export async function boardLog(db: Db, options: { limit?: number } = {}): Promise<CardEvent[]> {
+export async function boardLog(db: Db, options: { limit?: number } = {}): Promise<StreamEvent[]> {
   if (options.limit === undefined) {
     const rows = await db.select().from(events).orderBy(asc(events.seq));
     return rows.map(fromRow);
@@ -342,8 +441,8 @@ export async function boardLog(db: Db, options: { limit?: number } = {}): Promis
   return rows.reverse().map(fromRow);
 }
 
-/** The cycle log: every event whose `at` falls in the cycle's window, oldest first. */
-export async function cycleLog(db: Db, cycleId: string): Promise<CardEvent[]> {
+/** The cycle log: every event, of any subject, whose `at` falls in the cycle's window, oldest first. */
+export async function cycleLog(db: Db, cycleId: string): Promise<StreamEvent[]> {
   const [c] = await db.select().from(cycles).where(eq(cycles.id, cycleId));
   if (!c) throw new StoreError(`no cycle '${cycleId}'`, "not_found");
   const rows = await db
@@ -356,11 +455,12 @@ export async function cycleLog(db: Db, cycleId: string): Promise<CardEvent[]> {
 
 /** Everything a fresh database needs to show a board. */
 export interface SeedData {
-  teammates: Teammate[];
+  /** People start with no chosen modes; `mode_changed` events in `events` give them their profiles. */
+  teammates: TeammateRecord[];
   cycles: Cycle[];
   cards: CardRecord[];
   /** In stream order. */
-  events: CardEvent[];
+  events: StreamEvent[];
 }
 
 /**

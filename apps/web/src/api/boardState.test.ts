@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { BoardResponse, CardEvent } from "@workbench/shared";
+import type { BoardResponse, CardEvent, Mode, Teammate } from "@workbench/shared";
 import {
   BOARD_LOG_LIMIT,
   applyRefetch,
@@ -84,6 +84,44 @@ describe("applyRefetch", () => {
     expect(next.board.log.map((e) => e.id)).toEqual(["e1", "e2", "e3"]);
     expect(next.board.last_seq).toBe(3);
     expect(next.pending).toEqual([live(3)]);
+  });
+});
+
+describe("a mode_changed event", () => {
+  const person: Teammate = { kind: "human", id: "fe-1", name: "Invented developer", role: "fe", process_profile: { refine_ui_spec: "assist" } };
+  const ai: Teammate = { kind: "ai", id: "ai-1", name: "Invented AI" };
+  const modeChanged = (seq: number, to: Mode, from: Mode | null, functionId = "refine_ui_spec"): LiveEvent => ({
+    seq,
+    event: { id: `m${seq}`, type: "mode_changed", teammate_id: "fe-1", actor: "fe-1", at: "2026-11-09T10:00:00.000Z", function_id: functionId, from, to },
+  });
+  const withTeam = (lastSeq: number): BoardResponse => ({ ...board(lastSeq, [report("e1")]), teammates: [person, ai] });
+
+  it("parses from the stream, though it has no card", () => {
+    const live = modeChanged(4, "manual", "assist");
+    expect(parseStreamMessage(JSON.stringify(live.event), "4")).toEqual(live);
+  });
+
+  it("goes into the log and into the person's profile at once", () => {
+    const next = mergeEvent(liveBoard(withTeam(3)), modeChanged(4, "manual", "assist"));
+    expect(next.board.log.map((e) => e.id)).toEqual(["e1", "m4"]);
+    expect(next.board.teammates).toEqual([{ ...person, process_profile: { refine_ui_spec: "manual" } }, ai]);
+  });
+
+  it("adds a function the person had left at its default, and leaves other teammates alone", () => {
+    const next = mergeEvent(liveBoard(withTeam(3)), modeChanged(4, "delegate", null, "write_issues"));
+    expect(next.board.teammates[0]).toEqual({ ...person, process_profile: { refine_ui_spec: "assist", write_issues: "delegate" } });
+    expect(next.board.teammates[1]).toBe(ai);
+  });
+
+  it("is applied again over a refetch that started before it", () => {
+    const state = mergeEvent(liveBoard(withTeam(3)), modeChanged(4, "manual", "assist"));
+    const next = applyRefetch(state, withTeam(3));
+    expect(next.board.teammates[0]).toEqual({ ...person, process_profile: { refine_ui_spec: "manual" } });
+  });
+
+  it("is not applied twice when replayed", () => {
+    const state = mergeEvent(liveBoard(withTeam(3)), modeChanged(4, "manual", "assist"));
+    expect(mergeEvent(state, modeChanged(4, "manual", "assist"))).toBe(state);
   });
 });
 

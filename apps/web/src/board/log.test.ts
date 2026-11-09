@@ -24,6 +24,23 @@ describe("describeEvent", () => {
       describeEvent({ id: "a", type: "answered", card_id: "c-151", actor: "t-be", at: "2026-11-06T09:50:00Z", question_id: "q-151", answer: "Invented: a cursor." }, board),
     ).toBe("BE answered on #151: Invented: a cursor.");
   });
+
+  it("describes a mode change, which has no card", () => {
+    const change = { id: "m", type: "mode_changed", teammate_id: "t-be", actor: "t-be", at: "2026-11-06T09:55:00Z", function_id: "define_api_contract" } as const;
+    expect(describeEvent({ ...change, from: "delegate", to: "assist" }, board)).toBe(
+      "BE changed their mode for define_api_contract to AI assists · was: AI does it",
+    );
+    expect(describeEvent({ ...change, actor: "t-ux", from: null, to: "manual" }, board)).toBe(
+      "UX changed BE's mode for define_api_contract to I do it · was: the default",
+    );
+  });
+
+  it("lists a mode change in the log among card events", () => {
+    const withChange = testBoard({
+      log: [...board.log, { id: "m", type: "mode_changed", teammate_id: "t-be", actor: "t-be", at: "2026-11-06T09:55:00Z", function_id: "define_api_contract", from: "delegate", to: "assist" }],
+    });
+    expect(logLines(withChange, "UTC")[0]).toMatchObject({ id: "m", time: "09:55", text: expect.stringContaining("changed their mode") });
+  });
 });
 
 describe("logLines", () => {
