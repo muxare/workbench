@@ -54,6 +54,7 @@ import {
   StoreError,
   type StoreErrorCode,
 } from "./store.ts";
+import { ownerMode } from "./teammates/eligibility.ts";
 import type { TeammateProvider } from "./teammates/provider.ts";
 import { runTeammate } from "./teammates/runner.ts";
 import { stubProvider } from "./teammates/stubProvider.ts";
@@ -214,17 +215,22 @@ export function createApp(deps: AppDeps) {
       const req = await body(c, pickRequest);
       await teammateOr422(req.actor, "actor");
       const owner = await teammateOr422(card.owner, "owner");
-      const ownerMode = owner.kind === "human" ? owner.process_profile[card.function_id] : undefined;
-      if (ownerMode === undefined) {
+      if (owner.kind !== "human") {
         throw new ApiProblem(
           "rule_violation",
-          `owner ${owner.id} has no mode for ${card.function_id}, so ${card.id} cannot be picked`,
+          `owner ${owner.id} is an AI teammate and has no process profile, so ${card.id} cannot be picked`,
         );
       }
-      if (req.mode !== undefined && req.mode !== ownerMode) {
+      const definition = definitions().get(card.function_id);
+      if (!definition) {
+        throw new ApiProblem("rule_violation", `no function '${card.function_id}' in process/functions, so ${card.id} cannot be picked`);
+      }
+      // The owner's choice for the function, or its modes.default, as in the profile and the AI's eligibility.
+      const mode = ownerMode(owner, definition);
+      if (req.mode !== undefined && req.mode !== mode) {
         throw new ApiProblem(
           "rule_violation",
-          `${card.id} is worked in ${ownerMode}, the mode its owner set for ${card.function_id}, not ${req.mode}`,
+          `${card.id} is worked in ${mode}, its owner's mode for ${card.function_id}, not ${req.mode}`,
         );
       }
       if (card.status.state !== "ready") {
@@ -236,7 +242,7 @@ export function createApp(deps: AppDeps) {
       }
       return c.json(
         await write(card.id, [
-          { ...base(card.id, req.actor), type: "picked", mode: ownerMode },
+          { ...base(card.id, req.actor), type: "picked", mode },
           { ...base(card.id, req.actor), type: "status_changed", from: "ready", to: { state: "in_progress" } },
         ]),
       );
