@@ -24,7 +24,7 @@ Last updated 2026-11-09 by Claude.
 
 ## Next, in the suggested order
 
-1. Add a `role` (po, ux, fe, be) to human teammates in `packages/shared`, seat people and label avatars by role on the board instead of by list order and initials, then write the example project in `examples/` (the laundry room and fault reporting project): the four external artifacts, a written history with its mistakes, and the stress points listed in the 2026-11-09 entry in `docs/decisions.md`. Mark everything invented and rebuild `apps/api/src/seed/invented.ts` from it, with roles set.
+1. Add a `role` (po, ux, fe, be) to human teammates in `packages/shared`, seat people and label avatars by role on the board instead of by list order and initials, then write the example project in `examples/` (the laundry room and fault reporting project): the four external artifacts, a written history with its mistakes, and the stress points listed in the 2026-11-09 entry in `docs/decisions.md`. Mark everything invented and rebuild `apps/api/src/seed/invented.ts` from it, with roles set. This may take two sessions: the role first, then the example project and seed.
 2. Wire the AI teammate into the API: write its run with the store's `appendEvents` so the five events land together, and add an endpoint or timer that triggers it.
 3. Build card detail and the answer flow from the Card artboard.
 4. Build the teammate profile from the Profile artboard, with modes read from the function files.
