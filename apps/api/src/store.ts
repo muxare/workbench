@@ -12,6 +12,7 @@ import {
   type Card,
   type CardEvent,
   type Cycle,
+  type Mode,
   type Question,
   type Status,
   type Teammate,
@@ -220,6 +221,21 @@ export async function addCard(db: Db, input: CardRecord, functionIds: ReadonlySe
 export async function getTeammate(db: Db, teammateId: string): Promise<Teammate | undefined> {
   const [row] = await db.select().from(teammates).where(eq(teammates.id, teammateId));
   return row && teammateFromRow(row);
+}
+
+/**
+ * Set the mode a person works one function in, and return them as they now
+ * stand. The profile is the person's current setting, not a log, so it is
+ * updated in place; the event stream holds card events only. Whether the mode
+ * is allowed for the function is the caller's check, against process/.
+ */
+export async function setProcessProfileMode(db: Db, teammateId: string, functionId: string, mode: Mode): Promise<Teammate> {
+  const current = await getTeammate(db, teammateId);
+  if (!current) throw new StoreError(`no teammate '${teammateId}'`, "not_found");
+  if (current.kind !== "human") throw new StoreError(`${teammateId} is not a person and has no process profile`);
+  const profile = { ...current.process_profile, [functionId]: mode };
+  await db.update(teammates).set({ processProfile: profile }).where(eq(teammates.id, teammateId));
+  return { ...current, process_profile: profile };
 }
 
 export async function listTeammates(db: Db): Promise<Teammate[]> {

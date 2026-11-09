@@ -4,6 +4,10 @@
 // `GET /api/events` streams each appended event to every connected client.
 // `POST /api/teammates/:id/run` runs one step of an AI teammate through the
 // same store, so its events reach the stream like any other write.
+// The one write that appends no event is `POST /api/teammates/:id/modes`: a
+// person's process profile is their current setting, not part of a card's
+// history, so it is updated in place. `GET /api/teammates/:id/profile` reads
+// the person's chain of steps from process/functions on each request.
 // Request and response shapes live in @workbench/shared (api.ts).
 import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
@@ -16,7 +20,10 @@ import {
   isManualMove,
   moveStatusRequest,
   pickRequest,
+  setModeRequest,
   unfinishedDependencies,
+  type HumanTeammate,
+  type TeammateProfileResponse,
   type ApiError,
   type ApiErrorCode,
   type BoardResponse,
@@ -29,6 +36,8 @@ import {
   type WriteResponse,
 } from "@workbench/shared";
 import type { Db } from "./db/client.ts";
+import { loadFunctionDefinitions } from "./process.ts";
+import { buildProfile } from "./profile.ts";
 import { eventStream, startingPoint } from "./sse.ts";
 import {
   addCard,
@@ -41,6 +50,7 @@ import {
   listCards,
   listQuestions,
   listTeammates,
+  setProcessProfileMode,
   StoreError,
   type StoreErrorCode,
 } from "./store.ts";
@@ -129,6 +139,17 @@ export function createApp(deps: AppDeps) {
     if (!t) throw new ApiProblem("rule_violation", `${role} '${id}' is not a teammate`);
     return t;
   }
+
+  /** A person by id: 404 for no such teammate, 422 for an AI teammate, which has no process profile. */
+  async function personOr404(id: string): Promise<HumanTeammate> {
+    const t = await getTeammate(db, id);
+    if (!t) throw new ApiProblem("not_found", `no teammate '${id}'`);
+    if (t.kind !== "human") throw new ApiProblem("rule_violation", `${id} is an AI teammate and has no process profile`);
+    return t;
+  }
+
+  /** The function definitions: the injected ones, or process/functions read on each request. */
+  const definitions = () => deps.definitions ?? loadFunctionDefinitions();
 
   /** Append the events, then answer with the card as it now stands. */
   async function write(cardId: string, events: CardEvent[]): Promise<WriteResponse> {
@@ -274,6 +295,34 @@ export function createApp(deps: AppDeps) {
       return c.json(
         await write(card.id, [{ ...base(card.id, req.actor), type: "status_changed", from: req.from, to: req.to }]),
       );
+    })
+
+    .get("/teammates/:id/profile", async (c) => {
+      const person = await personOr404(c.req.param("id"));
+      const response: TeammateProfileResponse = buildProfile(person, definitions());
+      return c.json(response);
+    })
+
+    .post("/teammates/:id/modes", async (c) => {
+      const person = await personOr404(c.req.param("id"));
+      const req = await body(c, setModeRequest);
+      await teammateOr422(req.actor, "actor");
+      if (req.actor !== person.id) {
+        throw new ApiProblem("forbidden", `${req.actor} may not change ${person.id}'s profile; a person sets their own modes`);
+      }
+      const defs = definitions();
+      const definition = defs.get(req.function_id);
+      if (!definition) throw new ApiProblem("rule_violation", `no function '${req.function_id}' in process/functions`);
+      if (!definition.modes.allowed.includes(req.mode)) {
+        throw new ApiProblem(
+          "rule_violation",
+          `${req.function_id} allows ${definition.modes.allowed.join(", ")}, not ${req.mode}`,
+        );
+      }
+      const updated = await setProcessProfileMode(db, person.id, req.function_id, req.mode);
+      if (updated.kind !== "human") throw new ApiProblem("rule_violation", `${person.id} is not a person`);
+      const response: TeammateProfileResponse = buildProfile(updated, defs);
+      return c.json(response);
     })
 
     .post("/teammates/:id/run", async (c) => {
