@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-09: An invented example project for development and the demo (with Mikael)
+
+- **The workbench gets one invented example project, a housing cooperative's laundry room booking and fault reporting, to develop and demo against.** The current seed is a set of unrelated cards (onboarding, invites, account recovery) with no shared client, brief or goal, so the chain never runs end to end on it. One coherent project gives every function real inputs. Because it is invented, it can be committed and shown at ConCon on 2026-11-18. The domain also matches the "repeat calls about the same fault" example already in `docs/runs.md`, and the caretaker who owns the fault data gives the backend a real dependency.
+- **The project is built to put the workbench under pressure, not to fit it.** It includes two stakeholders whose goals conflict (the board and the residents), a constraint that turns up during refine_ui_spec and calls for a `writes_back` proposal, an API that needs data the backend does not have yet (testing `depends_on` and waiting on another role), a draft whose success criteria have no baseline (a structural check fails and the draft is reworked), and at least one step in each mode. It also has a written history, mistakes included, which serves as an answer key that runs are compared against.
+- **It lives in `examples/<name>/`**: the external artifacts (`client_brief`, `business_goals`, `constraints`, `stakeholder_context`), the history, and later the run folders laid out as in `docs/runs.md`. Everything in it is marked invented. `apps/api/src/seed/invented.ts` is rebuilt from it, so the board, the cards and the teammates tell the same story.
+- **It does not replace Phase 2.** A project we write ourselves tends to fit the template we wrote, and it has no real tacit knowledge. The run on a real past project still comes after ConCon, before any template field for failed checks or waiting on another role is added (2026-11-08).
+- Considered and rejected: room booking at a municipal library, and volunteer shift sign-up for a sports club. Both work, but the laundry room is the easiest to explain on stage. Would change if the laundry domain turns out too thin to exercise all four functions.
+
 ## 2026-11-08: Protocol `note` in the template, and unfinished dependencies block a pick (with Mikael)
 
 - **`process/template.md` now lists the protocols' optional `note` field**, as prose on how a mode plays out for the step. Every function file already used it and the schema already accepted it, so the template only describes what was there. There was no version bump, because no function file changes and no check changes. Would change if `note` ever needed structure that a check reads.
