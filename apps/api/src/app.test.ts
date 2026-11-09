@@ -4,9 +4,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { apiError, boardResponse, cardEvent, cardResponse, teammateRunResponse, writeResponse, type CardEvent } from "@workbench/shared";
 import { createApp } from "./app.ts";
 import { openDb, type Db } from "./db/client.ts";
-import { loadFunctionIds } from "./process.ts";
+import { loadFunctionDefinitions, loadFunctionIds } from "./process.ts";
 import { inventedSeed } from "./seed/invented.ts";
-import { appendEvent, cardStatus, lastSeq, seed } from "./store.ts";
+import { appendEvent, cardStatus, lastSeq, seed, type SeedData } from "./store.ts";
 
 const functionIds = loadFunctionIds();
 const PO = "invented-po";
@@ -173,6 +173,58 @@ describe("POST /api/cards/:id/pick", () => {
   it("refuses an unknown actor and an unknown card", async () => {
     await expectProblem(await post("/api/cards/invented-108/pick", { actor: "invented-ghost" }), 422, "rule_violation", /ghost/);
     await expectProblem(await post("/api/cards/invented-nope/pick", { actor: AI }), 404, "not_found");
+  });
+
+  describe("when the owner has no mode of their own for the function", () => {
+    /** The app over the invented seed with FE's process profile replaced. */
+    async function withFeProfile(profile: Record<string, "manual" | "assist" | "delegate">) {
+      const data: SeedData = {
+        ...inventedSeed,
+        teammates: inventedSeed.teammates.map((t) => (t.id === FE && t.kind === "human" ? { ...t, process_profile: profile } : t)),
+      };
+      const fresh = await openDb(":memory:");
+      await seed(fresh, data, functionIds);
+      return createApp({ db: fresh, functionIds, definitions, now: () => new Date("2026-11-07T10:00:00Z") });
+    }
+    const definitions = loadFunctionDefinitions();
+    const fallback = definitions.get("refine_ui_spec")!.modes.default;
+    const other = definitions.get("refine_ui_spec")!.modes.allowed.find((m) => m !== fallback)!;
+    const pick = (a: ReturnType<typeof createApp>, payload: unknown) =>
+      a.request("/api/cards/invented-108/pick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+    it("picks in the function's default mode", async () => {
+      const res = await pick(await withFeProfile({}), { actor: FE });
+      expect(res.status).toBe(200);
+      const out = writeResponse.parse(await res.json());
+      expect(out.card.status).toEqual({ state: "in_progress" });
+      expect(out.events[0]).toMatchObject({ type: "picked", mode: fallback, actor: FE });
+    });
+
+    it("lets an explicit mode win over the default", async () => {
+      const res = await pick(await withFeProfile({ refine_ui_spec: other }), { actor: FE });
+      expect(res.status).toBe(200);
+      expect(writeResponse.parse(await res.json()).events[0]).toMatchObject({ type: "picked", mode: other });
+    });
+
+    it("refuses a request mode that differs from the default", async () => {
+      const a = await withFeProfile({});
+      await expectProblem(await pick(a, { actor: FE, mode: other }), 422, "rule_violation", new RegExp(`worked in ${fallback}`));
+    });
+
+    it("refuses a card whose function process/ does not define", async () => {
+      const a = createApp({ db, functionIds, definitions: new Map() });
+      await expectProblem(await pick(a, { actor: FE }), 422, "rule_violation", /no function 'refine_ui_spec'/);
+    });
+  });
+
+  it("refuses a card owned by an AI teammate, which has no process profile", async () => {
+    await post("/api/cards", { actor: PO, title: "Invented: a card the AI owns", function_id: "refine_ui_spec", owner: AI });
+    await post("/api/cards/invented-new-1/status", { actor: PO, from: "backlog", to: { state: "ready" } });
+    await expectProblem(await post("/api/cards/invented-new-1/pick", { actor: PO }), 422, "rule_violation", /AI teammate/);
   });
 });
 

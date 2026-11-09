@@ -19,7 +19,7 @@ Last updated 2026-11-09 by Claude.
 - On `main` (merged 2026-11-09, not pushed), built by three parallel subagents: `examples/laundry-room/domain_rules.md`; the invented seed rebuilt from the laundry room example (cards #101 to #108, the log stopping inside step 7 with #106 waiting on the PO and #108 Ready for the AI); card detail and the answer flow at `#/cards/<id>` (`GET /api/cards/:id` now carries the function definition); and the teammate profile at `#/teammates/<id>` with modes read from `process/` (`GET /api/teammates/:id/profile`, `POST /api/teammates/:id/modes`). Design reviews were run on both screens; findings and the parts left out (answer options, reassign, "Bring me in when", a chosen AI-pick setting) are in `docs/decisions.md`. `pnpm check` passes with 223 tests.
 - Full loop run in Chrome on 2026-11-09 against a fresh seed: `POST /api/teammates/invented-ai/run` picked #108 and the board moved it to Needs input live; answering on the card screen moved it to In progress and updated the card log; the FE profile rendered; a second run answered 409 "no card it may pick"; no console errors. A stale Vite process on port 5173 from an earlier session did not respond and was left running; the check used port 5174.
 - Decided with Mikael on 2026-11-09: every change to how the team works is an event, and each log has a user-set filter over which event types it shows. Not yet built. See `docs/decisions.md`.
-- Known inconsistency: `POST /cards/:id/pick` refuses a card whose owner has no explicit mode, while the profile and the AI's eligibility fall back to the function's default.
+- On 2026-11-09 `POST /api/cards/:id/pick` was made to fall back to the function's `modes.default` when the owner has no mode of their own, through the same `ownerMode` helper as the profile and the AI's eligibility; a card owned by an AI teammate is still refused. `pnpm check` passes with 228 tests.
 - The `design-reviewer` subagent type still cannot be spawned (2026-11-08 and 2026-11-09); reviews run through a general-purpose agent given its definition.
 - Decided with Mikael on 2026-11-09: the workbench is developed and demoed on one invented example project, a housing cooperative's laundry room booking and fault reporting, designed to stress the chain. It does not replace the Phase 2 run on a real project. See `docs/decisions.md`.
 - Decided with Mikael on 2026-11-08: the template lists the protocols' optional `note`, and a card with an unfinished `depends_on` cannot be picked (shared rule in `packages/shared`, used by the AI teammate and the API pick).
@@ -31,8 +31,7 @@ Last updated 2026-11-09 by Claude.
 
 ## Next, in the suggested order
 
-1. Make `POST /api/cards/:id/pick` fall back to the function's default mode, as the profile and the AI's eligibility do, with a test.
-2. Make the event stream take teammate and team events (a subject that is not a card), then record mode changes as `mode_changed` events, derive the profile's modes from them and stream them to the board. Decided 2026-11-09; see `docs/decisions.md`.
-3. Add a per-log filter over event types (card, board, cycle and teammate log): one team-wide filter per log, all types shown by default, with filter changes recorded as events.
-4. Give the AI teammate a profile page and link its board panel to it.
-5. Write a demo script for ConCon (`docs/demo.md`): reseed, run the AI, answer on the card, change a mode on the profile, with the exact commands and what the audience should see.
+1. Make the event stream take teammate and team events (a subject that is not a card), then record mode changes as `mode_changed` events, derive the profile's modes from them and stream them to the board. Decided 2026-11-09; see `docs/decisions.md`.
+2. Add a per-log filter over event types (card, board, cycle and teammate log): one team-wide filter per log, all types shown by default, with filter changes recorded as events.
+3. Give the AI teammate a profile page and link its board panel to it.
+4. Write a demo script for ConCon (`docs/demo.md`): reseed, run the AI, answer on the card, change a mode on the profile, with the exact commands and what the audience should see.
