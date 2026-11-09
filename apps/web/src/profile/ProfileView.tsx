@@ -25,6 +25,11 @@ function StepRow({
           {stepSubline(step)}
           {step.mode_is_default && " · default"}
         </span>
+        {saving && (
+          <span className="step__saving" role="status">
+            Saving…
+          </span>
+        )}
         {failure !== undefined && (
           <span className="step__failure" role="alert">
             Not saved: {failure}
@@ -36,7 +41,7 @@ function StepRow({
           <button
             key={b.mode}
             type="button"
-            className={`mode-switch__button${b.pressed ? ` mode-switch__button--${b.mode}` : ""}`}
+            className={`mode-switch__button${b.pressed ? ` mode-switch__button--${b.mode}` : ""}${b.allowed ? "" : " mode-switch__button--not-allowed"}`}
             aria-pressed={b.pressed}
             disabled={!b.allowed || saving}
             title={b.allowed ? modeMeaning[b.mode] : `${modeMeaning[b.mode]}: not allowed for this step in process/`}
