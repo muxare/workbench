@@ -1,6 +1,7 @@
 import { useBoard } from "./api/useBoard.ts";
 import { BoardView } from "./board/BoardView.tsx";
 import { ProfileView } from "./profile/ProfileView.tsx";
+import { CardDetailView } from "./card/CardDetailView.tsx";
 import { useRoute } from "./route.ts";
 
 export function App() {
@@ -33,6 +34,10 @@ export function App() {
         </div>
       </main>
     );
+  }
+
+  if (route.view === "card") {
+    return <CardDetailView cardId={route.cardId} board={state.board} connection={state.connection} />;
   }
 
   return <BoardView board={state.board} connection={state.connection} />;

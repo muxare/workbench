@@ -5,11 +5,16 @@
 import {
   apiError,
   boardResponse,
+  cardResponse,
   teammateProfileResponse,
+  writeResponse,
+  type AnswerRequest,
   type ApiErrorCode,
   type BoardResponse,
+  type CardResponse,
   type SetModeRequest,
   type TeammateProfileResponse,
+  type WriteResponse,
 } from "@workbench/shared";
 
 /** Where the web app reaches the API. */
@@ -40,31 +45,23 @@ export class ApiRequestError extends Error {
   }
 }
 
-/** POST a JSON body; failures are reported as in `getJson`. */
-async function sendJson(path: string, payload: unknown): Promise<unknown> {
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}${path}`, {
-      method: "POST",
-      headers: { accept: "application/json", "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  } catch {
-    throw new ApiRequestError("network", "the API cannot be reached");
-  }
-  const body: unknown = await res.json().catch(() => undefined);
-  if (!res.ok) {
-    const problem = apiError.safeParse(body);
-    if (problem.success) throw new ApiRequestError(problem.data.error, problem.data.reason, res.status);
-    throw new ApiRequestError("server_error", `the API answered ${res.status}`, res.status);
-  }
-  return body;
+async function getJson(path: string, signal?: AbortSignal): Promise<unknown> {
+  return requestJson(path, { headers: { accept: "application/json" }, ...(signal ? { signal } : {}) });
 }
 
-async function getJson(path: string, signal?: AbortSignal): Promise<unknown> {
+async function postJson(path: string, payload: unknown): Promise<unknown> {
+  return requestJson(path, {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+async function requestJson(path: string, init: RequestInit): Promise<unknown> {
+  const signal = init.signal ?? undefined;
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, { headers: { accept: "application/json" }, ...(signal ? { signal } : {}) });
+    res = await fetch(`${API_BASE}${path}`, init);
   } catch (err) {
     if (signal?.aborted) throw err;
     throw new ApiRequestError("network", "the API cannot be reached");
@@ -85,7 +82,7 @@ export async function fetchProfile(teammateId: string, signal?: AbortSignal): Pr
 
 /** `POST /api/teammates/:id/modes`: the person sets the mode for one step; answers with the new profile. */
 export async function setMode(teammateId: string, request: SetModeRequest): Promise<TeammateProfileResponse> {
-  return parseProfile(await sendJson(`/teammates/${encodeURIComponent(teammateId)}/modes`, request));
+  return parseProfile(await postJson(`/teammates/${encodeURIComponent(teammateId)}/modes`, request));
 }
 
 function parseProfile(body: unknown): TeammateProfileResponse {
@@ -98,5 +95,20 @@ function parseProfile(body: unknown): TeammateProfileResponse {
 export async function fetchBoard(signal?: AbortSignal): Promise<BoardResponse> {
   const parsed = boardResponse.safeParse(await getJson("/board", signal));
   if (!parsed.success) throw new ApiRequestError("bad_response", "the board from the API does not match the shared schema");
+  return parsed.data;
+}
+
+/** `GET /api/cards/:id`: the card, its whole log, its questions and its function from process/. */
+export async function fetchCard(cardId: string, signal?: AbortSignal): Promise<CardResponse> {
+  const parsed = cardResponse.safeParse(await getJson(`/cards/${encodeURIComponent(cardId)}`, signal));
+  if (!parsed.success) throw new ApiRequestError("bad_response", "the card from the API does not match the shared schema");
+  return parsed.data;
+}
+
+/** `POST /api/cards/:id/questions/:questionId/answer`. A card waiting on the question goes back to In progress. */
+export async function answerQuestion(cardId: string, questionId: string, request: AnswerRequest): Promise<WriteResponse> {
+  const path = `/cards/${encodeURIComponent(cardId)}/questions/${encodeURIComponent(questionId)}/answer`;
+  const parsed = writeResponse.safeParse(await postJson(path, request));
+  if (!parsed.success) throw new ApiRequestError("bad_response", "the answer from the API does not match the shared schema");
   return parsed.data;
 }
