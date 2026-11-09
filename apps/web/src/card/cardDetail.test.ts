@@ -155,7 +155,7 @@ describe("checkLines", () => {
     expect(lines).toEqual([
       { kind: "structural", name: "Structural", by: "2 code rules", result: "Pass · Invented b", tone: "assist" },
       { kind: "consistency", name: "Consistency", by: "AI critic", result: "Invented c", tone: "needs-input" },
-      { kind: "human", name: "Human", by: "sign-off by FE and BE", result: "Not started", tone: "muted" },
+      { kind: "human", name: "Human", by: "FE and BE sign off", result: "Not started", tone: "muted" },
     ]);
   });
 });

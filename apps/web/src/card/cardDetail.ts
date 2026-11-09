@@ -166,7 +166,7 @@ export function checkLines(log: readonly CardEvent[], fn: FunctionFrontMatter | 
   const by: Record<CheckKind, string> = {
     structural: fn ? `${fn.checks.structural.length} code rules` : "code rules",
     consistency: "AI critic",
-    human: fn ? `sign-off by ${fn.checks.human.approver}` : "sign-off",
+    human: fn ? `${fn.checks.human.approver} sign off` : "sign-off",
   };
   return (["structural", "consistency", "human"] as const).map((kind) => {
     const e = latest.get(kind);
