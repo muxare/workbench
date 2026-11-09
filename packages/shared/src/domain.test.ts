@@ -3,19 +3,30 @@ import { describe, expect, it } from "vitest";
 import {
   card,
   cardEvent,
+  cardEventType,
   cycle,
   decidedByHuman,
+  defaultLogFilters,
+  deriveLogFilters,
   deriveProfile,
   eventSubject,
   isCardEvent,
+  logEventTypes,
+  logFilters,
+  normalizeEventTypes,
   question,
+  sameEventTypes,
+  shownInLog,
   status,
   streamEvent,
+  streamEventType,
+  teamEvent,
   teammate,
   teammateEvent,
   teammateRole,
   unfinishedDependencies,
   type Card,
+  type LogFilterChangedEvent,
   type StreamEvent,
   type Teammate,
 } from "./domain.ts";
@@ -188,9 +199,9 @@ describe("teammate events", () => {
     expect(eventSubject(change)).toEqual({ kind: "teammate", id: "invented-be" });
     expect(isCardEvent(report)).toBe(true);
     expect(isCardEvent(change)).toBe(false);
-    // No event type is about the team yet; one with neither field would be.
-    const teamWide = Object.fromEntries(Object.entries(change).filter(([key]) => key !== "teammate_id"));
-    expect(eventSubject(teamWide as unknown as StreamEvent)).toEqual({ kind: "team" });
+    const filter = streamEvent.parse({ id: "invented-f1", type: "log_filter_changed", actor: "invented-be", at, log: "board", hidden: [], was_hidden: ["mode_changed"] });
+    expect(eventSubject(filter)).toEqual({ kind: "team" });
+    expect(isCardEvent(filter)).toBe(false);
   });
 
   it("give a person's profile: the latest change per function, only their own", () => {
@@ -235,5 +246,68 @@ describe("unfinishedDependencies", () => {
   it("is empty when every dependency is done", () => {
     const cards = [make("invented-1", "done"), make("invented-3", "ready", ["invented-1"])];
     expect(unfinishedDependencies(cards[1]!, cards)).toEqual([]);
+  });
+});
+
+describe("log filter events", () => {
+  const change: LogFilterChangedEvent = {
+    id: "invented-f1",
+    type: "log_filter_changed",
+    actor: "invented-po",
+    at,
+    log: "board",
+    hidden: ["mode_changed"],
+    was_hidden: [],
+  };
+
+  it("list every event type in the stream, read from the schemas", () => {
+    const fromUnion = streamEvent.options.map((o) => o.shape.type.value);
+    expect(streamEventType.options).toEqual(fromUnion);
+    expect(cardEventType.options).toEqual(cardEvent.options.map((o) => o.shape.type.value));
+  });
+
+  it("are team events, with neither a card nor a teammate", () => {
+    expect(teamEvent.parse(change)).toEqual(change);
+    expect(streamEvent.parse(change)).toEqual(change);
+    expect(streamEvent.parse({ ...change, card_id: "invented-151" })).not.toHaveProperty("card_id");
+  });
+
+  it("refuse an unknown log, an unknown event type and a type listed twice", () => {
+    expect(streamEvent.safeParse({ ...change, log: "sprint" }).success).toBe(false);
+    expect(streamEvent.safeParse({ ...change, hidden: ["comment_added"] }).success).toBe(false);
+    expect(streamEvent.safeParse({ ...change, hidden: ["picked", "picked"] }).success).toBe(false);
+    expect(streamEvent.safeParse({ ...change, was_hidden: undefined }).success).toBe(false);
+  });
+
+  it("give each log's filter: the latest change per log wins, and every log shows everything by default", () => {
+    expect(deriveLogFilters([])).toEqual(defaultLogFilters());
+    const events: StreamEvent[] = [
+      change,
+      { ...change, id: "invented-f2", log: "cycle", hidden: ["report_posted", "picked"] },
+      { ...change, id: "invented-f3", hidden: ["check_ran"], was_hidden: ["mode_changed"] },
+    ];
+    expect(deriveLogFilters(events)).toEqual({ card: [], board: ["check_ran"], cycle: ["report_posted", "picked"], teammate: [] });
+    expect(logFilters.parse(deriveLogFilters(events))).toEqual(deriveLogFilters(events));
+  });
+
+  it("compare and order hidden sets by the schema", () => {
+    expect(normalizeEventTypes(["mode_changed", "picked", "mode_changed"])).toEqual(["picked", "mode_changed"]);
+    expect(sameEventTypes(["report_posted", "picked"], ["picked", "report_posted"])).toBe(true);
+    expect(sameEventTypes(["picked"], [])).toBe(false);
+  });
+
+  it("offer card event types to the card log and every type to the others", () => {
+    expect(logEventTypes("card")).toEqual(cardEventType.options);
+    expect(logEventTypes("card")).not.toContain("mode_changed");
+    expect(logEventTypes("board")).toEqual(streamEventType.options);
+  });
+
+  it("filter only the log they name, keeping the order of the rest", () => {
+    const report = { id: "invented-e1", type: "report_posted", card_id: "invented-151", actor: "invented-ai", at, text: "Invented." } as const;
+    const mode = { id: "invented-m1", type: "mode_changed", teammate_id: "invented-be", actor: "invented-be", at, function_id: "define_api_contract", from: null, to: "assist" } as const;
+    const events: StreamEvent[] = [report, mode, change];
+    const filters = { ...defaultLogFilters(), board: ["mode_changed" as const] };
+    expect(shownInLog(events, filters, "board").map((e) => e.id)).toEqual(["invented-e1", "invented-f1"]);
+    expect(shownInLog(events, filters, "cycle")).toEqual(events);
   });
 });

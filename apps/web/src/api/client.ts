@@ -7,6 +7,7 @@ import {
   apiError,
   boardResponse,
   cardResponse,
+  logFiltersResponse,
   teammateProfileResponse,
   writeResponse,
   type AiTeammateProfileResponse,
@@ -14,6 +15,9 @@ import {
   type ApiErrorCode,
   type BoardResponse,
   type CardResponse,
+  type LogFiltersResponse,
+  type LogName,
+  type SetLogFilterRequest,
   type SetModeRequest,
   type TeammateProfileResponse,
   type WriteResponse,
@@ -134,5 +138,16 @@ export async function answerQuestion(cardId: string, questionId: string, request
   const path = `/cards/${encodeURIComponent(cardId)}/questions/${encodeURIComponent(questionId)}/answer`;
   const parsed = writeResponse.safeParse(await postJson(path, request));
   if (!parsed.success) throw new ApiRequestError("bad_response", "the answer from the API does not match the shared schema");
+  return parsed.data;
+}
+
+/**
+ * `POST /api/logs/:log/filter`: set the event types one log hides for the
+ * whole team. Answers with every log's filter; the change also reaches every
+ * board over the event stream.
+ */
+export async function setLogFilter(log: LogName, request: SetLogFilterRequest): Promise<LogFiltersResponse> {
+  const parsed = logFiltersResponse.safeParse(await postJson(`/logs/${encodeURIComponent(log)}/filter`, request));
+  if (!parsed.success) throw new ApiRequestError("bad_response", "the log filters from the API do not match the shared schema");
   return parsed.data;
 }

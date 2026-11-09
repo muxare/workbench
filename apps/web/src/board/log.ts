@@ -1,6 +1,7 @@
 // The cycle log under the board: one line per event, newest first. Events
-// about a card and events about a teammate, such as a mode change, share it.
-import type { BoardResponse, StreamEvent } from "@workbench/shared";
+// about a card, a teammate (a mode change) and the team (a filter change)
+// share it. It shows the board log, so the board log's filter applies.
+import { shownInLog, type BoardResponse, type LogName, type StreamEvent } from "@workbench/shared";
 import { columnLabel } from "./columns.ts";
 import { modeLabel } from "./modes.ts";
 import { cardRef, labelOf } from "./teammates.ts";
@@ -21,6 +22,10 @@ export function describeEvent(e: StreamEvent, board: BoardResponse): string {
     const whose = e.teammate_id === e.actor ? "their" : `${labelOf(board, e.teammate_id)}'s`;
     const was = e.from === null ? "the default" : modeLabel[e.from];
     return `${who} changed ${whose} mode for ${e.function_id} to ${modeLabel[e.to]} · was: ${was}`;
+  }
+  if (e.type === "log_filter_changed") {
+    const hides = e.hidden.length === 0 ? "shows every event type" : `hides ${e.hidden.join(", ")}`;
+    return `${who} changed the ${e.log} log filter · now ${hides}`;
   }
   const card = cardRef(e.card_id);
   switch (e.type) {
@@ -48,9 +53,12 @@ export interface LogLine {
   text: string;
 }
 
-/** The board's log as lines, newest first. */
+/** The log under the board is the board log, so it takes the board log's filter. */
+export const BOARD_PANEL_LOG: LogName = "board";
+
+/** The board's log as lines, newest first, without the event types its filter hides. */
 export function logLines(board: BoardResponse, timeZone?: string): LogLine[] {
-  return [...board.log].reverse().map((e) => ({
+  return shownInLog(board.log, board.log_filters, BOARD_PANEL_LOG).reverse().map((e) => ({
     id: e.id,
     at: e.at,
     time: formatTime(e.at, timeZone),

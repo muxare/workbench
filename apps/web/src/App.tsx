@@ -70,7 +70,7 @@ export function App() {
   if (state.phase === "loading") return <BoardLoading />;
   if (state.phase === "error") return <BoardError reason={state.reason} retry={state.retry} />;
   if (route.view === "card") {
-    return <CardDetailView cardId={route.cardId} board={state.board} connection={state.connection} />;
+    return <CardDetailView cardId={route.cardId} board={state.board} connection={state.connection} onFilterChanged={state.refresh} />;
   }
-  return <BoardView board={state.board} connection={state.connection} />;
+  return <BoardView board={state.board} connection={state.connection} onFilterChanged={state.refresh} />;
 }

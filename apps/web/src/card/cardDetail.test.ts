@@ -175,6 +175,18 @@ describe("cardLogLines", () => {
     expect(lines.map((l) => l.id)).toEqual(["e8", "e7", "e6"]);
     expect(lines[0]).toMatchObject({ time: "09:41", text: "AI moved #151 to Needs input · waiting on BE" });
   });
+
+  it("leaves out the event types the team's card log filter hides, and only those", () => {
+    const base = testBoard();
+    const board = testBoard({ log_filters: { ...base.log_filters, card: ["status_changed"], board: ["asked"] } });
+    expect(cardLogLines(detail().log, board, new Date(at(50)), "UTC").map((l) => l.id)).toEqual(["e7", "e6"]);
+  });
+
+  it("does not filter what the rest of the screen reads from the log", () => {
+    const base = testBoard();
+    const board = testBoard({ log_filters: { ...base.log_filters, card: ["picked"] } });
+    expect(detailMode(detail(), board)).toBe("assist");
+  });
 });
 
 describe("linkedWork", () => {

@@ -10,7 +10,9 @@ import {
   cardLink,
   cardStatus,
   functionId,
+  hiddenEventTypes,
   humanTeammate,
+  logFilters,
   mode,
   question,
   streamEvent,
@@ -90,17 +92,35 @@ export const questionView = question;
 
 /**
  * `GET /board`. `last_seq` is where to start the event stream (`GET /events?after=`).
- * The log is the board log: card and teammate events alike. Each teammate's
- * `process_profile` is derived from their `mode_changed` events.
+ * The log is the board log: card, teammate and team events alike, unfiltered.
+ * Each teammate's `process_profile` is derived from their `mode_changed`
+ * events. `log_filters` is the team's filter for each log, derived from the
+ * `log_filter_changed` events; the screens apply it where they show a log,
+ * because the log here is also what the board follows the stream with.
  */
 export const boardResponse = z.object({
   cards: z.array(card),
   teammates: z.array(teammate),
   open_questions: z.array(questionView),
   log: z.array(streamEvent),
+  log_filters: logFilters,
   last_seq: z.number().int().nonnegative(),
 });
 export type BoardResponse = z.infer<typeof boardResponse>;
+
+/**
+ * `POST /logs/:log/filter`: a person sets the event types one log hides for
+ * the whole team. `hidden` is the whole set, in any order; an empty list shows
+ * everything. The actor must be a person. A change appends one
+ * `log_filter_changed` event, which reaches every board over `GET /events`;
+ * setting the filter the log already has appends nothing. The answer is every
+ * log's filter as it now stands.
+ */
+export const setLogFilterRequest = z.strictObject({ actor: teammateId, hidden: hiddenEventTypes });
+export type SetLogFilterRequest = z.infer<typeof setLogFilterRequest>;
+
+export const logFiltersResponse = z.object({ log_filters: logFilters });
+export type LogFiltersResponse = z.infer<typeof logFiltersResponse>;
 
 /**
  * `GET /cards/:id`. `function` is the front matter of the card's function as

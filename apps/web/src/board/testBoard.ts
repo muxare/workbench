@@ -1,6 +1,6 @@
 // INVENTED test data for the board view-model tests. None of it describes a
 // real client, project or person.
-import type { BoardResponse, Card, CardEvent } from "@workbench/shared";
+import { defaultLogFilters, type BoardResponse, type Card, type CardEvent } from "@workbench/shared";
 
 export const PO = "t-po";
 export const UX = "t-ux";
@@ -82,6 +82,7 @@ export function testBoard(over: Partial<BoardResponse> = {}): BoardResponse {
       },
     ],
     log,
+    log_filters: defaultLogFilters(),
     last_seq: log.length,
     ...over,
   };

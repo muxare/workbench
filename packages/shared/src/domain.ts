@@ -199,12 +199,67 @@ export type TeammateEvent = z.infer<typeof teammateEvent>;
 export type ModeChangedEvent = Extract<TeammateEvent, { type: "mode_changed" }>;
 
 /**
- * One entry in the append-only event stream: a card event or a teammate
- * event. The card, board and cycle logs are queries over these. An event about
- * the whole team would carry neither `card_id` nor `teammate_id`; there is no
- * such event type yet.
+ * The logs people read: one card's, the board's, a cycle's and a teammate's.
+ * Each is a query over the one event stream, and each has a team-wide filter
+ * over event types (`LogFilters`).
  */
-export const streamEvent = z.discriminatedUnion("type", [...cardEvent.options, ...teammateEvent.options]);
+export const logName = z.enum(["card", "board", "cycle", "teammate"]);
+export type LogName = z.infer<typeof logName>;
+
+/** Every card event type, in schema order, read from `cardEvent`. */
+export const cardEventType = z.enum(cardEvent.options.map((o) => o.shape.type.value));
+
+/**
+ * Every event type in the stream, in schema order: the card and teammate
+ * event types read from their schemas, then the team event types. The team
+ * event `log_filter_changed` names event types itself, so its own type is
+ * written here by hand, and a test checks this list against `streamEvent`.
+ */
+export const streamEventType = z.enum([
+  ...cardEventType.options,
+  ...teammateEvent.options.map((o) => o.shape.type.value),
+  "log_filter_changed" as const,
+]);
+
+/**
+ * The event types a log hides. A filter stores what is hidden, not what is
+ * shown, so a log shows every event type until someone hides one, and an
+ * event type added to the schema later shows in every log at once.
+ */
+export const hiddenEventTypes = z
+  .array(streamEventType)
+  .refine((types) => new Set(types).size === types.length, { message: "an event type is listed twice" });
+
+const teamEventBase = { id: eventId, actor: teammateId, at: timestamp };
+
+/**
+ * An event whose subject is the whole team, so it carries neither `card_id`
+ * nor `teammate_id`. `log_filter_changed` records a person setting which event
+ * types one log hides for the whole team: `hidden` is the whole set it hides
+ * from now on, and `was_hidden` the set it hid before. The current filters
+ * are derived from these events (`deriveLogFilters`).
+ */
+export const teamEvent = z.discriminatedUnion("type", [
+  z.object({
+    ...teamEventBase,
+    type: z.literal("log_filter_changed"),
+    log: logName,
+    hidden: hiddenEventTypes,
+    was_hidden: hiddenEventTypes,
+  }),
+]);
+export type TeamEvent = z.infer<typeof teamEvent>;
+export type LogFilterChangedEvent = Extract<TeamEvent, { type: "log_filter_changed" }>;
+
+/**
+ * One entry in the append-only event stream: a card, teammate or team event.
+ * The card, board and cycle logs are queries over these.
+ */
+export const streamEvent = z.discriminatedUnion("type", [
+  ...cardEvent.options,
+  ...teammateEvent.options,
+  ...teamEvent.options,
+]);
 export type StreamEvent = z.infer<typeof streamEvent>;
 export type StreamEventType = StreamEvent["type"];
 
@@ -230,4 +285,59 @@ export function deriveProfile(events: readonly StreamEvent[], teammateId: string
   const profile: ProcessProfile = {};
   for (const e of events) if (e.type === "mode_changed" && e.teammate_id === teammateId) profile[e.function_id] = e.to;
   return profile;
+}
+
+/** The event types each log hides, for every log; an empty list shows every event type. */
+export const logFilters = z.object({
+  card: hiddenEventTypes,
+  board: hiddenEventTypes,
+  cycle: hiddenEventTypes,
+  teammate: hiddenEventTypes,
+});
+export type LogFilters = z.infer<typeof logFilters>;
+
+/** The filters before anyone has changed one: every log shows every event type. */
+export function defaultLogFilters(): LogFilters {
+  return { card: [], board: [], cycle: [], teammate: [] };
+}
+
+/**
+ * The team's log filters from the stream: for each log, the `hidden` of the
+ * latest `log_filter_changed` event about it. `events` must be in stream order.
+ */
+export function deriveLogFilters(events: readonly StreamEvent[]): LogFilters {
+  const filters = defaultLogFilters();
+  for (const e of events) if (e.type === "log_filter_changed") filters[e.log] = [...e.hidden];
+  return filters;
+}
+
+/** The types in `types`, once each, in schema order, so equal sets compare equal. */
+export function normalizeEventTypes(types: readonly StreamEventType[]): StreamEventType[] {
+  const set = new Set(types);
+  return streamEventType.options.filter((t) => set.has(t));
+}
+
+/** Whether two lists name the same event types, in any order. */
+export function sameEventTypes(a: readonly StreamEventType[], b: readonly StreamEventType[]): boolean {
+  const left = normalizeEventTypes(a);
+  const right = normalizeEventTypes(b);
+  return left.length === right.length && left.every((t, i) => t === right[i]);
+}
+
+/**
+ * The event types that can appear in a log, which its filter offers. A card
+ * log holds only card events; the board, cycle and teammate logs can hold any.
+ */
+export function logEventTypes(log: LogName): readonly StreamEventType[] {
+  return log === "card" ? cardEventType.options : streamEventType.options;
+}
+
+/**
+ * The events a log shows under the team's filters: those whose type its
+ * filter does not hide, in the order given. The filter is a view setting; it
+ * never removes an event from the stream or from anything else that reads it.
+ */
+export function shownInLog<E extends StreamEvent>(events: readonly E[], filters: LogFilters, log: LogName): E[] {
+  const hidden = new Set<StreamEventType>(filters[log]);
+  return events.filter((e) => !hidden.has(e.type));
 }

@@ -7,6 +7,9 @@
 // `POST /api/teammates/:id/modes` appends a `mode_changed` event about the
 // person, and a person's process profile is derived from those events, so a
 // mode change reaches the logs and the stream like a card change.
+// `POST /api/logs/:log/filter` appends a `log_filter_changed` event about the
+// team, and each log's filter is derived from those events; the API never
+// applies a filter to what it returns, because a filter is a view setting.
 // `GET /api/teammates/:id/profile` reads the person's chain of steps from
 // process/functions on each request; for an AI teammate it answers a
 // separate, derived profile (aiProfile.ts).
@@ -21,8 +24,12 @@ import {
   cardStatus,
   createCardRequest,
   isManualMove,
+  logName,
+  normalizeEventTypes,
   moveStatusRequest,
   pickRequest,
+  sameEventTypes,
+  setLogFilterRequest,
   setModeRequest,
   unfinishedDependencies,
   type HumanTeammate,
@@ -35,6 +42,7 @@ import {
   type CardEvent,
   type CardResponse,
   type FunctionFrontMatter,
+  type LogFiltersResponse,
   type Teammate,
   type TeammateRunResponse,
   type WriteResponse,
@@ -55,6 +63,7 @@ import {
   listCards,
   listQuestions,
   listTeammates,
+  logFilters,
   StoreError,
   type StoreErrorCode,
 } from "./store.ts";
@@ -179,6 +188,7 @@ export function createApp(deps: AppDeps) {
         teammates: await listTeammates(db),
         open_questions: (await listQuestions(db)).filter((q) => q.answer === undefined),
         log: await boardLog(db, { limit: BOARD_LOG_LIMIT }),
+        log_filters: await logFilters(db),
         last_seq: await lastSeq(db),
       };
       return c.json(response);
@@ -363,6 +373,31 @@ export function createApp(deps: AppDeps) {
         ]);
       }
       const response: TeammateProfileResponse = buildProfile(await personOr404(person.id), defs);
+      return c.json(response);
+    })
+
+    .post("/logs/:log/filter", async (c) => {
+      const log = logName.safeParse(c.req.param("log"));
+      if (!log.success) throw new ApiProblem("not_found", `no log '${c.req.param("log")}'; the logs are ${logName.options.join(", ")}`);
+      const req = await body(c, setLogFilterRequest);
+      const actor = await teammateOr422(req.actor, "actor");
+      if (actor.kind !== "human") throw new ApiProblem("forbidden", `a log's filter is set by a person, not ${actor.id}`);
+      // Setting the filter the log already has changes nothing, so it records nothing.
+      const was = (await logFilters(db))[log.data];
+      if (!sameEventTypes(was, req.hidden)) {
+        await appendEvents(db, [
+          {
+            id: newId(),
+            type: "log_filter_changed",
+            actor: actor.id,
+            at: now().toISOString(),
+            log: log.data,
+            hidden: normalizeEventTypes(req.hidden),
+            was_hidden: was,
+          },
+        ]);
+      }
+      const response: LogFiltersResponse = { log_filters: await logFilters(db) };
       return c.json(response);
     })
 

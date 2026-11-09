@@ -1,8 +1,10 @@
 // All example data in these tests is invented.
 import { beforeEach, describe, expect, it } from "vitest";
-import type { CardEvent, Mode, StreamEvent } from "@workbench/shared";
+import type { CardEvent, Mode, StreamEvent, StreamEventType } from "@workbench/shared";
+import { eq } from "drizzle-orm";
 import { deriveProfile } from "@workbench/shared";
 import { openDb, type Db } from "./db/client.ts";
+import { events } from "./db/schema.ts";
 import { loadFunctionDefinitions, loadFunctionIds } from "./process.ts";
 import { inventedSeed } from "./seed/invented.ts";
 import {
@@ -18,6 +20,7 @@ import {
   getTeammate,
   listCards,
   listTeammates,
+  logFilters,
   profileEvents,
   seed,
   StoreError,
@@ -235,6 +238,66 @@ describe("mode changes", () => {
     expect(profileEvents("t-human", { frame_problem: "assist" }, at(5), "x-")).toEqual([
       { id: "x-t-human-frame_problem", type: "mode_changed", teammate_id: "t-human", actor: "t-human", at: at(5), function_id: "frame_problem", from: null, to: "assist" },
     ]);
+  });
+});
+
+describe("log filter changes", () => {
+  const change = (id: string, hidden: StreamEventType[], wasHidden: StreamEventType[], over: object = {}): StreamEvent => ({
+    id,
+    type: "log_filter_changed",
+    actor: "t-human",
+    at: at(50),
+    log: "board",
+    hidden,
+    was_hidden: wasHidden,
+    ...over,
+  });
+
+  it("leave every log showing everything until someone changes one", async () => {
+    expect(await logFilters(db)).toEqual({ card: [], board: [], cycle: [], teammate: [] });
+  });
+
+  it("derive the team's filters: the latest change per log wins", async () => {
+    await appendEvents(db, [
+      change("f1", ["mode_changed"], []),
+      change("f2", ["picked"], [], { log: "card" }),
+      change("f3", ["mode_changed", "report_posted"], ["mode_changed"]),
+    ]);
+    expect(await logFilters(db)).toEqual({ card: ["picked"], board: ["mode_changed", "report_posted"], cycle: [], teammate: [] });
+  });
+
+  it("are stored about the team, and hide nothing from the stream or any log query", async () => {
+    await appendEvent(db, change("f1", ["mode_changed", "status_changed"], []));
+    const [row] = await db.select().from(events).where(eq(events.id, "f1"));
+    expect(row).toMatchObject({ cardId: null, teammateId: null, type: "log_filter_changed" });
+    expect(ids(await boardLog(db))).toEqual(["v1", "m1", "v2", "v3", "v4", "v5", "f1"]);
+    expect(ids(await cardLog(db, "k1"))).toEqual(["v1", "v2", "v4", "v5"]);
+    expect((await eventsAfter(db, 0)).map((s) => s.event.id)).toContain("m1");
+    expect(await cardStatus(db, "k1")).toMatchObject({ state: "needs_input" });
+  });
+
+  it("must name what the log hides now as was_hidden, in any order", async () => {
+    await appendEvent(db, change("f1", ["picked", "mode_changed"], []));
+    await expect(appendEvent(db, change("f2", [], []))).rejects.toMatchObject({ code: "rule_violation" });
+    await expect(appendEvent(db, change("f2", ["asked"], ["picked"]))).rejects.toMatchObject({ code: "conflict" });
+    await expect(appendEvent(db, change("f2", ["asked"], []))).rejects.toThrow(/hides picked, mode_changed, not nothing/);
+    await appendEvent(db, change("f2", [], ["mode_changed", "picked"]));
+    expect((await logFilters(db)).board).toEqual([]);
+  });
+
+  it("are checked against earlier changes in the same write", async () => {
+    await expect(
+      appendEvents(db, [change("f1", ["picked"], []), change("f2", ["asked"], [])]),
+    ).rejects.toMatchObject({ code: "conflict" });
+    await appendEvents(db, [change("f1", ["picked"], []), change("f2", ["asked"], ["picked"])]);
+    expect((await logFilters(db)).board).toEqual(["asked"]);
+  });
+
+  it("must change what the log hides and come from a person", async () => {
+    await expect(appendEvent(db, change("f1", ["picked"], ["picked"]))).rejects.toThrow(/must change what the board log hides/);
+    await expect(appendEvent(db, change("f1", ["picked"], [], { actor: "t-ai" }))).rejects.toMatchObject({ code: "forbidden" });
+    await expect(appendEvent(db, change("f1", ["picked"], [], { actor: "t-nobody" }))).rejects.toMatchObject({ code: "not_found" });
+    expect(await logFilters(db)).toEqual({ card: [], board: [], cycle: [], teammate: [] });
   });
 });
 

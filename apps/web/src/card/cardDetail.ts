@@ -2,16 +2,17 @@
 // `GET /api/cards/:id` and the live board. Pure functions; the components only
 // lay the result out. How a card is worked comes from its function's front
 // matter in the card response, never from fields written here.
-import type {
-  BoardResponse,
-  Card,
-  CardEvent,
-  CardResponse,
-  CardStatus,
-  FunctionFrontMatter,
-  Mode,
-  ProtocolActor,
-  Question,
+import {
+  shownInLog,
+  type BoardResponse,
+  type Card,
+  type CardEvent,
+  type CardResponse,
+  type CardStatus,
+  type FunctionFrontMatter,
+  type Mode,
+  type ProtocolActor,
+  type Question,
 } from "@workbench/shared";
 import { columnLabel } from "../board/columns.ts";
 import { describeEvent, formatTime } from "../board/log.ts";
@@ -200,9 +201,13 @@ export interface CardLogLine {
   text: string;
 }
 
-/** The card log, newest first. */
+/**
+ * The card log, newest first, without the event types the team's card log
+ * filter hides. Only the lines are filtered; checks, questions and the mode
+ * still read the whole log.
+ */
 export function cardLogLines(log: readonly CardEvent[], board: BoardResponse, now: Date, timeZone?: string): CardLogLine[] {
-  return [...log].reverse().map((e) => ({ id: e.id, at: e.at, time: logTime(e.at, now, timeZone), text: describeEvent(e, board) }));
+  return shownInLog(log, board.log_filters, "card").reverse().map((e) => ({ id: e.id, at: e.at, time: logTime(e.at, now, timeZone), text: describeEvent(e, board) }));
 }
 
 export interface LinkedLine {

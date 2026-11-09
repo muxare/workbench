@@ -21,7 +21,15 @@ function Group({ board, side, teammates }: { board: BoardResponse; side: Side; t
 }
 
 /** The Main artboard: page header, the board in the centre, teammates around it. */
-export function BoardView({ board, connection }: { board: BoardResponse; connection: BoardConnection }) {
+export function BoardView({
+  board,
+  connection,
+  onFilterChanged,
+}: {
+  board: BoardResponse;
+  connection: BoardConnection;
+  onFilterChanged?: (() => void) | undefined;
+}) {
   const seats = placeTeammates(board.teammates);
   return (
     <main className="page">
@@ -39,7 +47,7 @@ export function BoardView({ board, connection }: { board: BoardResponse; connect
         <Group board={board} side="top" teammates={seats.top} />
         <Group board={board} side="left" teammates={seats.left} />
         <div className="stage__board">
-          <Board board={board} connection={connection} />
+          <Board board={board} connection={connection} onFilterChanged={onFilterChanged} />
         </div>
         <Group board={board} side="right" teammates={seats.right} />
         <Group board={board} side="bottom" teammates={seats.bottom} />

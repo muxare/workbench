@@ -40,12 +40,12 @@ checks/         # Python validator, until ported to packages/shared
 - **Card**: id, title, function (from `process/functions/`), owner, status, milestone, links to other cards.
 - **Status**: `backlog`, `ready`, `in_progress`, `needs_input`, `review`, `done`. `needs_input` carries `waiting_on` (a teammate, human or AI) and the open question.
 - **Question**: asked by, asked of, card, text, why it blocks, answer, decided by. Answers go into the card's decision log; tacit knowledge goes into `writes_back` proposals.
-- **Event**: append-only, with a subject that is a card, a teammate or the team. Card events (`card_id`): picked, asked, answered, check_ran, status_changed, report_posted. Teammate events (`teammate_id`): mode_changed. A card's current status is derived from its `status_changed` events rather than stored, as a person's process profile is from their `mode_changed` events.
+- **Event**: append-only, with a subject that is a card, a teammate or the team. Card events (`card_id`): picked, asked, answered, check_ran, status_changed, report_posted. Teammate events (`teammate_id`): mode_changed. Team events (neither id): log_filter_changed. A card's current status is derived from its `status_changed` events rather than stored, as a person's process profile is from their `mode_changed` events.
 - **Cycle**: a named time window on the board, such as a sprint. The cycle log is the events that fall inside it.
 
 ## Logs are views of one event stream
 
-The card log, the board log and the cycle log are three queries over the same events. Store events, not three logs. Changes to how the team works, such as a person's mode for a step, are events in the same stream, and each log has a filter, set by its users, over which event types it shows (decided 2026-11-09). The lines between teammates on the board come from open questions plus who is working on which card. The learning layer (phase 5) reads the same events.
+The card log, the board log and the cycle log are three queries over the same events. Store events, not three logs. Changes to how the team works, such as a person's mode for a step, are events in the same stream, and each log has one team-wide filter over which event types it shows, stored as the set it hides and derived from `log_filter_changed` events (decided 2026-11-09). The filter only changes what a screen shows; the API and the learning layer always read every event. The lines between teammates on the board come from open questions plus who is working on which card. The learning layer (phase 5) reads the same events.
 
 ## Cards and external trackers
 

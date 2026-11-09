@@ -1,28 +1,37 @@
 // The event store: the append-only event stream plus the teammates, cycles
-// and cards it refers to. An event's subject is a card (`card_id`) or a
-// teammate (`teammate_id`). The card, board and cycle logs are three queries
-// over the one `events` table (docs/architecture.md, "Logs are views of one
-// event stream"); no log is stored on its own. A card's status is derived from
-// its `status_changed` events, and a person's process profile from their
-// `mode_changed` events, in the same way.
+// and cards it refers to. An event's subject is a card (`card_id`), a
+// teammate (`teammate_id`) or the whole team (neither). The card, board and
+// cycle logs are three queries over the one `events` table
+// (docs/architecture.md, "Logs are views of one event stream"); no log is
+// stored on its own. A card's status is derived from
+// its `status_changed` events, a person's process profile from their
+// `mode_changed` events, and the team's log filters from the
+// `log_filter_changed` events, in the same way. The filters are a view
+// setting: no query here applies them.
 import { and, asc, desc, eq, gt, gte, lt } from "drizzle-orm";
 import {
   card as cardSchema,
   cardEvent,
   cycle as cycleSchema,
+  deriveLogFilters,
   deriveProfile,
   humanTeammate,
+  sameEventTypes,
   streamEvent,
   teammate as teammateSchema,
   type Card,
   type CardEvent,
   type Cycle,
+  type LogFilterChangedEvent,
+  type LogFilters,
+  type LogName,
   type Mode,
   type ModeChangedEvent,
   type ProcessProfile,
   type Question,
   type Status,
   type StreamEvent,
+  type StreamEventType,
   type Teammate,
 } from "@workbench/shared";
 import { z } from "zod";
@@ -137,10 +146,47 @@ export async function chosenMode(db: Db, teammateId: string, functionId: string)
   return deriveProfile(await modeChanges(db, teammateId), teammateId)[functionId] ?? null;
 }
 
+/**
+ * The team's filter for each log, derived from its `log_filter_changed`
+ * events: the latest change per log wins, and a log nobody has changed shows
+ * every event type.
+ */
+export async function logFilters(db: Db): Promise<LogFilters> {
+  const rows = await db.select().from(events).where(eq(events.type, "log_filter_changed")).orderBy(asc(events.seq));
+  return deriveLogFilters(rows.map(fromRow));
+}
+
 interface Pending {
   statuses: Map<string, Status>;
   /** Keyed by teammate id and function id. */
   modes: Map<string, Mode | null>;
+  /** What earlier events in the write set each log's filter to. */
+  filters: Map<LogName, StreamEventType[]>;
+}
+
+/**
+ * A filter change must come from a person, must change what the log hides,
+ * and must name as `was_hidden` what the log hides now, so two changes made
+ * from the same view cannot both win.
+ */
+async function checkLogFilterChange(db: Db, event: LogFilterChangedEvent, pending: Pending): Promise<void> {
+  const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
+  if (!actor) throw new StoreError(`${event.id}: no teammate '${event.actor}'`, "not_found");
+  if (actor.kind !== "human") {
+    throw new StoreError(`${event.id}: a log's filter is set by a person, not ${event.actor}`, "forbidden");
+  }
+  if (sameEventTypes(event.hidden, event.was_hidden)) {
+    throw new StoreError(`${event.id}: a filter change must change what the ${event.log} log hides`);
+  }
+  const current = pending.filters.get(event.log) ?? (await logFilters(db))[event.log];
+  if (!sameEventTypes(current, event.was_hidden)) {
+    const hides = (types: readonly string[]) => (types.length === 0 ? "nothing" : types.join(", "));
+    throw new StoreError(
+      `${event.id}: the ${event.log} log hides ${hides(current)}, not ${hides(event.was_hidden)}`,
+      "conflict",
+    );
+  }
+  pending.filters.set(event.log, event.hidden);
 }
 
 /**
@@ -171,9 +217,9 @@ async function checkModeChange(db: Db, event: ModeChangedEvent, pending: Pending
 /**
  * Check an event against the stream so far: it must parse; a status change's
  * `from` must be the card's current state; an answer must come from a human,
- * because in every protocol `decides` is human; and a mode change must pass
- * `checkModeChange`. `pending` holds what earlier events in the same write
- * have changed.
+ * because in every protocol `decides` is human; a mode change must pass
+ * `checkModeChange`; and a filter change must pass `checkLogFilterChange`.
+ * `pending` holds what earlier events in the same write have changed.
  */
 async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise<StreamEvent> {
   const event = streamEvent.parse(input);
@@ -185,6 +231,7 @@ async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise
     pending.statuses.set(event.card_id, event.to);
   }
   if (event.type === "mode_changed") await checkModeChange(db, event, pending);
+  if (event.type === "log_filter_changed") await checkLogFilterChange(db, event, pending);
   if (event.type === "answered") {
     const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
     if (actor?.kind !== "human") {
@@ -244,7 +291,7 @@ export function onAppend(db: Db, listener: Listener): () => void {
 export function appendEvents(db: Db, inputs: readonly StreamEvent[]): Promise<StoredEvent[]> {
   return serialized(db, async () => {
     if (inputs.length === 0) return [];
-    const pending: Pending = { statuses: new Map(), modes: new Map() };
+    const pending: Pending = { statuses: new Map(), modes: new Map(), filters: new Map() };
     const checked: StreamEvent[] = [];
     for (const input of inputs) checked.push(await checkEvent(db, input, pending));
     // One multi-row INSERT is one statement, so SQLite stores all rows or none.
