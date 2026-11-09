@@ -2,6 +2,7 @@
 // apps/web so neither side copies them. Field names are snake_case, like the
 // domain schemas. There is no sign-in yet, so every write names its `actor`.
 import { z } from "zod";
+import { functionFrontMatter } from "./functionFile.ts";
 import {
   card,
   cardEvent,
@@ -94,11 +95,17 @@ export const boardResponse = z.object({
 });
 export type BoardResponse = z.infer<typeof boardResponse>;
 
-/** `GET /cards/:id`. */
+/**
+ * `GET /cards/:id`. `function` is the front matter of the card's function as
+ * process/functions holds it now, so card detail can show its protocol,
+ * inputs, outputs and checks without hardcoding them. It is null when
+ * process/ no longer defines that function.
+ */
 export const cardResponse = z.object({
   card,
   log: z.array(cardEvent),
   questions: z.array(questionView),
+  function: functionFrontMatter.nullable(),
 });
 export type CardResponse = z.infer<typeof cardResponse>;
 

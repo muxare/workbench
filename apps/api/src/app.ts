@@ -29,6 +29,7 @@ import {
   type WriteResponse,
 } from "@workbench/shared";
 import type { Db } from "./db/client.ts";
+import { loadFunctionDefinitions } from "./process.ts";
 import { eventStream, startingPoint } from "./sse.ts";
 import {
   addCard,
@@ -58,7 +59,10 @@ export interface AppDeps {
   newId?: () => string;
   /** What does the AI teammates' work. Defaults to the deterministic stub. */
   teammateProvider?: TeammateProvider;
-  /** Function definitions for the AI teammate. Defaults to process/functions, read on each run. */
+  /**
+   * Function definitions for the AI teammate and card detail. Defaults to
+   * process/functions, read on each run and each card request.
+   */
   definitions?: ReadonlyMap<string, FunctionFrontMatter>;
 }
 
@@ -159,6 +163,7 @@ export function createApp(deps: AppDeps) {
         card,
         log: await cardLog(db, card.id),
         questions: await listQuestions(db, { cardId: card.id }),
+        function: (deps.definitions ?? loadFunctionDefinitions()).get(card.function_id) ?? null,
       };
       return c.json(response);
     })

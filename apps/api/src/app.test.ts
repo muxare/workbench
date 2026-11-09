@@ -92,6 +92,25 @@ describe("GET /api/cards/:id", () => {
     ]);
   });
 
+  // Any seeded card will do; these do not depend on the seed's card ids.
+  async function someCardId(): Promise<string> {
+    const board = boardResponse.parse(await (await app.request("/api/board")).json());
+    return board.cards[0]!.id;
+  }
+
+  it("includes the card's function as process/ defines it", async () => {
+    const detail = cardResponse.parse(await (await app.request(`/api/cards/${await someCardId()}`)).json());
+    expect(detail.function?.name).toBe(detail.card.function_id);
+    expect(Object.values(detail.function?.protocols ?? {}).every((p) => p.decides === "human")).toBe(true);
+  });
+
+  it("gives a null function when process/ does not define it", async () => {
+    const id = await someCardId();
+    const other = createApp({ db, functionIds, definitions: new Map() });
+    const detail = cardResponse.parse(await (await other.request(`/api/cards/${id}`)).json());
+    expect(detail.function).toBeNull();
+  });
+
   it("is 404 for an unknown card", async () => {
     await expectProblem(await app.request("/api/cards/invented-nope"), 404, "not_found", /invented-nope/);
   });
