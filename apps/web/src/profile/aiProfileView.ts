@@ -184,8 +184,8 @@ export function recentLines(profile: AiTeammateProfileResponse, board: BoardResp
  */
 export function aiProfileRefreshKey(board: BoardResponse, aiId: string): string {
   const cards = board.cards.map((c) => [c.id, c.owner, c.status]);
-  const events = board.log
-    .filter((e) => e.actor === aiId || e.type === "picked" || e.type === "asked" || e.type === "answered")
-    .map((e) => e.id);
-  return JSON.stringify([cards, board.teammates, events]);
+  // Only the latest matching event: the board keeps a window of recent events,
+  // and an unrelated event pushing an old match out of it must not count.
+  const latest = board.log.findLast((e) => e.actor === aiId || e.type === "picked" || e.type === "asked" || e.type === "answered");
+  return JSON.stringify([cards, board.teammates, latest?.id ?? null]);
 }

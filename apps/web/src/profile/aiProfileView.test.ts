@@ -164,6 +164,15 @@ describe("aiProfileRefreshKey", () => {
     expect(aiProfileRefreshKey(withEvent({ ...base, id: "n3", actor: AI, type: "report_posted", text: "Invented." }), AI)).not.toBe(key);
   });
 
+  it("ignores an unrelated event that pushes an old pick out of a full log window", () => {
+    const check = (n: number): CardEvent => ({ ...base, id: `f${String(n)}`, actor: UX, type: "check_ran", check: "structural", passed: true, summary: "Invented." });
+    const full = [...board.log, ...Array.from({ length: 50 - board.log.length }, (_, i) => check(i))];
+    const before = testBoard({ log: full, last_seq: 50 });
+    const after = testBoard({ log: [...full.slice(1), check(99)], last_seq: 51 });
+    expect(full[0]?.type).toBe("picked");
+    expect(aiProfileRefreshKey(after, AI)).toBe(aiProfileRefreshKey(before, AI));
+  });
+
   it("ignores a check or a report by someone else", () => {
     expect(
       aiProfileRefreshKey(withEvent({ ...base, id: "n4", actor: UX, type: "check_ran", check: "structural", passed: true, summary: "Invented." }), AI),
