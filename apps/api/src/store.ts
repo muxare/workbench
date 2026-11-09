@@ -410,6 +410,12 @@ export async function getCycle(db: Db, cycleId: string): Promise<Cycle | undefin
   return row && cycleSchema.parse({ id: row.id, name: row.name, starts_at: row.startsAt, ends_at: row.endsAt });
 }
 
+/** Every cycle, in the order they start. */
+export async function listCycles(db: Db): Promise<Cycle[]> {
+  const rows = await db.select().from(cycles).orderBy(asc(cycles.startsAtMs), asc(cycles.id));
+  return rows.map((row) => cycleSchema.parse({ id: row.id, name: row.name, starts_at: row.startsAt, ends_at: row.endsAt }));
+}
+
 /** A card's current status: the `to` of its latest `status_changed` event. */
 export async function cardStatus(db: Db, cardId: string): Promise<Status> {
   const [row] = await db

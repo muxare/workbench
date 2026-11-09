@@ -9,6 +9,9 @@ export const AI = "t-ai";
 
 const at = (minute: number) => `2026-11-06T09:${String(minute).padStart(2, "0")}:00Z`;
 
+/** The invented cycle the test board is in; its window holds every event of the test log. */
+export const CYCLE = { id: "cy-14", name: "Invented sprint 14", starts_at: "2026-11-02T08:00:00Z", ends_at: "2026-11-16T08:00:00Z" };
+
 export function card(id: string, over: Partial<Card> = {}): Card {
   return { id, title: `Invented card ${id}`, function_id: "frame_problem", owner: UX, status: { state: "backlog" }, links: [], ...over };
 }
@@ -83,6 +86,7 @@ export function testBoard(over: Partial<BoardResponse> = {}): BoardResponse {
     ],
     log,
     log_filters: defaultLogFilters(),
+    cycle: { cycle: CYCLE, ended: false, log },
     last_seq: log.length,
     ...over,
   };

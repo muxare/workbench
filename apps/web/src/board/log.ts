@@ -1,7 +1,8 @@
-// The cycle log under the board: one line per event, newest first. Events
-// about a card, a teammate (a mode change) and the team (a filter change)
-// share it. It shows the board log, so the board log's filter applies.
-import { shownInLog, type BoardResponse, type LogName, type StreamEvent } from "@workbench/shared";
+// Log lines as the board and card detail show them, and the cycle log under
+// the board: one line per event, newest first. Events about a card, a
+// teammate (a mode change) and the team (a filter change) share it. It shows
+// the current cycle's log (`board.cycle`), so the cycle log's filter applies.
+import { shownInLog, type BoardResponse, type Cycle, type LogName, type StreamEvent } from "@workbench/shared";
 import { columnLabel } from "./columns.ts";
 import { modeLabel } from "./modes.ts";
 import { cardRef, labelOf } from "./teammates.ts";
@@ -53,15 +54,53 @@ export interface LogLine {
   text: string;
 }
 
-/** The log under the board is the board log, so it takes the board log's filter. */
-export const BOARD_PANEL_LOG: LogName = "board";
+/** The log under the board is the current cycle's log, so it takes the cycle log's filter. */
+export const BOARD_PANEL_LOG: LogName = "cycle";
 
-/** The board's log as lines, newest first, without the event types its filter hides. */
-export function logLines(board: BoardResponse, timeZone?: string): LogLine[] {
-  return shownInLog(board.log, board.log_filters, BOARD_PANEL_LOG).reverse().map((e) => ({
+/**
+ * A log time as the artboard writes it: "09:41" on the same day as `now`,
+ * the weekday ("Fri") within the last week, and the date ("3 Nov") before that.
+ */
+export function logTime(at: string, now: Date, timeZone?: string): string {
+  const day = (d: Date) => new Intl.DateTimeFormat("en-CA", { dateStyle: "short", ...(timeZone ? { timeZone } : {}) }).format(d);
+  const then = new Date(at);
+  if (day(then) === day(now)) return formatTime(at, timeZone);
+  const zone = timeZone ? { timeZone } : {};
+  if (now.getTime() - then.getTime() < 6 * 24 * 60 * 60 * 1000) {
+    return new Intl.DateTimeFormat("en-GB", { weekday: "short", ...zone }).format(then);
+  }
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", ...zone }).format(then);
+}
+
+/** The current cycle's log as lines, newest first, without the event types the cycle filter hides. */
+export function logLines(board: BoardResponse, now: Date, timeZone?: string): LogLine[] {
+  const log = board.cycle?.log ?? [];
+  return shownInLog(log, board.log_filters, BOARD_PANEL_LOG).reverse().map((e) => ({
     id: e.id,
     at: e.at,
-    time: formatTime(e.at, timeZone),
+    time: logTime(e.at, now, timeZone),
     text: describeEvent(e, board),
   }));
+}
+
+/**
+ * The cycle's window as the panel heads it: "28 Sep – 12 Oct", with the year
+ * only when the two ends fall in different years. The end is the first
+ * moment after the cycle, as stored.
+ */
+export function cycleWindow(c: Cycle, timeZone?: string): string {
+  const zone = timeZone ? { timeZone } : {};
+  const year = (at: string) => new Intl.DateTimeFormat("en-GB", { year: "numeric", ...zone }).format(new Date(at));
+  const withYear = year(c.starts_at) !== year(c.ends_at);
+  const date = (at: string) =>
+    new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}), ...zone }).format(new Date(at));
+  return `${date(c.starts_at)} – ${date(c.ends_at)}`;
+}
+
+/** What the panel says when it shows no lines, or undefined when it shows some. */
+export function emptyCycleLog(board: BoardResponse, shown: number): string | undefined {
+  if (shown > 0) return undefined;
+  if (board.cycle === null) return "No cycle has started yet.";
+  if (board.cycle.log.length === 0) return "Nothing has happened in this cycle yet.";
+  return "The filter hides every event in this cycle.";
 }

@@ -19,7 +19,7 @@ function report(id: string): CardEvent {
 }
 
 function board(lastSeq: number, log: CardEvent[] = []): BoardResponse {
-  return { cards: [], teammates: [], open_questions: [], log, log_filters: defaultLogFilters(), last_seq: lastSeq };
+  return { cards: [], teammates: [], open_questions: [], log, log_filters: defaultLogFilters(), cycle: null, last_seq: lastSeq };
 }
 
 const live = (seq: number, id = `e${seq}`): LiveEvent => ({ seq, event: report(id) });
@@ -62,6 +62,30 @@ describe("mergeEvent", () => {
     for (let seq = 1; seq <= BOARD_LOG_LIMIT + 5; seq++) state = mergeEvent(state, live(seq));
     expect(state.board.log).toHaveLength(BOARD_LOG_LIMIT);
     expect(state.board.log[0]?.id).toBe("e6");
+  });
+});
+
+describe("mergeEvent and the cycle log", () => {
+  // Invented cycles around report()'s time, 2026-11-08T10:00Z.
+  const holding = { id: "cy-now", name: "Invented sprint", starts_at: "2026-11-02T08:00:00Z", ends_at: "2026-11-16T08:00:00Z" };
+  const over = { ...holding, id: "cy-over", starts_at: "2026-10-19T08:00:00Z", ends_at: "2026-11-02T08:00:00Z" };
+  const inCycle = (c: typeof holding, log: CardEvent[] = []): BoardResponse => ({ ...board(3), cycle: { cycle: c, ended: false, log } });
+
+  it("adds an event whose time falls in the current cycle to its log", () => {
+    const next = mergeEvent(liveBoard(inCycle(holding, [report("e3")])), live(4));
+    expect(next.board.cycle?.log.map((e) => e.id)).toEqual(["e3", "e4"]);
+  });
+
+  it("leaves the cycle log alone for an event after the cycle's end, or one it already holds", () => {
+    const ended = mergeEvent(liveBoard(inCycle(over)), live(4));
+    expect(ended.board.cycle?.log).toEqual([]);
+    expect(ended.board.log.map((e) => e.id)).toEqual(["e4"]);
+    const twice = mergeEvent(liveBoard(inCycle(holding, [report("e4")])), live(4));
+    expect(twice.board.cycle?.log).toHaveLength(1);
+  });
+
+  it("keeps a board with no cycle at null", () => {
+    expect(mergeEvent(liveBoard(board(3)), live(4)).board.cycle).toBeNull();
   });
 });
 

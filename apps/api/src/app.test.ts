@@ -95,6 +95,42 @@ describe("GET /api/board", () => {
   });
 });
 
+describe("GET /api/board, the current cycle", () => {
+  const sprint3 = inventedSeed.cycles.find((c) => c.id === "invented-sprint-3")!;
+  const inSprint3 = inventedSeed.events.filter((e) => Date.parse(e.at) >= Date.parse(sprint3.starts_at) && Date.parse(e.at) < Date.parse(sprint3.ends_at));
+  const boardAt = async (now: string, database: Db = db) => {
+    const a = createApp({ db: database, functionIds, now: () => new Date(now) });
+    return boardResponse.parse(await (await a.request("/api/board")).json());
+  };
+
+  it("is the cycle that holds the server's clock, with its whole log, oldest first", async () => {
+    const board = await boardAt("2026-10-06T18:00:00Z");
+    expect(board.cycle?.cycle).toEqual(sprint3);
+    expect(board.cycle?.ended).toBe(false);
+    expect(board.cycle?.log.map((e) => e.id)).toEqual(inSprint3.map((e) => e.id));
+  });
+
+  it("between cycles, is the one that ended last, marked ended, without the events after its end", async () => {
+    await post(`/api/cards/invented-108/pick`, { actor: FE });
+    const board = await boardAt("2026-11-07T10:00:00Z");
+    expect(board.cycle).toMatchObject({ cycle: sprint3, ended: true });
+    expect(board.cycle?.log.map((e) => e.id)).toEqual(inSprint3.map((e) => e.id));
+    expect(board.log.at(-1)?.type).toBe("status_changed");
+  });
+
+  it("is null before any cycle has started, and with no cycles", async () => {
+    expect((await boardAt("2026-08-01T00:00:00Z")).cycle).toBeNull();
+    const empty = await openDb(":memory:");
+    await seed(empty, { ...inventedSeed, cycles: [] }, functionIds);
+    expect((await boardAt("2026-10-06T18:00:00Z", empty)).cycle).toBeNull();
+  });
+
+  it("is a different cycle when the clock moves into it", async () => {
+    expect((await boardAt("2026-09-01T00:00:00Z")).cycle?.cycle.id).toBe("invented-sprint-1");
+    expect((await boardAt("2026-09-20T00:00:00Z")).cycle?.cycle.id).toBe("invented-sprint-2");
+  });
+});
+
 describe("GET /api/cards/:id", () => {
   it("returns the card, its log and its questions with answers", async () => {
     const res = await app.request("/api/cards/invented-101");
