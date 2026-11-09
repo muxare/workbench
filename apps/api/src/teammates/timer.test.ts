@@ -39,11 +39,11 @@ describe("startTeammateTimer", () => {
       onError: (err) => errors.push(err),
     });
 
-    expect((await cardStatus(db, "invented-154")).state).toBe("ready");
+    expect((await cardStatus(db, "invented-108")).state).toBe("ready");
     vi.advanceTimersByTime(1000);
     await vi.waitFor(() => expect(runs).toHaveLength(1));
-    expect(runs[0]?.card.id).toBe("invented-154");
-    expect((await cardStatus(db, "invented-154")).state).toBe("needs_input");
+    expect(runs[0]?.card.id).toBe("invented-108");
+    expect((await cardStatus(db, "invented-108")).state).toBe("needs_input");
 
     stop();
     vi.advanceTimersByTime(5000);

@@ -6,7 +6,7 @@ A housing cooperative wants residents to book laundry-room slots and report faul
 
 ## Files
 
-- `client_brief.md`, `business_goals.md`, `constraints.md`, `stakeholder_context.md`: the four external artifacts as they stood when the project started on 2026-09-01, with the front matter fields `process/artifacts.md` lists and prose below, as described in `docs/runs.md`. Proposals accepted later are told in the history, not applied to these files.
+- `client_brief.md`, `business_goals.md`, `constraints.md`, `stakeholder_context.md`, `domain_rules.md`: the five external artifacts as they stood when the project started on 2026-09-01, with the front matter fields `process/artifacts.md` lists and prose below, as described in `docs/runs.md`. Proposals accepted later are told in the history, not applied to these files.
 - `history.md`: how the project actually went through the chain, step by step, mistakes included. It is the answer key that runs are compared against.
 - Run folders laid out as in `docs/runs.md` are not written yet.
 
@@ -23,7 +23,7 @@ A housing cooperative wants residents to book laundry-room slots and report faul
 | Kim Example | stakeholder, residents' representative | Speaks for the residents; can block at the annual meeting |
 | Lee Example | stakeholder, caretaker | Owns the fault records; not on the team |
 
-The team's first names follow the existing invented seed in `apps/api/src/seed/invented.ts`.
+The app's invented seed, `apps/api/src/seed/invented.ts`, is built from this folder: the team above, a card for each step of `history.md` that has a function file, a card for I-8 and a Ready card for I-3, and the log up to 2026-10-06, inside step 7. What it adds or cannot express is recorded in `docs/decisions.md` (2026-11-09).
 
 ## Where each stress point shows up
 
@@ -50,5 +50,5 @@ These are recorded here and not fixed in `process/`; Phase 2 on a real project s
 
 These two were first listed as gaps. The recheck on 2026-11-09 showed that `process/` already covers both, and the fix belongs in the example or in a later segment.
 
-- **No `domain_rules` file in the example.** `process/artifacts.md` already defines `domain_rules` as an external artifact owned by stakeholders, with the fields `rule`, `example` and `source`, and the map marks `Domain rules*` as an input from outside the team to both `define_api_contract` and `design_architecture`. What is missing is the example's own file. The rules `define_api_contract` needs (at most two future bookings per resident; opening hours set by the board) appear only in Pat's first move in step 5 of `history.md`. Adding `domain_rules.md` beside the four external artifacts is a data change, not a template change.
+- **No `domain_rules` file in the example.** `process/artifacts.md` already defines `domain_rules` as an external artifact owned by stakeholders, with the fields `rule`, `example` and `source`, and the map marks `Domain rules*` as an input from outside the team to both `define_api_contract` and `design_architecture`. The example lacked its own file, so the rules `define_api_contract` needs appeared only in Pat's first move in step 5 of `history.md`. Fixed on 2026-11-09: `domain_rules.md` now holds the three rules (at most two future bookings per resident, opening hours set by the board, the caretaker's fault records as the source of fault status). It was a data change, not a template change.
 - **`write_handoff_spec` has no function file yet.** The map defines it: `write_handoff_spec(Prototype, Design critique, Success criteria, Open questions) -> UI spec, Acceptance criteria`, with AI drafting and the designer verifying, done when every state and edge case has a testable criterion. It is outside the phase 1 segment by design, and `process/artifacts.md` already says its outputs are supplied by hand in the first run, which is what step 2 does. This is the edge of the segment, not something the model cannot express. The map does show one link worth keeping in mind for when the function is written: it takes the open questions that `refine_ui_spec` sends back, which in `process/` are `design_questions`.
