@@ -3,7 +3,8 @@ import { unfinishedDependencies, type BoardResponse, type Card } from "@workbenc
 import { cardMode, cardParticipants, isActive } from "./links.ts";
 import { cardRef, findTeammate, labelOf } from "./teammates.ts";
 
-export type Tone = "muted" | "needs-input" | "assist";
+/** `plain` is the text colour, as the artboard sets a panel's "Now" and "Just finished" lines. */
+export type Tone = "plain" | "muted" | "needs-input" | "assist";
 
 export interface Note {
   text: string;
@@ -110,14 +111,14 @@ export function teammateNotes(teammateId: string, board: BoardResponse): Note[] 
   const now = board.cards.filter(
     (c) => isActive(c) && !verifying.includes(c) && cardParticipants(c, board).includes(teammateId),
   );
-  if (now.length > 0) notes.push({ text: `Now: ${refs(now)}`, tone: "muted" });
+  if (now.length > 0) notes.push({ text: `Now: ${refs(now)}`, tone: "plain" });
 
   let finished: string | undefined;
   for (let i = board.log.length - 1; i >= 0 && finished === undefined; i -= 1) {
     const e = board.log[i]!;
     if (e.type === "status_changed" && e.actor === teammateId && e.to.state === "done") finished = e.card_id;
   }
-  if (finished) notes.push({ text: `Just finished ${cardRef(finished)}`, tone: "muted" });
+  if (finished) notes.push({ text: `Just finished ${cardRef(finished)}`, tone: "plain" });
 
   if (verifying.length > 0) notes.push({ text: `Next: verify ${refs(verifying)}`, tone: "muted" });
 

@@ -14,15 +14,15 @@ describe("formatTime", () => {
 describe("describeEvent", () => {
   const line = (id: string) => describeEvent(board.log.find((e) => e.id === id)!, board);
   it("describes every event type", () => {
-    expect(line("e1")).toBe("SE picked #142 · mode: AI assists");
+    expect(line("e1")).toBe("UX picked #142 · mode: AI assists");
     expect(line("e3")).toBe("AI ran the structural check on #138 · passed: Invented: fine.");
-    expect(line("e4")).toBe("SE posted a report on #138: Invented: report.");
-    expect(line("e5")).toBe("SE moved #138 to Done");
-    expect(line("e7")).toBe("AI asked PE on #151: Invented: page numbers or a cursor?");
-    expect(line("e8")).toBe("AI moved #151 to Needs input · waiting on PE");
+    expect(line("e4")).toBe("UX posted a report on #138: Invented: report.");
+    expect(line("e5")).toBe("UX moved #138 to Done");
+    expect(line("e7")).toBe("AI asked BE on #151: Invented: page numbers or a cursor?");
+    expect(line("e8")).toBe("AI moved #151 to Needs input · waiting on BE");
     expect(
       describeEvent({ id: "a", type: "answered", card_id: "c-151", actor: "t-be", at: "2026-11-06T09:50:00Z", question_id: "q-151", answer: "Invented: a cursor." }, board),
-    ).toBe("PE answered on #151: Invented: a cursor.");
+    ).toBe("BE answered on #151: Invented: a cursor.");
   });
 });
 

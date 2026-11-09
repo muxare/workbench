@@ -36,7 +36,7 @@ describe("linksFor", () => {
 
   it("draws a dashed line from the asker, with the arrow at the person asked", () => {
     expect(linksFor(AI, board).filter((l) => l.kind === "asks")).toEqual([
-      { kind: "asks", arrow: "none", cardIds: ["c-151"], label: "asks PE on #151: Invented: page numbers or a cursor?" },
+      { kind: "asks", arrow: "none", cardIds: ["c-151"], label: "asks BE on #151: Invented: page numbers or a cursor?" },
     ]);
     expect(linksFor(BE, board).filter((l) => l.kind === "asks")).toEqual([
       { kind: "asks", arrow: "teammate", cardIds: ["c-151"], label: "AI asks on #151" },

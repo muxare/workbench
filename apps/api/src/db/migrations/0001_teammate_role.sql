@@ -1,0 +1,1 @@
+ALTER TABLE `teammates` ADD `role` text;

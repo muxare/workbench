@@ -27,7 +27,7 @@ beforeEach(async () => {
     db,
     {
       teammates: [
-        { kind: "human", id: "h", name: "Invented human", process_profile: { frame_problem: "assist" } },
+        { kind: "human", id: "h", name: "Invented human", role: "ux", process_profile: { frame_problem: "assist" } },
         { kind: "ai", id: "a", name: "Invented AI" },
       ],
       cycles: [],

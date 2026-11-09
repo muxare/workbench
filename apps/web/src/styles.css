@@ -52,6 +52,9 @@ a:hover {
   font-family: var(--font-mono);
 }
 
+.tone--plain {
+  color: inherit;
+}
 .tone--muted {
   color: var(--muted);
 }

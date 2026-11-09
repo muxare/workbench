@@ -35,7 +35,7 @@ checks/         # Python validator, until ported to packages/shared
 
 ## Domain model
 
-- **Teammate**: `kind` is `human` or `ai`. A human has a process profile.
+- **Teammate**: `kind` is `human` or `ai`. A human has a role (`po`, `ux`, `fe` or `be`) and a process profile.
 - **Process profile**: a mode (`manual`, `assist`, `delegate`) for each function the person owns. The AI works on a step in the mode of the step's owner.
 - **Card**: id, title, function (from `process/functions/`), owner, status, milestone, links to other cards.
 - **Status**: `backlog`, `ready`, `in_progress`, `needs_input`, `review`, `done`. `needs_input` carries `waiting_on` (a teammate, human or AI) and the open question.

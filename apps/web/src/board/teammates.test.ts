@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { cardRef, modeCounts, placeTeammates, shortLabel } from "./teammates.ts";
+import { cardRef, modeCounts, panelSubline, panelTitle, placeTeammates, roleTitle, shortLabel } from "./teammates.ts";
 import { testBoard } from "./testBoard.ts";
-import type { Teammate } from "@workbench/shared";
+import { teammateRole, type Teammate, type TeammateRole } from "@workbench/shared";
 
-const human = (id: string): Teammate => ({ kind: "human", id, name: `${id} Example`, process_profile: {} });
+const human = (id: string, role: TeammateRole): Teammate => ({ kind: "human", id, name: `${id} Example`, role, process_profile: {} });
+const ai: Teammate = { kind: "ai", id: "ai", name: "AI" };
 
 describe("shortLabel", () => {
-  it("uses initials for a person, dropping any parenthetical", () => {
-    const [po] = testBoard().teammates;
-    expect(shortLabel(po, "x")).toBe("RE");
+  it("labels a person by role, not by name", () => {
+    const [po, ux, be] = testBoard().teammates;
+    expect([po, ux, be].map((t) => shortLabel(t, "x"))).toEqual(["PO", "UX", "BE"]);
+    expect(shortLabel(human("x", "fe"), "x")).toBe("FE");
   });
   it("labels an AI teammate AI and an unknown id as itself", () => {
     expect(shortLabel({ kind: "ai", id: "a", name: "Anything" }, "a")).toBe("AI");
@@ -23,13 +25,33 @@ describe("cardRef", () => {
   });
 });
 
+describe("panelTitle", () => {
+  it("names a person by role, as the artboard does, and an AI teammate by name", () => {
+    expect(panelTitle(human("x", "po"))).toBe("Product owner");
+    expect(panelTitle(ai)).toBe("AI");
+  });
+  it("gives the product owner and the AI a sub-line, and other people their mode counts", () => {
+    expect(panelSubline(human("x", "po"))).toBe("Owns the order and the milestone.");
+    expect(panelSubline(ai)).toBe("Works in the mode each person set for the step.");
+    for (const role of ["ux", "fe", "be"] as const) expect(panelSubline(human("x", role))).toBeUndefined();
+  });
+  it("has a title for every role", () => {
+    expect(Object.keys(roleTitle).sort()).toEqual([...teammateRole.options].sort());
+  });
+});
+
 describe("placeTeammates", () => {
-  it("matches the artboard for four people and an AI", () => {
-    const p = placeTeammates([human("po"), human("ux"), human("fe"), human("be"), { kind: "ai", id: "ai", name: "AI" }]);
-    expect(p.top.map((t) => t.id)).toEqual(["po"]);
-    expect(p.left.map((t) => t.id)).toEqual(["ux"]);
-    expect(p.right.map((t) => t.id)).toEqual(["fe", "be"]);
+  it("seats each person by role, as on the artboard, whatever the API's order", () => {
+    const p = placeTeammates([ai, human("b", "be"), human("f", "fe"), human("u", "ux"), human("p", "po")]);
+    expect(p.top.map((t) => t.id)).toEqual(["p"]);
+    expect(p.left.map((t) => t.id)).toEqual(["u"]);
+    expect(p.right.map((t) => t.id)).toEqual(["f", "b"]);
     expect(p.bottom.map((t) => t.id)).toEqual(["ai"]);
+  });
+  it("keeps people who share a role together, in the API's order", () => {
+    const p = placeTeammates([human("b1", "be"), human("f1", "fe"), human("b2", "be"), human("f2", "fe")]);
+    expect(p.right.map((t) => t.id)).toEqual(["f1", "f2", "b1", "b2"]);
+    expect(p.top).toEqual([]);
   });
   it("copes with nobody", () => {
     expect(placeTeammates([])).toEqual({ top: [], left: [], right: [], bottom: [] });
