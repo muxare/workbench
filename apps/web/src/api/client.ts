@@ -2,7 +2,15 @@
 // @workbench/shared, so a server that drifts from the contract fails loudly
 // here instead of rendering half a board. Paths are relative: Vite proxies
 // `/api` to the API in development.
-import { apiError, boardResponse, type ApiErrorCode, type BoardResponse } from "@workbench/shared";
+import {
+  apiError,
+  boardResponse,
+  teammateProfileResponse,
+  type ApiErrorCode,
+  type BoardResponse,
+  type SetModeRequest,
+  type TeammateProfileResponse,
+} from "@workbench/shared";
 
 /** Where the web app reaches the API. */
 export const API_BASE = "/api";
@@ -32,6 +40,27 @@ export class ApiRequestError extends Error {
   }
 }
 
+/** POST a JSON body; failures are reported as in `getJson`. */
+async function sendJson(path: string, payload: unknown): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new ApiRequestError("network", "the API cannot be reached");
+  }
+  const body: unknown = await res.json().catch(() => undefined);
+  if (!res.ok) {
+    const problem = apiError.safeParse(body);
+    if (problem.success) throw new ApiRequestError(problem.data.error, problem.data.reason, res.status);
+    throw new ApiRequestError("server_error", `the API answered ${res.status}`, res.status);
+  }
+  return body;
+}
+
 async function getJson(path: string, signal?: AbortSignal): Promise<unknown> {
   let res: Response;
   try {
@@ -47,6 +76,22 @@ async function getJson(path: string, signal?: AbortSignal): Promise<unknown> {
     throw new ApiRequestError("server_error", `the API answered ${res.status}`, res.status);
   }
   return body;
+}
+
+/** `GET /api/teammates/:id/profile`: a person and their chain of steps, read from process/. */
+export async function fetchProfile(teammateId: string, signal?: AbortSignal): Promise<TeammateProfileResponse> {
+  return parseProfile(await getJson(`/teammates/${encodeURIComponent(teammateId)}/profile`, signal));
+}
+
+/** `POST /api/teammates/:id/modes`: the person sets the mode for one step; answers with the new profile. */
+export async function setMode(teammateId: string, request: SetModeRequest): Promise<TeammateProfileResponse> {
+  return parseProfile(await sendJson(`/teammates/${encodeURIComponent(teammateId)}/modes`, request));
+}
+
+function parseProfile(body: unknown): TeammateProfileResponse {
+  const parsed = teammateProfileResponse.safeParse(body);
+  if (!parsed.success) throw new ApiRequestError("bad_response", "the profile from the API does not match the shared schema");
+  return parsed.data;
 }
 
 /** `GET /api/board`: the cards, teammates, open questions, recent log and stream position. */

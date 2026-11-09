@@ -475,6 +475,16 @@ a:hover {
   color: var(--muted);
 }
 
+/* The heading opens the person's profile; it keeps the text colour, since the link colour is the delegate token. */
+.teammate__link {
+  color: inherit;
+  text-decoration: none;
+}
+.teammate__link:hover,
+.teammate__link:focus-visible {
+  text-decoration: underline;
+}
+
 .teammate__modes {
   font-size: 11.5px;
 }
