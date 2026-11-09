@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Mode, TeammateProfileResponse } from "@workbench/shared";
 import { ApiRequestError, fetchProfile, setMode } from "../api/client.ts";
+import { followLiveKey } from "./liveKey.ts";
 
 export type ProfileState =
   | { phase: "loading" }
@@ -48,9 +49,9 @@ export function useProfile(teammateId: string, onChanged: (() => void) | undefin
   // Reload in place, keeping the profile shown, when the stream brings a mode change for this person.
   const seenKey = useRef(liveKey);
   useEffect(() => {
-    const previous = seenKey.current;
-    seenKey.current = liveKey;
-    if (previous === undefined || liveKey === undefined || previous === liveKey) return;
+    const next = followLiveKey(seenKey.current, liveKey);
+    seenKey.current = next.seen;
+    if (!next.reload) return;
     const abort = new AbortController();
     fetchProfile(teammateId, abort.signal).then(setProfile, () => {
       // Keep the profile shown; the next change on the stream tries again.

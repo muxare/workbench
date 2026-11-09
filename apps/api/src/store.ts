@@ -104,15 +104,29 @@ function teammateFromRow(row: typeof teammates.$inferSelect, profile: ProcessPro
   );
 }
 
-/** Every `mode_changed` event, or one teammate's, in stream order. */
+/**
+ * Every `mode_changed` event, or one teammate's, in stream order. Both
+ * queries filter on `teammate_id` so SQLite searches `events_teammate_seq`
+ * instead of scanning every card event. For all teammates the filter is
+ * `teammate_id > ''` (ids are never empty) with the order applied here:
+ * EXPLAIN QUERY PLAN shows SQLite scans the table for `IS NOT NULL`, or for
+ * any range filter combined with `ORDER BY seq`.
+ */
 async function modeChanges(db: Db, teammateId?: string): Promise<StreamEvent[]> {
-  const type = eq(events.type, "mode_changed");
+  const isModeChange = eq(events.type, "mode_changed");
+  if (teammateId !== undefined) {
+    const rows = await db
+      .select()
+      .from(events)
+      .where(and(eq(events.teammateId, teammateId), isModeChange))
+      .orderBy(asc(events.seq));
+    return rows.map(fromRow);
+  }
   const rows = await db
     .select()
     .from(events)
-    .where(teammateId === undefined ? type : and(type, eq(events.teammateId, teammateId)))
-    .orderBy(asc(events.seq));
-  return rows.map(fromRow);
+    .where(and(gt(events.teammateId, ""), isModeChange));
+  return rows.sort((a, b) => a.seq - b.seq).map(fromRow);
 }
 
 /**
