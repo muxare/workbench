@@ -111,12 +111,15 @@ export type BoardResponse = z.infer<typeof boardResponse>;
 /**
  * `POST /logs/:log/filter`: a person sets the event types one log hides for
  * the whole team. `hidden` is the whole set, in any order; an empty list shows
- * everything. The actor must be a person. A change appends one
- * `log_filter_changed` event, which reaches every board over `GET /events`;
- * setting the filter the log already has appends nothing. The answer is every
- * log's filter as it now stands.
+ * everything. `was_hidden` is the set the person's view showed as hidden when
+ * they made the change; if the log hides something else by now, someone
+ * changed it in between and the request is refused with 409, so two browsers
+ * cannot silently overwrite each other. The actor must be a person. A change
+ * appends one `log_filter_changed` event, which reaches every board over
+ * `GET /events`; asking for the filter the log already has appends nothing.
+ * The answer is every log's filter as it now stands.
  */
-export const setLogFilterRequest = z.strictObject({ actor: teammateId, hidden: hiddenEventTypes });
+export const setLogFilterRequest = z.strictObject({ actor: teammateId, hidden: hiddenEventTypes, was_hidden: hiddenEventTypes });
 export type SetLogFilterRequest = z.infer<typeof setLogFilterRequest>;
 
 export const logFiltersResponse = z.object({ log_filters: logFilters });

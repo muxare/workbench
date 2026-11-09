@@ -1,0 +1,1 @@
+CREATE INDEX `events_type_seq` ON `events` (`type`,`seq`);

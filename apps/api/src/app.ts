@@ -382,9 +382,9 @@ export function createApp(deps: AppDeps) {
       const req = await body(c, setLogFilterRequest);
       const actor = await teammateOr422(req.actor, "actor");
       if (actor.kind !== "human") throw new ApiProblem("forbidden", `a log's filter is set by a person, not ${actor.id}`);
-      // Setting the filter the log already has changes nothing, so it records nothing.
-      const was = (await logFilters(db))[log.data];
-      if (!sameEventTypes(was, req.hidden)) {
+      // Asking for the filter the log already has changes nothing, so it records nothing.
+      // Otherwise `was_hidden` is what the caller saw; the store refuses it with 409 if the log has moved on.
+      if (!sameEventTypes((await logFilters(db))[log.data], req.hidden)) {
         await appendEvents(db, [
           {
             id: newId(),
@@ -393,7 +393,7 @@ export function createApp(deps: AppDeps) {
             at: now().toISOString(),
             log: log.data,
             hidden: normalizeEventTypes(req.hidden),
-            was_hidden: was,
+            was_hidden: normalizeEventTypes(req.was_hidden),
           },
         ]);
       }

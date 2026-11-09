@@ -1,4 +1,4 @@
-import type { BoardResponse } from "@workbench/shared";
+import { cardEventType, type BoardResponse } from "@workbench/shared";
 import { ModePill } from "../board/ModePill.tsx";
 import { modeMeaning } from "../board/modes.ts";
 import { boardHref } from "../route.ts";
@@ -218,7 +218,7 @@ export function AiProfileView({ teammateId, board }: { teammateId: string; board
           <section className="profile__panel" aria-labelledby="ai-recent-heading">
             <div className="profile__panel-head">
               <h2 id="ai-recent-heading">What I did last</h2>
-              <LogFilter log="teammate" board={board} />
+              <LogFilter log="teammate" board={board} offered={cardEventType.options} />
             </div>
             {recent.length === 0 ? (
               <p className="profile__note">{profile.recent.length === 0 ? "Nothing yet." : "The filter hides everything I did last."}</p>

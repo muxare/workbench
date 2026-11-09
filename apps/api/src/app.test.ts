@@ -491,11 +491,35 @@ describe("mode changes as teammate events", () => {
 });
 
 describe("POST /api/logs/:log/filter", () => {
-  const setFilter = (log: string, actor: string, hidden: unknown) => post(`/api/logs/${log}/filter`, { actor, hidden });
   const board = async () => boardResponse.parse(await (await app.request("/api/board")).json());
+  /** A change made from an up-to-date view, unless `wasHidden` says what a (possibly stale) view showed. */
+  const setFilter = async (log: string, actor: string, hidden: unknown, wasHidden?: unknown) => {
+    const current = wasHidden ?? (await board()).log_filters[log as "board"] ?? [];
+    return post(`/api/logs/${log}/filter`, { actor, hidden, was_hidden: current });
+  };
 
   it("every log shows every event type until someone changes its filter", async () => {
     expect((await board()).log_filters).toEqual({ card: [], board: [], cycle: [], teammate: [] });
+  });
+
+  it("refuses a change made from a stale view with 409, so two browsers cannot overwrite each other", async () => {
+    // Both browsers show the board log hiding nothing.
+    const first = await setFilter("board", UX, ["picked"], []);
+    expect(first.status).toBe(200);
+    await expectProblem(await setFilter("board", BE, ["asked"], []), 409, "conflict", /hides picked, not nothing/);
+    // Asking for a set equal to what the stale view saw is refused too, rather than undoing the other change.
+    await expectProblem(await setFilter("board", BE, [], []), 409, "conflict");
+    expect((await board()).log_filters.board).toEqual(["picked"]);
+    expect(await lastSeq(db)).toBe(inventedSeed.events.length + 1);
+    // Reloaded, the second browser's change goes through on top of the first.
+    expect((await setFilter("board", BE, ["picked", "asked"], ["picked"])).status).toBe(200);
+    expect((await board()).log_filters.board).toEqual(["picked", "asked"]);
+  });
+
+  it("appends nothing when a stale view asks for what the log already hides", async () => {
+    await setFilter("board", UX, ["picked"], []);
+    expect((await setFilter("board", BE, ["picked"], [])).status).toBe(200);
+    expect(await lastSeq(db)).toBe(inventedSeed.events.length + 1);
   });
 
   it("appends one team event and answers with every log's filter", async () => {

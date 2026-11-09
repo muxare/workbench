@@ -152,6 +152,7 @@ export async function chosenMode(db: Db, teammateId: string, functionId: string)
  * every event type.
  */
 export async function logFilters(db: Db): Promise<LogFilters> {
+  // Served by the (type, seq) index, so the board does not scan the stream for the few filter changes.
   const rows = await db.select().from(events).where(eq(events.type, "log_filter_changed")).orderBy(asc(events.seq));
   return deriveLogFilters(rows.map(fromRow));
 }
@@ -175,9 +176,7 @@ async function checkLogFilterChange(db: Db, event: LogFilterChangedEvent, pendin
   if (actor.kind !== "human") {
     throw new StoreError(`${event.id}: a log's filter is set by a person, not ${event.actor}`, "forbidden");
   }
-  if (sameEventTypes(event.hidden, event.was_hidden)) {
-    throw new StoreError(`${event.id}: a filter change must change what the ${event.log} log hides`);
-  }
+  // Staleness first: a change made from an out-of-date view is a conflict, whatever it asks for.
   const current = pending.filters.get(event.log) ?? (await logFilters(db))[event.log];
   if (!sameEventTypes(current, event.was_hidden)) {
     const hides = (types: readonly string[]) => (types.length === 0 ? "nothing" : types.join(", "));
@@ -185,6 +184,9 @@ async function checkLogFilterChange(db: Db, event: LogFilterChangedEvent, pendin
       `${event.id}: the ${event.log} log hides ${hides(current)}, not ${hides(event.was_hidden)}`,
       "conflict",
     );
+  }
+  if (sameEventTypes(event.hidden, event.was_hidden)) {
+    throw new StoreError(`${event.id}: a filter change must change what the ${event.log} log hides`);
   }
   pending.filters.set(event.log, event.hidden);
 }

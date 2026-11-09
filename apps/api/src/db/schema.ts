@@ -72,5 +72,7 @@ export const events = sqliteTable(
     index("events_card_seq").on(t.cardId, t.seq),
     index("events_teammate_seq").on(t.teammateId, t.seq),
     index("events_at_ms").on(t.atMs),
+    // Settings derived from one event type, such as the log filters, read by type in stream order.
+    index("events_type_seq").on(t.type, t.seq),
   ],
 );

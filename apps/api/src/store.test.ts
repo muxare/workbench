@@ -278,7 +278,6 @@ describe("log filter changes", () => {
 
   it("must name what the log hides now as was_hidden, in any order", async () => {
     await appendEvent(db, change("f1", ["picked", "mode_changed"], []));
-    await expect(appendEvent(db, change("f2", [], []))).rejects.toMatchObject({ code: "rule_violation" });
     await expect(appendEvent(db, change("f2", ["asked"], ["picked"]))).rejects.toMatchObject({ code: "conflict" });
     await expect(appendEvent(db, change("f2", ["asked"], []))).rejects.toThrow(/hides picked, mode_changed, not nothing/);
     await appendEvent(db, change("f2", [], ["mode_changed", "picked"]));
@@ -294,10 +293,15 @@ describe("log filter changes", () => {
   });
 
   it("must change what the log hides and come from a person", async () => {
-    await expect(appendEvent(db, change("f1", ["picked"], ["picked"]))).rejects.toThrow(/must change what the board log hides/);
+    await expect(appendEvent(db, change("f1", [], []))).rejects.toThrow(/must change what the board log hides/);
     await expect(appendEvent(db, change("f1", ["picked"], [], { actor: "t-ai" }))).rejects.toMatchObject({ code: "forbidden" });
     await expect(appendEvent(db, change("f1", ["picked"], [], { actor: "t-nobody" }))).rejects.toMatchObject({ code: "not_found" });
     expect(await logFilters(db)).toEqual({ card: [], board: [], cycle: [], teammate: [] });
+  });
+
+  it("check a stale was_hidden before anything else, so a stale no-change is a conflict", async () => {
+    await appendEvent(db, change("f1", ["picked"], []));
+    await expect(appendEvent(db, change("f2", [], []))).rejects.toMatchObject({ code: "conflict" });
   });
 });
 

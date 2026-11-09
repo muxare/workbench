@@ -3,19 +3,30 @@
 // browsers over the event stream. No artboard draws this control, so it is
 // kept small: a disclosure next to the log's heading with one checkbox per
 // event type, named by its id in mono as the app names function ids.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BoardResponse, LogName, StreamEventType } from "@workbench/shared";
-import { ApiRequestError, setLogFilter } from "../api/client.ts";
-import { defaultFilterEditor, filterEditors, filterOptions, filterSummary, toggleHidden } from "./logFilter.ts";
+import { setLogFilter } from "../api/client.ts";
+import {
+  defaultFilterEditor,
+  filterEditors,
+  filterOptions,
+  filterSummary,
+  saveFailure,
+  shownAfterSave,
+  toggleHidden,
+} from "./logFilter.ts";
 import { labelOf } from "./teammates.ts";
 
 export function LogFilter({
   log,
   board,
   onChanged,
+  offered,
 }: {
   log: LogName;
   board: BoardResponse;
+  /** The event types to offer, where a screen shows only part of the log; by default every type the log can hold. */
+  offered?: readonly StreamEventType[] | undefined;
   /** Called after a change is saved, so the board can refetch without waiting for the stream. */
   onChanged?: (() => void) | undefined;
 }) {
@@ -27,6 +38,11 @@ export function LogFilter({
   const [editor, setEditor] = useState<string | undefined>(undefined);
   const boardKey = fromBoard.join(",");
   useEffect(() => setSaved(undefined), [boardKey]);
+  // The board's filter as of now, for an answer that arrives after it has moved on.
+  const latest = useRef(fromBoard);
+  useEffect(() => {
+    latest.current = fromBoard;
+  });
 
   const hidden = saved ?? fromBoard;
   const people = filterEditors(board);
@@ -36,26 +52,30 @@ export function LogFilter({
     if (actor === undefined) return;
     setSaving(true);
     setFailure(undefined);
-    setLogFilter(log, { actor, hidden: toggleHidden(hidden, type, shown) }).then(
+    // `was_hidden` is what this view shows, so a change made from a stale view is refused with 409.
+    const madeFrom = fromBoard;
+    setLogFilter(log, { actor, hidden: toggleHidden(hidden, type, shown), was_hidden: hidden }).then(
       (answer) => {
-        setSaved(answer.log_filters[log]);
+        setSaved(shownAfterSave(madeFrom, latest.current, answer.log_filters[log]));
         setSaving(false);
         onChanged?.();
       },
       (err: unknown) => {
+        setSaved(undefined);
         setSaving(false);
-        setFailure(err instanceof ApiRequestError ? err.reason : "the filter could not be saved");
+        setFailure(saveFailure(err));
+        onChanged?.();
       },
     );
   };
 
   return (
     <details className="log-filter">
-      <summary className="log-filter__summary">Filter · {filterSummary(log, hidden)}</summary>
+      <summary className="log-filter__summary">Filter · {filterSummary(log, hidden, offered)}</summary>
       <div className="log-filter__body">
         <fieldset className="log-filter__types" disabled={saving || actor === undefined} aria-busy={saving}>
           <legend className="log-filter__legend">Shown in the {log} log, for the whole team</legend>
-          {filterOptions(log, hidden).map((o) => (
+          {filterOptions(log, hidden, offered).map((o) => (
             <label key={o.type} className="log-filter__type">
               <input type="checkbox" checked={o.shown} onChange={(e) => change(o.type, e.target.checked)} />
               <span className="mono">{o.type}</span>

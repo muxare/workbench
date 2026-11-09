@@ -1,7 +1,8 @@
 // All example data here is invented.
 import { describe, expect, it } from "vitest";
 import { cardEventType, streamEventType } from "@workbench/shared";
-import { defaultFilterEditor, filterEditors, filterOptions, filterSummary, toggleHidden } from "./logFilter.ts";
+import { ApiRequestError } from "../api/client.ts";
+import { defaultFilterEditor, filterEditors, filterOptions, filterSummary, saveFailure, shownAfterSave, toggleHidden } from "./logFilter.ts";
 import { BE, PO, testBoard, UX } from "./testBoard.ts";
 
 describe("filterOptions", () => {
@@ -32,6 +33,31 @@ describe("filterSummary", () => {
     expect(filterSummary("board", ["picked", "asked"])).toBe(`Hiding 2 of ${streamEventType.options.length}`);
     // A hidden type the card log can never hold does not count against it.
     expect(filterSummary("card", ["mode_changed"])).toBe("All events");
+  });
+
+  it("counts only the offered types where a screen shows part of a log", () => {
+    expect(filterOptions("teammate", [], cardEventType.options).map((o) => o.type)).toEqual(cardEventType.options);
+    expect(filterSummary("teammate", ["mode_changed"], cardEventType.options)).toBe("All events");
+    expect(filterSummary("teammate", ["picked"], cardEventType.options)).toBe(`Hiding 1 of ${cardEventType.options.length}`);
+  });
+});
+
+describe("after a save", () => {
+  it("shows the saved filter only while the board still shows the one the change was made from", () => {
+    expect(shownAfterSave([], [], ["picked"])).toEqual(["picked"]);
+    // The board moved on before the answer arrived: the board is newer, so the answer is dropped.
+    expect(shownAfterSave([], ["asked"], ["picked"])).toBeUndefined();
+    expect(shownAfterSave([], ["picked"], ["picked"])).toBeUndefined();
+  });
+
+  it("says a 409 means someone changed the filter first", () => {
+    expect(saveFailure(new ApiRequestError("conflict", "the board log hides picked, not nothing", 409))).toBe(
+      "someone changed this filter in the meantime; try again",
+    );
+    expect(saveFailure(new ApiRequestError("forbidden", "a log's filter is set by a person, not t-ai", 403))).toBe(
+      "a log's filter is set by a person, not t-ai",
+    );
+    expect(saveFailure(new Error("boom"))).toBe("the filter could not be saved");
   });
 });
 
