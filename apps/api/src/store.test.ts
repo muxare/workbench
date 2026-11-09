@@ -214,32 +214,47 @@ describe("invented seed", () => {
     }
   });
 
-  it("picks every card in the mode its owner set for the card's function", () => {
+  it("picks in a mode the function allows, and an open card in the mode its owner now sets", async () => {
+    // A profile holds one mode per function, so a card finished earlier may
+    // have been picked in another mode, as #104 (delegate) and #105 (manual)
+    // were in the history. A card still open was picked in the current one.
+    const definitions = loadFunctionDefinitions();
     const owners = new Map(inventedSeed.teammates.map((t) => [t.id, t]));
+    const status = new Map((await listCards(seeded)).map((c) => [c.id, c.status.state]));
     for (const event of inventedSeed.events) {
       if (event.type !== "picked") continue;
       const card = inventedSeed.cards.find((c) => c.id === event.card_id);
       const owner = card && owners.get(card.owner);
       expect(owner?.kind).toBe("human");
-      if (owner?.kind === "human" && card) expect(event.mode).toBe(owner.process_profile[card.function_id]);
+      if (!card || owner?.kind !== "human") continue;
+      expect(definitions.get(card.function_id)?.modes.allowed).toContain(event.mode);
+      if (status.get(card.id) !== "done") expect(event.mode).toBe(owner.process_profile[card.function_id]);
     }
   });
 
-  it("shows the first slice: a card waiting on a person, and one answered and back in progress", async () => {
-    const cards = new Map((await listCards(seeded)).map((c) => [c.id, c.status]));
-    expect(cards.get("invented-151")).toEqual({ state: "needs_input", waiting_on: "invented-be", question_id: "invented-q151" });
-    expect(cards.get("invented-142")).toEqual({ state: "in_progress" });
-    expect(cards.get("invented-138")).toEqual({ state: "done" });
-    expect(cards.get("invented-153")).toEqual({ state: "backlog" });
-    const log142 = (await cardLog(seeded, "invented-142")).map((e) => e.type);
-    expect(log142).toEqual(["status_changed", "picked", "status_changed", "asked", "status_changed", "answered", "status_changed"]);
+  it("works in every mode at least once, as the example requires", () => {
+    const modes = new Set(inventedSeed.events.flatMap((e) => (e.type === "picked" ? [e.mode] : [])));
+    expect([...modes].sort()).toEqual(["assist", "delegate", "manual"]);
   });
 
-  it("splits the stream between the two sprints", async () => {
-    const s13 = await cycleLog(seeded, "invented-sprint-13");
-    const s14 = await cycleLog(seeded, "invented-sprint-14");
-    expect(s13.every((e) => e.card_id === "invented-138")).toBe(true);
-    expect(s13).toHaveLength(3);
-    expect(s13.length + s14.length).toBe(inventedSeed.events.length);
+  it("stops in step 7 of the history: the contract waits on the product owner, I-8 is open, and the AI has a card to pick", async () => {
+    const cards = new Map((await listCards(seeded)).map((c) => [c.id, c.status]));
+    for (const id of ["invented-101", "invented-102", "invented-103", "invented-104", "invented-105"]) {
+      expect(cards.get(id)).toEqual({ state: "done" });
+    }
+    expect(cards.get("invented-106")).toEqual({ state: "needs_input", waiting_on: "invented-po", question_id: "invented-q106" });
+    expect(cards.get("invented-107")).toEqual({ state: "in_progress" });
+    expect(cards.get("invented-108")).toEqual({ state: "ready" });
+    const log101 = (await cardLog(seeded, "invented-101")).map((e) => e.type);
+    expect(log101.filter((t) => t === "asked")).toHaveLength(2);
+    expect(log101.filter((t) => t === "answered")).toHaveLength(2);
+  });
+
+  it("lists events in time order and splits them between the three sprints", async () => {
+    const times = inventedSeed.events.map((e) => Date.parse(e.at));
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+    const lengths = await Promise.all(inventedSeed.cycles.map(async (c) => (await cycleLog(seeded, c.id)).length));
+    expect(lengths.every((n) => n > 0)).toBe(true);
+    expect(lengths.reduce((a, b) => a + b, 0)).toBe(inventedSeed.events.length);
   });
 });
