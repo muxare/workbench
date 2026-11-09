@@ -1,6 +1,19 @@
 // All example data here is invented.
 import { describe, expect, it } from "vitest";
-import { card, cardEvent, cycle, decidedByHuman, question, status, teammate, unfinishedDependencies, type Card, type Teammate } from "./domain.ts";
+import {
+  card,
+  cardEvent,
+  cycle,
+  decidedByHuman,
+  question,
+  status,
+  teammate,
+  teammateRole,
+  unfinishedDependencies,
+  type Card,
+  type Teammate,
+} from "./domain.ts";
+import { functionRole } from "./functionFile.ts";
 
 const at = "2026-11-08T09:41:00Z";
 
@@ -8,6 +21,7 @@ const pat: Teammate = {
   kind: "human",
   id: "invented-be",
   name: "Pat Example (invented)",
+  role: "be",
   process_profile: { define_api_contract: "assist", write_issues: "delegate" },
 };
 const bot: Teammate = { kind: "ai", id: "invented-ai", name: "AI teammate (invented)" };
@@ -28,11 +42,24 @@ describe("teammate", () => {
   });
 
   it("requires a process profile for a human", () => {
-    expect(teammate.safeParse({ kind: "human", id: "invented-ux", name: "Invented" }).success).toBe(false);
+    expect(teammate.safeParse({ kind: "human", id: "invented-ux", name: "Invented", role: "ux" }).success).toBe(false);
+  });
+
+  it("requires a human's role to be po, ux, fe or be", () => {
+    const base = { kind: "human", id: "invented-ux", name: "Invented", process_profile: {} };
+    expect(teammateRole.options).toEqual(["po", "ux", "fe", "be"]);
+    for (const role of teammateRole.options) expect(teammate.safeParse({ ...base, role }).success).toBe(true);
+    expect(teammate.safeParse(base).success).toBe(false);
+    expect(teammate.safeParse({ ...base, role: "team" }).success).toBe(false);
+    expect(teammate.safeParse({ ...base, role: "PO" }).success).toBe(false);
+  });
+
+  it("derives the person roles from the function roles, less team", () => {
+    expect(teammateRole.options.filter((r) => r !== "po")).toEqual(functionRole.options.filter((r) => r !== "team"));
   });
 
   it("rejects an unknown mode and a function id that is not snake_case", () => {
-    const base = { kind: "human", id: "invented-ux", name: "Invented" };
+    const base = { kind: "human", id: "invented-ux", name: "Invented", role: "ux" };
     expect(teammate.safeParse({ ...base, process_profile: { frame_problem: "auto" } }).success).toBe(false);
     expect(teammate.safeParse({ ...base, process_profile: { "Frame Problem": "assist" } }).success).toBe(false);
   });

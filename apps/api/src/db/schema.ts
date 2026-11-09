@@ -7,12 +7,14 @@
 // its `status_changed` events, so the event stream stays the one record of
 // what happened. The card, board and cycle logs are queries over `events`.
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type { CardEventType, CardLink, ProcessProfile, Teammate } from "@workbench/shared";
+import type { CardEventType, CardLink, ProcessProfile, Teammate, TeammateRole } from "@workbench/shared";
 
 export const teammates = sqliteTable("teammates", {
   id: text("id").primaryKey(),
   kind: text("kind").$type<Teammate["kind"]>().notNull(),
   name: text("name").notNull(),
+  /** Set for humans only: po, ux, fe or be. */
+  role: text("role").$type<TeammateRole>(),
   /** Set for humans only. */
   processProfile: text("process_profile", { mode: "json" }).$type<ProcessProfile>(),
 });

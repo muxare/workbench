@@ -1,11 +1,12 @@
 // All example data in these tests is invented.
 import { beforeEach, describe, expect, it } from "vitest";
-import type { CardEvent } from "@workbench/shared";
+import type { CardEvent, Teammate } from "@workbench/shared";
 import { openDb, type Db } from "./db/client.ts";
-import { loadFunctionIds } from "./process.ts";
+import { loadFunctionDefinitions, loadFunctionIds } from "./process.ts";
 import { inventedSeed } from "./seed/invented.ts";
 import {
   addCard,
+  addTeammate,
   appendEvent,
   boardLog,
   cardLog,
@@ -24,7 +25,7 @@ const at = (minute: number) => `2026-11-06T10:${String(minute).padStart(2, "0")}
 /** A small invented board: two cards, one human, one AI, two cycles. */
 const tiny: SeedData = {
   teammates: [
-    { kind: "human", id: "t-human", name: "Invented human", process_profile: { frame_problem: "assist" } },
+    { kind: "human", id: "t-human", name: "Invented human", role: "ux", process_profile: { frame_problem: "assist" } },
     { kind: "ai", id: "t-ai", name: "Invented AI" },
   ],
   cycles: [
@@ -69,6 +70,20 @@ let db: Db;
 beforeEach(async () => {
   db = await openDb(":memory:");
   await seed(db, tiny, functionIds);
+});
+
+describe("teammates", () => {
+  it("stores a person's role and reads it back, and gives an AI teammate none", async () => {
+    const byId = new Map((await listTeammates(db)).map((t) => [t.id, t]));
+    expect(byId.get("t-human")).toEqual(tiny.teammates[0]);
+    expect(byId.get("t-ai")).toEqual(tiny.teammates[1]);
+    expect(byId.get("t-ai")).not.toHaveProperty("role");
+  });
+
+  it("refuses a person without a role", async () => {
+    const roleless = { kind: "human", id: "t-new", name: "Invented", process_profile: {} } as unknown as Teammate;
+    await expect(addTeammate(db, roleless)).rejects.toThrow();
+  });
 });
 
 describe("card log", () => {
@@ -185,6 +200,18 @@ describe("invented seed", () => {
 
   it("uses only functions defined in process/functions", () => {
     for (const card of inventedSeed.cards) expect(functionIds).toContain(card.function_id);
+  });
+
+  it("gives each person the role of the functions they own, except shared team functions", () => {
+    const definitions = loadFunctionDefinitions();
+    for (const t of inventedSeed.teammates) {
+      if (t.kind !== "human") continue;
+      const owned = [...Object.keys(t.process_profile), ...inventedSeed.cards.filter((c) => c.owner === t.id).map((c) => c.function_id)];
+      for (const fn of owned) {
+        const role = definitions.get(fn)?.role;
+        if (role !== "team") expect(`${t.id} owns ${fn} (${role})`).toBe(`${t.id} owns ${fn} (${t.role})`);
+      }
+    }
   });
 
   it("picks every card in the mode its owner set for the card's function", () => {

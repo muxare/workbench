@@ -44,9 +44,15 @@ export function testBoard(over: Partial<BoardResponse> = {}): BoardResponse {
   ];
   return {
     teammates: [
-      { kind: "human", id: PO, name: "Robin Example (invented product owner)", process_profile: { write_issues: "delegate" } },
-      { kind: "human", id: UX, name: "Sam Example", process_profile: { frame_problem: "assist", fix_bug: "manual" } },
-      { kind: "human", id: BE, name: "Pat Example", process_profile: { define_api_contract: "assist" } },
+      {
+        kind: "human",
+        id: PO,
+        name: "Robin Example (invented product owner)",
+        role: "po",
+        process_profile: { write_issues: "delegate" },
+      },
+      { kind: "human", id: UX, name: "Sam Example", role: "ux", process_profile: { frame_problem: "assist", fix_bug: "manual" } },
+      { kind: "human", id: BE, name: "Pat Example", role: "be", process_profile: { define_api_contract: "assist" } },
       { kind: "ai", id: AI, name: "AI teammate (invented)" },
     ],
     cards: [

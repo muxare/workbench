@@ -3,7 +3,7 @@
 // docs/architecture.md ("Domain model"). Field names are snake_case, like the
 // architecture doc and the function files in process/.
 import { z } from "zod";
-import { functionMode } from "./functionFile.ts";
+import { functionMode, functionRole } from "./functionFile.ts";
 
 const id = z.string().min(1);
 const timestamp = z.iso.datetime({ offset: true });
@@ -27,8 +27,25 @@ export type Mode = z.infer<typeof mode>;
 export const processProfile = z.record(functionId, mode);
 export type ProcessProfile = z.infer<typeof processProfile>;
 
+/**
+ * A person's role on the team. The roles that own a chain of functions are
+ * the function roles from process/template.md, less `team`: `team` owns the
+ * shared steps anyone may carry out, so it names a kind of function, not a
+ * kind of person. The product owner owns the order of the board and the
+ * milestone but no chain of functions yet, so `po` is the one role added here.
+ * The board seats people and labels their avatars by this role.
+ */
+export const teammateRole = z.enum(["po", ...functionRole.exclude(["team"]).options]);
+export type TeammateRole = z.infer<typeof teammateRole>;
+
 export const teammate = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("human"), id: teammateId, name: z.string().min(1), process_profile: processProfile }),
+  z.object({
+    kind: z.literal("human"),
+    id: teammateId,
+    name: z.string().min(1),
+    role: teammateRole,
+    process_profile: processProfile,
+  }),
   z.object({ kind: z.literal("ai"), id: teammateId, name: z.string().min(1) }),
 ]);
 export type Teammate = z.infer<typeof teammate>;

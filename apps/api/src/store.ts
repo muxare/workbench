@@ -59,7 +59,7 @@ function fromRow(row: EventRow): CardEvent {
 function teammateFromRow(row: typeof teammates.$inferSelect): Teammate {
   return teammateSchema.parse(
     row.kind === "human"
-      ? { kind: row.kind, id: row.id, name: row.name, process_profile: row.processProfile }
+      ? { kind: row.kind, id: row.id, name: row.name, role: row.role, process_profile: row.processProfile }
       : { kind: row.kind, id: row.id, name: row.name },
   );
 }
@@ -181,6 +181,7 @@ export async function addTeammate(db: Db, input: Teammate): Promise<void> {
     id: t.id,
     kind: t.kind,
     name: t.name,
+    role: t.kind === "human" ? t.role : null,
     processProfile: t.kind === "human" ? t.process_profile : null,
   });
 }

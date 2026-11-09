@@ -67,6 +67,18 @@ describe("GET /api/board", () => {
     expect(board.log.map((e) => e.id)).toEqual(inventedSeed.events.map((e) => e.id));
     expect(board.last_seq).toBe(inventedSeed.events.length);
   });
+
+  it("gives every person their role and no AI teammate one", async () => {
+    const board = boardResponse.parse(await (await app.request("/api/board")).json());
+    const roles = Object.fromEntries(board.teammates.map((t) => [t.id, t.kind === "human" ? t.role : "none"]));
+    expect(roles).toEqual({
+      "invented-ai": "none",
+      "invented-be": "be",
+      "invented-fe": "fe",
+      "invented-po": "po",
+      "invented-ux": "ux",
+    });
+  });
 });
 
 describe("GET /api/cards/:id", () => {

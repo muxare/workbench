@@ -29,15 +29,28 @@ function e(event: NewEvent): CardEvent {
 
 export const inventedSeed: SeedData = {
   teammates: [
-    { kind: "human", id: PO, name: "Robin Example (invented product owner)", process_profile: { write_issues: "delegate" } },
-    { kind: "human", id: UX, name: "Sam Example (invented UX designer)", process_profile: { frame_problem: "assist" } },
+    {
+      kind: "human",
+      id: PO,
+      name: "Robin Example (invented product owner)",
+      role: "po",
+      process_profile: { write_issues: "delegate" },
+    },
+    { kind: "human", id: UX, name: "Sam Example (invented UX designer)", role: "ux", process_profile: { frame_problem: "assist" } },
     {
       kind: "human",
       id: FE,
       name: "Alex Example (invented frontend developer)",
+      role: "fe",
       process_profile: { refine_ui_spec: "assist", write_issues: "delegate" },
     },
-    { kind: "human", id: BE, name: "Pat Example (invented backend developer)", process_profile: { define_api_contract: "assist" } },
+    {
+      kind: "human",
+      id: BE,
+      name: "Pat Example (invented backend developer)",
+      role: "be",
+      process_profile: { define_api_contract: "assist" },
+    },
     { kind: "ai", id: AI, name: "AI teammate (invented)" },
   ],
 

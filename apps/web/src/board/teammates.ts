@@ -1,26 +1,48 @@
 // Who is who on the board: short labels, where each teammate sits around the
 // board, and each teammate's mode counts. Pure functions over the API data.
-import type { BoardResponse, Teammate } from "@workbench/shared";
+import { teammateRole, type BoardResponse, type Mode, type Teammate, type TeammateRole } from "@workbench/shared";
 import { modes } from "./modes.ts";
-import type { Mode } from "@workbench/shared";
+
+/** A role as the artboard names it in a teammate's panel. */
+export const roleTitle: Record<TeammateRole, string> = {
+  po: "Product owner",
+  ux: "UX designer",
+  fe: "Frontend developer",
+  be: "Backend developer",
+};
 
 /**
- * The two-letter label in an avatar. The API has no role field, so a person
- * gets the initials of their name (any parenthetical dropped) and an AI
- * teammate is "AI". An unknown id is shown as it is.
+ * The sub-line of a panel whose role owns no chain of functions, in place of
+ * mode counts. On the artboard only the product owner has one.
+ */
+export const roleSummary: Partial<Record<TeammateRole, string>> = {
+  po: "Owns the order and the milestone.",
+};
+
+/**
+ * The line under a panel's heading when it is not the person's mode counts:
+ * the AI teammate's one-line description, or a role's summary.
+ */
+export function panelSubline(teammate: Teammate): string | undefined {
+  if (teammate.kind === "ai") return "Works in the mode each person set for the step.";
+  return roleSummary[teammate.role];
+}
+
+/** The panel heading: a person's role, or an AI teammate's name. */
+export function panelTitle(teammate: Teammate): string {
+  return teammate.kind === "human" ? roleTitle[teammate.role] : teammate.name;
+}
+
+/**
+ * The two-letter label in an avatar and in the lines and log: a person's role
+ * ("PO", "UX", "FE", "BE"), and "AI" for an AI teammate. Two people with the
+ * same role share a label; their names stay in the avatar's tooltip. An
+ * unknown id is shown as it is.
  */
 export function shortLabel(teammate: Teammate | undefined, id: string): string {
   if (!teammate) return id;
   if (teammate.kind === "ai") return "AI";
-  const words = teammate.name
-    .replace(/\(.*?\)/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 0);
-  const initials = words
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
-  return initials || teammate.id;
+  return teammate.role.toUpperCase();
 }
 
 export function findTeammate(board: BoardResponse, id: string): Teammate | undefined {
@@ -53,21 +75,29 @@ export interface Placement {
 }
 
 /**
- * Where teammates sit around the board, as on the artboard: AI teammates under
- * the board, the first person above it, and the rest split between the left
- * (the first half, rounded down) and the right. The order is the API's.
+ * The seat for each role, as on the Main artboard: the product owner above the
+ * board, UX to the left, frontend and backend to the right. Seats fill in the
+ * order of `teammateRole` (po, ux, fe, be), so the right reads FE above BE.
+ */
+const seatOf: Record<TeammateRole, Exclude<keyof Placement, "bottom">> = {
+  po: "top",
+  ux: "left",
+  fe: "right",
+  be: "right",
+};
+
+/**
+ * Where teammates sit around the board: each person at their role's seat, AI
+ * teammates under the board. People who share a role sit together in the
+ * API's order.
  */
 export function placeTeammates(teammates: readonly Teammate[]): Placement {
-  const people = teammates.filter((t) => t.kind === "human");
-  const ais = teammates.filter((t) => t.kind === "ai");
-  const [first, ...rest] = people;
-  const half = Math.floor(rest.length / 2);
-  return {
-    top: first ? [first] : [],
-    left: rest.slice(0, half),
-    right: rest.slice(half),
-    bottom: ais,
-  };
+  const placement: Placement = { top: [], left: [], right: [], bottom: [] };
+  for (const role of teammateRole.options) {
+    placement[seatOf[role]].push(...teammates.filter((t) => t.kind === "human" && t.role === role));
+  }
+  placement.bottom.push(...teammates.filter((t) => t.kind === "ai"));
+  return placement;
 }
 
 /** How many of a person's functions they work in each mode, from their process profile. */

@@ -8,7 +8,7 @@ const texts = (notes: { text: string }[]) => notes.map((n) => n.text);
 
 describe("cardNotes", () => {
   it("says who a needs-input card waits on", () => {
-    expect(cardNotes(byId("c-151"), board)).toEqual([{ text: "Waiting on a person: PE", tone: "needs-input", strong: true }]);
+    expect(cardNotes(byId("c-151"), board)).toEqual([{ text: "Waiting on a person: BE", tone: "needs-input", strong: true }]);
     const onAi = card("x", { status: { state: "needs_input", waiting_on: AI, question_id: "q" } });
     expect(texts(cardNotes(onAi, board))).toEqual(["Waiting on AI"]);
   });
@@ -22,7 +22,7 @@ describe("cardNotes", () => {
     expect(texts(cardNotes(byId("c-142"), b))).toEqual(["1 open question"]);
   });
   it("says who verifies a delegated card in review", () => {
-    expect(texts(cardNotes(byId("c-145"), board))).toEqual(["RE verifies"]);
+    expect(texts(cardNotes(byId("c-145"), board))).toEqual(["PO verifies"]);
   });
   it("shows the report and checks on a done card", () => {
     expect(cardNotes(byId("c-138"), board)).toEqual([{ text: "Report posted · checks 1/1", tone: "assist", strong: true }]);
@@ -65,7 +65,7 @@ describe("teammateNotes", () => {
     expect(texts(teammateNotes(BE, board))).toEqual(["Now: #151", "1 question waiting for me", "Blocks #151 and #152"]);
   });
   it("tells the AI what it works on and whom it waits on", () => {
-    expect(texts(teammateNotes(AI, board))).toEqual(["Now: #142 · #145 · #151", "Waiting on PE for #151"]);
+    expect(texts(teammateNotes(AI, board))).toEqual(["Now: #142 · #145 · #151", "Waiting on BE for #151"]);
   });
   it("tells an owner what to verify and what they finished", () => {
     expect(texts(teammateNotes(PO, board))).toEqual(["Next: verify #145"]);
