@@ -2,6 +2,7 @@ import type { BoardResponse, Card } from "@workbench/shared";
 import { Avatar } from "./Avatar.tsx";
 import { cardAvatars, cardNotes, cardPill, cardTone } from "./cardView.ts";
 import { ModePill } from "./ModePill.tsx";
+import { cardHref } from "../route.ts";
 import { cardRef } from "./teammates.ts";
 
 export function CardTile({ board, card }: { board: BoardResponse; card: Card }) {
@@ -12,7 +13,9 @@ export function CardTile({ board, card }: { board: BoardResponse; card: Card }) 
       <span className="card__meta" title={card.id}>
         {cardRef(card.id)} · {card.function_id}
       </span>
-      <span className="card__title">{card.title}</span>
+      <a className="card__title card__link" href={cardHref(card.id)}>
+        {card.title}
+      </a>
       {(avatars.length > 0 || pill) && (
         <span className="card__people">
           {avatars.map((id) => (

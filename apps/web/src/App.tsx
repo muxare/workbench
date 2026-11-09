@@ -1,8 +1,11 @@
 import { useBoard } from "./api/useBoard.ts";
 import { BoardView } from "./board/BoardView.tsx";
+import { CardDetailView } from "./card/CardDetailView.tsx";
+import { useRoute } from "./route.ts";
 
 export function App() {
   const state = useBoard();
+  const route = useRoute();
 
   if (state.phase === "loading") {
     return (
@@ -26,6 +29,10 @@ export function App() {
         </div>
       </main>
     );
+  }
+
+  if (route.view === "card") {
+    return <CardDetailView cardId={route.cardId} board={state.board} connection={state.connection} />;
   }
 
   return <BoardView board={state.board} connection={state.connection} />;

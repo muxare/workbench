@@ -2,7 +2,17 @@
 // @workbench/shared, so a server that drifts from the contract fails loudly
 // here instead of rendering half a board. Paths are relative: Vite proxies
 // `/api` to the API in development.
-import { apiError, boardResponse, type ApiErrorCode, type BoardResponse } from "@workbench/shared";
+import {
+  apiError,
+  boardResponse,
+  cardResponse,
+  writeResponse,
+  type AnswerRequest,
+  type ApiErrorCode,
+  type BoardResponse,
+  type CardResponse,
+  type WriteResponse,
+} from "@workbench/shared";
 
 /** Where the web app reaches the API. */
 export const API_BASE = "/api";
@@ -33,9 +43,22 @@ export class ApiRequestError extends Error {
 }
 
 async function getJson(path: string, signal?: AbortSignal): Promise<unknown> {
+  return requestJson(path, { headers: { accept: "application/json" }, ...(signal ? { signal } : {}) });
+}
+
+async function postJson(path: string, payload: unknown): Promise<unknown> {
+  return requestJson(path, {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+async function requestJson(path: string, init: RequestInit): Promise<unknown> {
+  const signal = init.signal ?? undefined;
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, { headers: { accept: "application/json" }, ...(signal ? { signal } : {}) });
+    res = await fetch(`${API_BASE}${path}`, init);
   } catch (err) {
     if (signal?.aborted) throw err;
     throw new ApiRequestError("network", "the API cannot be reached");
@@ -53,5 +76,20 @@ async function getJson(path: string, signal?: AbortSignal): Promise<unknown> {
 export async function fetchBoard(signal?: AbortSignal): Promise<BoardResponse> {
   const parsed = boardResponse.safeParse(await getJson("/board", signal));
   if (!parsed.success) throw new ApiRequestError("bad_response", "the board from the API does not match the shared schema");
+  return parsed.data;
+}
+
+/** `GET /api/cards/:id`: the card, its whole log, its questions and its function from process/. */
+export async function fetchCard(cardId: string, signal?: AbortSignal): Promise<CardResponse> {
+  const parsed = cardResponse.safeParse(await getJson(`/cards/${encodeURIComponent(cardId)}`, signal));
+  if (!parsed.success) throw new ApiRequestError("bad_response", "the card from the API does not match the shared schema");
+  return parsed.data;
+}
+
+/** `POST /api/cards/:id/questions/:questionId/answer`. A card waiting on the question goes back to In progress. */
+export async function answerQuestion(cardId: string, questionId: string, request: AnswerRequest): Promise<WriteResponse> {
+  const path = `/cards/${encodeURIComponent(cardId)}/questions/${encodeURIComponent(questionId)}/answer`;
+  const parsed = writeResponse.safeParse(await postJson(path, request));
+  if (!parsed.success) throw new ApiRequestError("bad_response", "the answer from the API does not match the shared schema");
   return parsed.data;
 }
