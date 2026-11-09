@@ -56,10 +56,11 @@ export const humanTeammate = z.object({
 });
 export type HumanTeammate = z.infer<typeof humanTeammate>;
 
-export const teammate = z.discriminatedUnion("kind", [
-  humanTeammate,
-  z.object({ kind: z.literal("ai"), id: teammateId, name: z.string().min(1) }),
-]);
+/** An AI teammate: it has no role and no process profile; it works in the modes of the people it helps. */
+export const aiTeammate = z.object({ kind: z.literal("ai"), id: teammateId, name: z.string().min(1) });
+export type AiTeammate = z.infer<typeof aiTeammate>;
+
+export const teammate = z.discriminatedUnion("kind", [humanTeammate, aiTeammate]);
 export type Teammate = z.infer<typeof teammate>;
 
 export const cardStatus = z.enum(["backlog", "ready", "in_progress", "needs_input", "review", "done"]);

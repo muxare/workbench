@@ -13,13 +13,9 @@ export function TeammatePanel({ board, teammate }: { board: BoardResponse; teamm
       <Avatar board={board} id={teammate.id} size={ai ? "lg" : "md"} />
       <div className="teammate__body">
         <b className="teammate__name" title={teammate.name}>
-          {ai ? (
-            panelTitle(teammate)
-          ) : (
-            <a className="teammate__link" href={teammateHref(teammate.id)}>
-              {panelTitle(teammate)}
-            </a>
-          )}
+          <a className="teammate__link" href={teammateHref(teammate.id)}>
+            {panelTitle(teammate)}
+          </a>
         </b>
         {sub !== undefined ? (
           <span className="teammate__sub">{sub}</span>
