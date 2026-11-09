@@ -23,7 +23,7 @@ A housing cooperative wants residents to book laundry-room slots and report faul
 | Kim Example | stakeholder, residents' representative | Speaks for the residents; can block at the annual meeting |
 | Lee Example | stakeholder, caretaker | Owns the fault records; not on the team |
 
-The app's invented seed, `apps/api/src/seed/invented.ts`, is built from this folder: the team above, a card for each step of `history.md` that has a function file, a card for I-8 and a Ready card for I-3, and the log up to 2026-10-06, inside step 7. What it adds or cannot express is recorded in `docs/decisions.md` (2026-11-09).
+The app's invented seed, `apps/api/src/seed/invented.ts`, is built from this folder: the team above, a card for each step of `history.md` that has a function file, a card for I-8 and a Ready card for I-3, and the log up to 2026-10-06, inside step 7. The history's Sprints 1 to 3 are cycles on the board; a fourth, running cycle (Sprint 4) is set relative to the day the seed runs, and the only seeded event in it is the product owner moving the I-3 card to Ready, which the history does not date. Nothing else in the history is moved: the board shows step 7 as it stood on 2026-10-06, with Sprint 4 starting from there. What it adds or cannot express is recorded in `docs/decisions.md` (2026-11-09).
 
 ## Where each stress point shows up
 
