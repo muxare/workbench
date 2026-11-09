@@ -13,6 +13,8 @@
 // `GET /api/teammates/:id/profile` reads the person's chain of steps from
 // process/functions on each request; for an AI teammate it answers a
 // separate, derived profile (aiProfile.ts).
+// `GET /api/board` also carries the current cycle (`currentCycle` at the
+// server's clock) and its cycle log, for the panel under the board.
 // Request and response shapes live in @workbench/shared (api.ts).
 import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
@@ -23,6 +25,7 @@ import {
   cardEvent,
   cardStatus,
   createCardRequest,
+  currentCycle,
   isManualMove,
   logName,
   normalizeEventTypes,
@@ -37,6 +40,7 @@ import {
   type AiTeammateProfileResponse,
   type ApiError,
   type ApiErrorCode,
+  type BoardCycle,
   type BoardResponse,
   type Card,
   type CardEvent,
@@ -57,10 +61,12 @@ import {
   appendEvents,
   boardLog,
   cardLog,
+  cycleLog,
   getCard,
   getTeammate,
   lastSeq,
   listCards,
+  listCycles,
   listQuestions,
   listTeammates,
   logFilters,
@@ -178,6 +184,13 @@ export function createApp(deps: AppDeps) {
 
   const base = (cardId: string, actor: string) => ({ id: newId(), card_id: cardId, actor, at: now().toISOString() });
 
+  /** The current cycle at the server's clock, with its whole log; null before any cycle has started. */
+  async function boardCycle(): Promise<BoardCycle | null> {
+    const current = currentCycle(await listCycles(db), now());
+    if (!current) return null;
+    return { ...current, log: await cycleLog(db, current.cycle.id) };
+  }
+
   const app = new Hono()
     .basePath("/api")
     .get("/health", (c) => c.json({ ok: true, statuses: cardStatus.options }))
@@ -189,6 +202,7 @@ export function createApp(deps: AppDeps) {
         open_questions: (await listQuestions(db)).filter((q) => q.answer === undefined),
         log: await boardLog(db, { limit: BOARD_LOG_LIMIT }),
         log_filters: await logFilters(db),
+        cycle: await boardCycle(),
         last_seq: await lastSeq(db),
       };
       return c.json(response);

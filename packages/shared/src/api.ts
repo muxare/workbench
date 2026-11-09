@@ -9,6 +9,7 @@ import {
   cardEvent,
   cardLink,
   cardStatus,
+  cycle,
   functionId,
   hiddenEventTypes,
   humanTeammate,
@@ -91,12 +92,22 @@ export type MoveStatusRequest = z.infer<typeof moveStatusRequest>;
 export const questionView = question;
 
 /**
+ * The board's current cycle (`currentCycle`, read at the server's clock) and
+ * its whole cycle log: every event whose `at` falls in the window, oldest
+ * first, unfiltered. `ended` is true between cycles, when the board shows the
+ * cycle that ended last; events after its end are in no cycle log.
+ */
+export const boardCycle = z.object({ cycle, ended: z.boolean(), log: z.array(streamEvent) });
+export type BoardCycle = z.infer<typeof boardCycle>;
+
+/**
  * `GET /board`. `last_seq` is where to start the event stream (`GET /events?after=`).
  * The log is the board log: card, teammate and team events alike, unfiltered.
  * Each teammate's `process_profile` is derived from their `mode_changed`
  * events. `log_filters` is the team's filter for each log, derived from the
  * `log_filter_changed` events; the screens apply it where they show a log,
  * because the log here is also what the board follows the stream with.
+ * `cycle` is the current cycle with its log, or null when no cycle has started.
  */
 export const boardResponse = z.object({
   cards: z.array(card),
@@ -104,6 +115,7 @@ export const boardResponse = z.object({
   open_questions: z.array(questionView),
   log: z.array(streamEvent),
   log_filters: logFilters,
+  cycle: boardCycle.nullable(),
   last_seq: z.number().int().nonnegative(),
 });
 export type BoardResponse = z.infer<typeof boardResponse>;

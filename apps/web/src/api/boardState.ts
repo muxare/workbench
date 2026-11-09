@@ -7,8 +7,10 @@
 // A `log_filter_changed` event replaces its log's filter at once in the same
 // way, so a filter changed in another browser applies here as soon as it
 // streams in. The filter only decides what a log shows; the log kept here
-// holds every event, hidden or not.
-import { streamEvent, type BoardResponse, type StreamEvent } from "@workbench/shared";
+// holds every event, hidden or not. A streamed event whose time falls in the
+// current cycle's window joins the cycle log too; which cycle is current is
+// the server's call, so a refetch brings a new cycle when one starts.
+import { inCycle, streamEvent, type BoardResponse, type StreamEvent } from "@workbench/shared";
 
 /** The API's `GET /board` log length (BOARD_LOG_LIMIT in apps/api/src/app.ts). */
 export const BOARD_LOG_LIMIT = 50;
@@ -63,6 +65,12 @@ function applyToFilters(filters: BoardResponse["log_filters"], e: StreamEvent): 
   return { ...filters, [e.log]: e.hidden };
 }
 
+/** The cycle with the event added to its log, if its time falls in the window. */
+function appendToCycle(current: BoardResponse["cycle"], e: StreamEvent): BoardResponse["cycle"] {
+  if (current === null || !inCycle(current.cycle, e.at) || current.log.some((x) => x.id === e.id)) return current;
+  return { ...current, log: [...current.log, e] };
+}
+
 function appendToBoard(board: BoardResponse, live: LiveEvent): BoardResponse {
   if (live.seq <= board.last_seq) return board;
   if (board.log.some((e) => e.id === live.event.id)) return { ...board, last_seq: live.seq };
@@ -72,6 +80,7 @@ function appendToBoard(board: BoardResponse, live: LiveEvent): BoardResponse {
     teammates: applyToTeammates(board.teammates, live.event),
     log_filters: applyToFilters(board.log_filters, live.event),
     log: log.slice(-BOARD_LOG_LIMIT),
+    cycle: appendToCycle(board.cycle, live.event),
     last_seq: live.seq,
   };
 }

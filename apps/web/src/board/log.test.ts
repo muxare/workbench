@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { BOARD_PANEL_LOG, describeEvent, formatTime, logLines } from "./log.ts";
-import { testBoard } from "./testBoard.ts";
+import { BOARD_PANEL_LOG, cycleWindow, describeEvent, emptyCycleLog, formatTime, logLines } from "./log.ts";
+import { CYCLE, testBoard } from "./testBoard.ts";
 
 const board = testBoard();
+/** The same afternoon as the test log, so its lines show the time of day. */
+const NOW = new Date("2026-11-06T15:00:00Z");
 
 describe("formatTime", () => {
   it("formats 24-hour time in the given zone", () => {
@@ -46,26 +48,51 @@ describe("describeEvent", () => {
   });
 
   it("lists a mode change in the log among card events", () => {
-    const withChange = testBoard({
-      log: [...board.log, { id: "m", type: "mode_changed", teammate_id: "t-be", actor: "t-be", at: "2026-11-06T09:55:00Z", function_id: "define_api_contract", from: "delegate", to: "assist" }],
-    });
-    expect(logLines(withChange, "UTC")[0]).toMatchObject({ id: "m", time: "09:55", text: expect.stringContaining("changed their mode") });
+    const log = [...board.log, { id: "m", type: "mode_changed", teammate_id: "t-be", actor: "t-be", at: "2026-11-06T09:55:00Z", function_id: "define_api_contract", from: "delegate", to: "assist" } as const];
+    const withChange = testBoard({ log, cycle: { cycle: CYCLE, ended: false, log } });
+    expect(logLines(withChange, NOW, "UTC")[0]).toMatchObject({ id: "m", time: "09:55", text: expect.stringContaining("changed their mode") });
   });
 });
 
 describe("logLines", () => {
-  it("lists the newest first", () => {
-    const lines = logLines(board, "UTC");
+  it("lists the current cycle's log, newest first", () => {
+    const lines = logLines(board, NOW, "UTC");
     expect(lines[0]).toMatchObject({ id: "e8", time: "09:41" });
     expect(lines.at(-1)!.id).toBe("e1");
   });
-  it("is empty for an empty log", () => {
-    expect(logLines(testBoard({ log: [] }))).toEqual([]);
+  it("shows the cycle's log, not the board's latest events", () => {
+    const onlyTwo = testBoard({ cycle: { cycle: CYCLE, ended: false, log: board.log.slice(0, 2) } });
+    expect(logLines(onlyTwo, NOW, "UTC").map((l) => l.id)).toEqual(["e2", "e1"]);
   });
-  it("takes the board log's filter, not another log's, and leaves the board's own log whole", () => {
-    const filtered = testBoard({ log_filters: { ...board.log_filters, board: ["picked", "status_changed"], cycle: ["asked"], card: ["asked"] } });
-    expect(BOARD_PANEL_LOG).toBe("board");
-    expect(logLines(filtered, "UTC").map((l) => l.id)).toEqual(["e7", "e4", "e3"]);
-    expect(filtered.log).toHaveLength(board.log.length);
+  it("dates a line from an earlier day", () => {
+    expect(logLines(board, new Date("2026-11-20T15:00:00Z"), "UTC")[0]!.time).toBe("6 Nov");
+  });
+  it("is empty with no cycle or an empty log", () => {
+    expect(logLines(testBoard({ cycle: null }), NOW)).toEqual([]);
+    expect(logLines(testBoard({ cycle: { cycle: CYCLE, ended: false, log: [] } }), NOW)).toEqual([]);
+  });
+  it("takes the cycle log's filter, not another log's, and leaves the logs whole", () => {
+    const filtered = testBoard({ log_filters: { ...board.log_filters, cycle: ["picked", "status_changed"], board: ["asked"], card: ["asked"] } });
+    expect(BOARD_PANEL_LOG).toBe("cycle");
+    expect(logLines(filtered, NOW, "UTC").map((l) => l.id)).toEqual(["e7", "e4", "e3"]);
+    expect(filtered.cycle!.log).toHaveLength(board.log.length);
+  });
+});
+
+describe("cycleWindow", () => {
+  it("names the first and the end day", () => {
+    expect(cycleWindow(CYCLE, "UTC")).toBe("2 Nov – 16 Nov");
+  });
+  it("adds the years when the window crosses one", () => {
+    expect(cycleWindow({ ...CYCLE, starts_at: "2026-12-21T08:00:00Z", ends_at: "2027-01-04T08:00:00Z" }, "UTC")).toBe("21 Dec 2026 – 4 Jan 2027");
+  });
+});
+
+describe("emptyCycleLog", () => {
+  it("says why the panel has no lines", () => {
+    expect(emptyCycleLog(board, 3)).toBeUndefined();
+    expect(emptyCycleLog(testBoard({ cycle: null }), 0)).toBe("No cycle has started yet.");
+    expect(emptyCycleLog(testBoard({ cycle: { cycle: CYCLE, ended: false, log: [] } }), 0)).toBe("Nothing has happened in this cycle yet.");
+    expect(emptyCycleLog(board, 0)).toBe("The filter hides every event in this cycle.");
   });
 });

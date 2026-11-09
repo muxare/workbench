@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isCardEvent, type CardEvent, type CardResponse, type FunctionFrontMatter } from "@workbench/shared";
+import { logTime } from "../board/log.ts";
 import { AI, BE, card, PO, testBoard, UX } from "../board/testBoard.ts";
 import {
   actorText,
@@ -9,7 +10,6 @@ import {
   checkLines,
   detailMode,
   linkedWork,
-  logTime,
   modeForOwner,
   openQuestions,
   protocolView,

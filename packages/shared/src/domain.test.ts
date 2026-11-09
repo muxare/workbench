@@ -4,8 +4,10 @@ import {
   card,
   cardEvent,
   cardEventType,
+  currentCycle,
   cycle,
   decidedByHuman,
+  inCycle,
   defaultLogFilters,
   deriveLogFilters,
   deriveProfile,
@@ -225,6 +227,38 @@ describe("cycle", () => {
   it("rejects a window that ends before it starts", () => {
     const c = { id: "invented-s14", name: "Invented sprint", starts_at: "2026-11-16T08:00:00Z", ends_at: "2026-11-02T08:00:00Z" };
     expect(cycle.safeParse(c).success).toBe(false);
+  });
+});
+
+describe("currentCycle", () => {
+  const s1 = { id: "invented-s1", name: "Invented sprint 1", starts_at: "2026-11-02T08:00:00Z", ends_at: "2026-11-16T08:00:00Z" };
+  const s2 = { id: "invented-s2", name: "Invented sprint 2", starts_at: "2026-11-16T08:00:00Z", ends_at: "2026-11-30T08:00:00Z" };
+  const s3 = { id: "invented-s3", name: "Invented sprint 3", starts_at: "2026-12-07T08:00:00Z", ends_at: "2026-12-21T08:00:00Z" };
+  const all = [s3, s1, s2];
+
+  it("is the cycle whose window holds now, its end excluded", () => {
+    expect(currentCycle(all, new Date("2026-11-09T12:00:00Z"))).toEqual({ cycle: s1, ended: false });
+    expect(currentCycle(all, new Date("2026-11-16T08:00:00Z"))).toEqual({ cycle: s2, ended: false });
+  });
+
+  it("between cycles, is the one that ended last, marked ended", () => {
+    expect(currentCycle(all, new Date("2026-12-01T00:00:00Z"))).toEqual({ cycle: s2, ended: true });
+    expect(currentCycle(all, new Date("2027-01-01T00:00:00Z"))).toEqual({ cycle: s3, ended: true });
+  });
+
+  it("is undefined before any cycle has started", () => {
+    expect(currentCycle(all, new Date("2026-10-01T00:00:00Z"))).toBeUndefined();
+    expect(currentCycle([], new Date("2026-11-09T12:00:00Z"))).toBeUndefined();
+  });
+
+  it("takes the later start when two windows overlap", () => {
+    const overlap = { ...s2, id: "invented-o", starts_at: "2026-11-09T00:00:00Z" };
+    expect(currentCycle([s1, overlap], new Date("2026-11-10T00:00:00Z"))?.cycle.id).toBe("invented-o");
+  });
+
+  it("compares times, not strings, across offsets", () => {
+    expect(inCycle(s1, "2026-11-16T08:59:59+01:00")).toBe(true);
+    expect(inCycle(s1, "2026-11-16T09:00:00+01:00")).toBe(false);
   });
 });
 

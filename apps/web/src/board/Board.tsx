@@ -6,7 +6,7 @@ import { groupIntoColumns } from "./columns.ts";
 import { ConnectionIndicator } from "./ConnectionIndicator.tsx";
 import { CycleLog } from "./CycleLog.tsx";
 
-/** The board panel: header with milestone progress, six columns, the cycle log. */
+/** The board panel: header with the current cycle and milestone progress, six columns, the cycle log. */
 export function Board({
   board,
   connection,
@@ -20,7 +20,9 @@ export function Board({
   return (
     <section className="board" aria-label="Team board">
       <header className="board__head">
-        <h2 className="board__title">Team board</h2>
+        <h2 className="board__title">
+          Team board{board.cycle && <span className="board__cycle"> · {board.cycle.cycle.name}</span>}
+        </h2>
         <div className="board__status">
           {progress && (
             <span className="milestone">

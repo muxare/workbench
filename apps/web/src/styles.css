@@ -609,6 +609,12 @@ a:hover {
   font-weight: 700;
 }
 
+/* "· Sprint 14" after the title, as on the Main artboard. */
+.board__cycle {
+  font-weight: 400;
+  color: var(--muted);
+}
+
 .board__status {
   display: flex;
   align-items: center;
@@ -777,6 +783,11 @@ a:hover {
   font-size: 11.5px;
   font-weight: 500;
   color: var(--fg);
+}
+
+.cycle-log__window {
+  font-weight: 400;
+  color: var(--muted);
 }
 
 .cycle-log__lines {

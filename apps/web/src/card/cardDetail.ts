@@ -15,7 +15,7 @@ import {
   type Question,
 } from "@workbench/shared";
 import { columnLabel } from "../board/columns.ts";
-import { describeEvent, formatTime } from "../board/log.ts";
+import { describeEvent, logTime } from "../board/log.ts";
 import { modeMeaning } from "../board/modes.ts";
 import { cardRef, findTeammate, labelOf, roleTitle } from "../board/teammates.ts";
 
@@ -177,21 +177,6 @@ export function checkLines(log: readonly CardEvent[], fn: FunctionFrontMatter | 
       ? { ...base, result: `Pass · ${e.summary}`, tone: "assist" }
       : { ...base, result: e.summary, tone: "needs-input" };
   });
-}
-
-/**
- * A log time as the artboard writes it: "09:41" on the same day as `now`,
- * the weekday ("Fri") within the last week, and the date ("3 Nov") before that.
- */
-export function logTime(at: string, now: Date, timeZone?: string): string {
-  const day = (d: Date) => new Intl.DateTimeFormat("en-CA", { dateStyle: "short", ...(timeZone ? { timeZone } : {}) }).format(d);
-  const then = new Date(at);
-  if (day(then) === day(now)) return formatTime(at, timeZone);
-  const zone = timeZone ? { timeZone } : {};
-  if (now.getTime() - then.getTime() < 6 * 24 * 60 * 60 * 1000) {
-    return new Intl.DateTimeFormat("en-GB", { weekday: "short", ...zone }).format(then);
-  }
-  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", ...zone }).format(then);
 }
 
 export interface CardLogLine {

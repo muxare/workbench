@@ -19,6 +19,7 @@ import {
   eventsAfter,
   getTeammate,
   listCards,
+  listCycles,
   listTeammates,
   logFilters,
   profileEvents,
@@ -137,6 +138,11 @@ describe("cycle log", () => {
 
   it("rejects an unknown cycle", async () => {
     await expect(cycleLog(db, "nope")).rejects.toThrow(StoreError);
+  });
+
+  it("lists the cycles in the order they start", async () => {
+    expect((await listCycles(db)).map((c) => c.id)).toEqual(["c-early", "c-late"]);
+    expect((await listCycles(db))[1]).toEqual(tiny.cycles[1]);
   });
 });
 
