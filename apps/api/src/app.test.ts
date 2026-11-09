@@ -296,4 +296,15 @@ describe("GET /api/events", () => {
     await r.close();
     await expectProblem(await app.request("/api/events", { headers: { "Last-Event-ID": "abc" } }), 400, "invalid_request");
   });
+
+  it("sends a comment at once with nothing to replay, so a proxy passes the headers on", async () => {
+    const res = await app.request("/api/events");
+    const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+    const first = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("no bytes in time")), 1000)),
+    ]);
+    expect(first.value).toBe(": open\n\n");
+    await reader.cancel();
+  });
 });

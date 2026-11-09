@@ -46,6 +46,10 @@ export function eventStream(c: Context, db: Db, start: number): Response {
       wake?.();
     });
     try {
+      // Send a byte at once: a proxy (Vite's dev proxy among them) holds the
+      // response headers until the first body byte, and the browser's
+      // EventSource does not open until it has the headers.
+      await stream.write(": open\n\n");
       for (const stored of await eventsAfter(db, sent)) {
         await send(stream, stored);
         sent = stored.seq;
