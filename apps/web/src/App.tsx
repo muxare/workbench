@@ -1,26 +1,32 @@
-import { useEffect, useState } from "react";
-import { cardStatus } from "@workbench/shared";
-import { columnLabel } from "./columns.ts";
+import { useBoard } from "./api/useBoard.ts";
+import { BoardView } from "./board/BoardView.tsx";
 
-// Placeholder shell: proves the web app, the shared package and the API are wired together.
 export function App() {
-  const [api, setApi] = useState<"checking" | "up" | "down">("checking");
+  const state = useBoard();
 
-  useEffect(() => {
-    fetch("/api/health")
-      .then((res) => setApi(res.ok ? "up" : "down"))
-      .catch(() => setApi("down"));
-  }, []);
+  if (state.phase === "loading") {
+    return (
+      <main className="page page--centered">
+        <p className="state-message" role="status">
+          Loading the board…
+        </p>
+      </main>
+    );
+  }
 
-  return (
-    <main>
-      <h1>Workbench</h1>
-      <p>API: {api}</p>
-      <ol>
-        {cardStatus.options.map((s) => (
-          <li key={s}>{columnLabel(s)}</li>
-        ))}
-      </ol>
-    </main>
-  );
+  if (state.phase === "error") {
+    return (
+      <main className="page page--centered">
+        <div className="state-message state-message--error" role="alert">
+          <b>The board could not be loaded.</b>
+          <span>{state.reason}</span>
+          <button type="button" className="button" onClick={state.retry}>
+            Try again
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  return <BoardView board={state.board} connection={state.connection} />;
 }
