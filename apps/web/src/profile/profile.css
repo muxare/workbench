@@ -104,6 +104,14 @@
   gap: 20px;
 }
 
+/* A panel heading with a control beside it, such as a log's filter. */
+.profile__panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
 .profile__panel--prose {
   gap: 8px;
   line-height: 1.5;

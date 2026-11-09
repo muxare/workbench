@@ -3,7 +3,7 @@
 // artboard for this screen; it follows the Profile artboard's layout, and the
 // AI's own panel on the Main artboard for how the AI is drawn. Nothing here
 // names a function or a function field's value.
-import type { AiProfileStep, AiTeammateProfileResponse, BoardResponse, Mode } from "@workbench/shared";
+import { shownInLog, type AiProfileStep, type AiTeammateProfileResponse, type BoardResponse, type Mode } from "@workbench/shared";
 import { columnLabel } from "../board/columns.ts";
 import { describeEvent, formatTime } from "../board/log.ts";
 import { modeMeaning, modes } from "../board/modes.ts";
@@ -168,9 +168,13 @@ export function questionItems(profile: AiTeammateProfileResponse, board: BoardRe
   });
 }
 
-/** The AI's latest events as log lines, newest first, worded as in the cycle log. */
+/**
+ * The AI's latest events as log lines, newest first, worded as in the cycle
+ * log. "What I did last" is a teammate log, so the team's teammate log filter
+ * applies: the event types it hides are left out of the lines only.
+ */
 export function recentLines(profile: AiTeammateProfileResponse, board: BoardResponse, timeZone?: string) {
-  return profile.recent.map((e) => ({ id: e.id, at: e.at, time: formatTime(e.at, timeZone), text: describeEvent(e, board) }));
+  return shownInLog(profile.recent, board.log_filters, "teammate").map((e) => ({ id: e.id, at: e.at, time: formatTime(e.at, timeZone), text: describeEvent(e, board) }));
 }
 
 /**

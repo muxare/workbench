@@ -15,6 +15,7 @@ import {
   type AiStepRow,
   type CardItem,
 } from "./aiProfileView.ts";
+import { LogFilter } from "../board/LogFilter.tsx";
 import { useAiProfile } from "./useAiProfile.ts";
 import "./profile.css";
 
@@ -215,9 +216,12 @@ export function AiProfileView({ teammateId, board }: { teammateId: string; board
           </section>
 
           <section className="profile__panel" aria-labelledby="ai-recent-heading">
-            <h2 id="ai-recent-heading">What I did last</h2>
+            <div className="profile__panel-head">
+              <h2 id="ai-recent-heading">What I did last</h2>
+              <LogFilter log="teammate" board={board} />
+            </div>
             {recent.length === 0 ? (
-              <p className="profile__note">Nothing yet.</p>
+              <p className="profile__note">{profile.recent.length === 0 ? "Nothing yet." : "The filter hides everything I did last."}</p>
             ) : (
               <ol className="ai-log">
                 {recent.map((l) => (

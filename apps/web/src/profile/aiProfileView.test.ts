@@ -1,7 +1,7 @@
 // INVENTED test data: the steps, cards and questions below are made up for
 // the test and name no real function file, client or project.
 import { describe, expect, it } from "vitest";
-import type { AiTeammateProfileResponse, CardEvent } from "@workbench/shared";
+import type { AiTeammateProfileResponse, BoardResponse, CardEvent } from "@workbench/shared";
 import { AI, BE, PO, UX, card, testBoard } from "../board/testBoard.ts";
 import {
   aiProfileRefreshKey,
@@ -140,6 +140,12 @@ describe("questionItems and recentLines", () => {
     expect(recentLines(profile(), board, "UTC")).toEqual([
       { id: "e6", at: "2026-11-06T09:40:00Z", time: "09:40", text: "AI picked #151 · mode: AI assists" },
     ]);
+  });
+
+  it("leaves out what the team's teammate log filter hides, and only that log's filter applies", () => {
+    const hiding = (filters: Partial<BoardResponse["log_filters"]>) => testBoard({ log_filters: { ...board.log_filters, ...filters } });
+    expect(recentLines(profile(), hiding({ teammate: ["picked"] }), "UTC")).toEqual([]);
+    expect(recentLines(profile(), hiding({ board: ["picked"], card: ["picked"] }), "UTC").map((l) => l.id)).toEqual(["e6"]);
   });
 });
 
