@@ -16,7 +16,10 @@ import { createApp } from "./app.ts";
 import { buildProfile } from "./profile.ts";
 import { openDb } from "./db/client.ts";
 import { loadFunctionDefinitions, loadFunctionIds } from "./process.ts";
-import { inventedSeed } from "./seed/invented.ts";
+import { inventedSeedAt } from "./seed/invented.ts";
+
+/** The invented seed as loaded on 2026-11-07, so Sprint 4 runs from 2026-11-05 to 2026-11-19. */
+const inventedSeed = inventedSeedAt(new Date("2026-11-07T08:00:00Z"));
 import { seed } from "./store.ts";
 
 const real = loadFunctionDefinitions();

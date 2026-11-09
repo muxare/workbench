@@ -147,6 +147,29 @@ export const cycle = z
   });
 export type Cycle = z.infer<typeof cycle>;
 
+/** Whether the time `at` falls in the cycle's window, [starts_at, ends_at). */
+export function inCycle(c: Cycle, at: string): boolean {
+  const t = Date.parse(at);
+  return Date.parse(c.starts_at) <= t && t < Date.parse(c.ends_at);
+}
+
+/**
+ * The board's current cycle at `now`: the cycle whose window holds `now`, or,
+ * between cycles, the one that ended last, marked `ended`, so the board keeps
+ * showing the cycle it has just been through. A cycle that has not started is
+ * never current. If two windows hold `now`, the one that started last wins.
+ * Undefined when no cycle has started.
+ */
+export function currentCycle(cycles: readonly Cycle[], now: Date): { cycle: Cycle; ended: boolean } | undefined {
+  const t = now.getTime();
+  const latest = (pick: (c: Cycle) => number, list: readonly Cycle[]) =>
+    list.reduce<Cycle | undefined>((best, c) => (best === undefined || pick(c) > pick(best) ? c : best), undefined);
+  const running = latest((c) => Date.parse(c.starts_at), cycles.filter((c) => inCycle(c, now.toISOString())));
+  if (running) return { cycle: running, ended: false };
+  const ended = latest((c) => Date.parse(c.ends_at), cycles.filter((c) => Date.parse(c.ends_at) <= t));
+  return ended && { cycle: ended, ended: true };
+}
+
 const cardEventBase = { id: eventId, card_id: cardId, actor: teammateId, at: timestamp };
 const teammateEventBase = { id: eventId, teammate_id: teammateId, actor: teammateId, at: timestamp };
 

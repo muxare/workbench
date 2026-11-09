@@ -7,9 +7,13 @@
 // The board is a snapshot at the end of 2026-10-06, in step 7 of the history:
 // the fault-status contract (#106) waits on the product owner, who has passed
 // the AI's question to the caretaker, and I-8 (#107), which #106 depends on, is
-// in progress. Two things go beyond the history:
-// - #108, refining the booking reminder screens for I-3, is in Ready so the AI
-//   teammate has a card to pick. The history does not say when I-3 was refined.
+// in progress. Three things go beyond the history:
+// - A running cycle, Sprint 4, set relative to when the seed runs
+//   (`runningCycle`), so the cycle log under the board holds the events made
+//   live in a demo. Sprints 1 to 3 are the history's dates and have ended.
+// - #108, refining the booking reminder screens for I-3, is moved to Ready
+//   early in Sprint 4, so the AI teammate has a card to pick and the running
+//   cycle's log is not empty. The history does not say when I-3 was refined.
 // - #107 is a `write_issues` card. I-8 is work for the product owner and the
 //   caretaker that no function in process/ describes, but every card needs a
 //   function, and #106 needs a card to depend on.
@@ -22,11 +26,14 @@
 // history gives the mode of each step; when exactly each change was made is
 // invented, placed just before the pick that needs it.
 //
+// The seed is a function of the time it runs (`inventedSeedAt`); the CLI
+// passes the clock, tests pass a fixed time.
+//
 // This is the only module that holds seed data. A real project (the Phase 2
 // run, see docs/decisions.md, 2026-11-08) replaces it by exporting another
 // `SeedData`; nothing else needs to change. Function ids must be names of
 // files in process/functions; `seed()` checks them against process/.
-import type { CardStatus, Mode, StreamEvent } from "@workbench/shared";
+import type { CardStatus, Cycle, Mode, StreamEvent } from "@workbench/shared";
 import type { SeedData } from "../store.ts";
 
 const PO = "invented-po";
@@ -390,22 +397,51 @@ const steps: NewEvent[][] = [
     move("invented-107", PO, at("09-29", "14:00"), "backlog", "ready"),
     move("invented-107", PO, at("09-30", "09:00"), "ready", "in_progress"),
     report("invented-107", PO, at("09-30", "09:05"), "Invented: asked Lee what his fault records hold and whether he would keep them in a shared form."),
-    move("invented-108", PO, at("10-05", "09:00"), "backlog", "ready"),
   ],
 ];
 
-let n = 0;
 /** The events in time order, each with the next invented id. */
-const events: StreamEvent[] = steps
-  .flat()
-  .map((event, index) => ({ event, index }))
-  .sort((a, b) => Date.parse(a.event.at) - Date.parse(b.event.at) || a.index - b.index)
-  .map(({ event }) => {
-    n += 1;
-    return { ...event, id: `invented-e${String(n).padStart(3, "0")}` } as StreamEvent;
-  });
+function numbered(all: NewEvent[]): StreamEvent[] {
+  return all
+    .map((event, index) => ({ event, index }))
+    .sort((a, b) => Date.parse(a.event.at) - Date.parse(b.event.at) || a.index - b.index)
+    .map(({ event }, i) => ({ ...event, id: `invented-e${String(i + 1).padStart(3, "0")}` }) as StreamEvent);
+}
 
-export const inventedSeed: SeedData = {
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** The end of Sprint 3, the last cycle of the history; Sprint 4 never starts before it. */
+const HISTORY_ENDS = Date.parse("2026-10-12T06:00:00Z");
+
+/**
+ * Sprint 4: two weeks starting at 06:00 UTC two days before `seededAt`, and
+ * never before Sprint 3 ends. Seeded on any day from 2026-11-07 to
+ * 2026-11-18, the window holds ConCon on 2026-11-18 and the days in between.
+ */
+export function runningCycle(seededAt: Date): Cycle {
+  const day = new Date(seededAt.getTime() - 2 * DAY_MS);
+  const start = Math.max(HISTORY_ENDS, Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), 6));
+  return {
+    id: "invented-sprint-4",
+    name: "Sprint 4 (invented)",
+    starts_at: new Date(start).toISOString(),
+    ends_at: new Date(start + 14 * DAY_MS).toISOString(),
+  };
+}
+
+/**
+ * The invented seed as it is loaded at `seededAt`: the history's log up to
+ * 2026-10-06, then #108 moved to Ready three hours into the running Sprint 4
+ * (or at `seededAt`, if that is sooner), so that move is in the past and in
+ * the window.
+ */
+export function inventedSeedAt(seededAt: Date): SeedData {
+  const sprint4 = runningCycle(seededAt);
+  const readyAt = Math.min(Date.parse(sprint4.starts_at) + 3 * 60 * 60 * 1000, Math.max(seededAt.getTime(), Date.parse(sprint4.starts_at)));
+  const i3Ready = move("invented-108", PO, new Date(readyAt).toISOString(), "backlog", "ready");
+  return { ...base, cycles: [...base.cycles, sprint4], events: numbered([...steps.flat(), i3Ready]) };
+}
+
+const base: Omit<SeedData, "events"> = {
   teammates: [
     { kind: "human", id: PO, name: "Robin Example (invented product owner)", role: "po" },
     { kind: "human", id: UX, name: "Sam Example (invented UX designer)", role: "ux" },
@@ -451,6 +487,4 @@ export const inventedSeed: SeedData = {
     },
     { id: "invented-108", title: "Invented: refine the booking reminder screens for I-3", function_id: "refine_ui_spec", owner: FE, milestone, links: [] },
   ],
-
-  events,
 };

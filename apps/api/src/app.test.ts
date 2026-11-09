@@ -15,7 +15,10 @@ import {
 import { createApp } from "./app.ts";
 import { openDb, type Db } from "./db/client.ts";
 import { loadFunctionDefinitions, loadFunctionIds } from "./process.ts";
-import { inventedSeed } from "./seed/invented.ts";
+import { inventedSeedAt } from "./seed/invented.ts";
+
+/** The invented seed as loaded on 2026-11-07, so Sprint 4 runs from 2026-11-05 to 2026-11-19. */
+const inventedSeed = inventedSeedAt(new Date("2026-11-07T08:00:00Z"));
 import { withProfile } from "./seed/withProfile.ts";
 import { appendEvent, cardStatus, lastSeq, seed, type SeedData } from "./store.ts";
 
@@ -92,6 +95,51 @@ describe("GET /api/board", () => {
       "invented-po": "po",
       "invented-ux": "ux",
     });
+  });
+});
+
+describe("GET /api/board, the current cycle", () => {
+  const sprint3 = inventedSeed.cycles.find((c) => c.id === "invented-sprint-3")!;
+  const inSprint3 = inventedSeed.events.filter((e) => Date.parse(e.at) >= Date.parse(sprint3.starts_at) && Date.parse(e.at) < Date.parse(sprint3.ends_at));
+  const boardAt = async (now: string, database: Db = db) => {
+    const a = createApp({ db: database, functionIds, now: () => new Date(now) });
+    return boardResponse.parse(await (await a.request("/api/board")).json());
+  };
+
+  it("is the cycle that holds the server's clock, with its whole log, oldest first", async () => {
+    const board = await boardAt("2026-10-06T18:00:00Z");
+    expect(board.cycle?.cycle).toEqual(sprint3);
+    expect(board.cycle?.ended).toBe(false);
+    expect(board.cycle?.log.map((e) => e.id)).toEqual(inSprint3.map((e) => e.id));
+  });
+
+  it("between cycles, is the one that ended last, marked ended", async () => {
+    const board = await boardAt("2026-10-20T10:00:00Z");
+    expect(board.cycle).toMatchObject({ cycle: sprint3, ended: true });
+    expect(board.cycle?.log.map((e) => e.id)).toEqual(inSprint3.map((e) => e.id));
+  });
+
+  it("on the seed's day is the running Sprint 4, holding #108's move to Ready and the events made since", async () => {
+    await post(`/api/cards/invented-108/pick`, { actor: FE });
+    const board = await boardAt("2026-11-07T10:00:00Z");
+    expect(board.cycle).toMatchObject({ cycle: { id: "invented-sprint-4" }, ended: false });
+    expect(board.cycle?.log.map((e) => [e.type, "card_id" in e ? e.card_id : undefined])).toEqual([
+      ["status_changed", "invented-108"],
+      ["picked", "invented-108"],
+      ["status_changed", "invented-108"],
+    ]);
+  });
+
+  it("is null before any cycle has started, and with no cycles", async () => {
+    expect((await boardAt("2026-08-01T00:00:00Z")).cycle).toBeNull();
+    const empty = await openDb(":memory:");
+    await seed(empty, { ...inventedSeed, cycles: [] }, functionIds);
+    expect((await boardAt("2026-10-06T18:00:00Z", empty)).cycle).toBeNull();
+  });
+
+  it("is a different cycle when the clock moves into it", async () => {
+    expect((await boardAt("2026-09-01T00:00:00Z")).cycle?.cycle.id).toBe("invented-sprint-1");
+    expect((await boardAt("2026-09-20T00:00:00Z")).cycle?.cycle.id).toBe("invented-sprint-2");
   });
 });
 

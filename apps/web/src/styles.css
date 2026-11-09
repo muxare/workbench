@@ -609,6 +609,12 @@ a:hover {
   font-weight: 700;
 }
 
+/* "· Sprint 14" after the title, as on the Main artboard. */
+.board__cycle {
+  font-weight: 400;
+  color: var(--muted);
+}
+
 .board__status {
   display: flex;
   align-items: center;
@@ -779,6 +785,11 @@ a:hover {
   color: var(--fg);
 }
 
+.cycle-log__window {
+  font-weight: 400;
+  color: var(--muted);
+}
+
 .cycle-log__lines {
   list-style: none;
   margin: 0;
@@ -791,7 +802,10 @@ a:hover {
 .cycle-log__line {
   margin: 0;
 }
+/* A fixed slot for "09:41", "Fri" or "28 Sep", so the text starts in one column as on the artboard. */
 .cycle-log__line time {
+  display: inline-block;
+  min-width: 7ch;
   margin-right: 1ch;
 }
 .cycle-log__line {
@@ -801,7 +815,8 @@ a:hover {
 .cycle-log__more {
   align-self: flex-start;
   font: inherit;
-  color: var(--delegate);
+  color: var(--muted);
+  text-decoration: underline;
   background: none;
   border: none;
   padding: 0;
@@ -810,6 +825,7 @@ a:hover {
 
 .cycle-log__top {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;

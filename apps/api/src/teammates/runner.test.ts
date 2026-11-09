@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { FunctionFrontMatter } from "@workbench/shared";
 import { openDb, type Db } from "../db/client.ts";
 import { loadFunctionDefinitions, loadFunctionIds } from "../process.ts";
-import { inventedSeed } from "../seed/invented.ts";
+import { inventedSeedAt } from "../seed/invented.ts";
+
+/** The invented seed as loaded on 2026-11-07, so Sprint 4 runs from 2026-11-05 to 2026-11-19. */
+const inventedSeed = inventedSeedAt(new Date("2026-11-07T08:00:00Z"));
 import { withProfile } from "../seed/withProfile.ts";
 import { appendEvent, cardLog, cardStatus, seed, StoreError, type SeedData } from "../store.ts";
 import type { TeammateProvider } from "./provider.ts";

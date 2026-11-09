@@ -6,7 +6,10 @@ import { deriveProfile } from "@workbench/shared";
 import { openDb, type Db } from "./db/client.ts";
 import { events } from "./db/schema.ts";
 import { loadFunctionDefinitions, loadFunctionIds } from "./process.ts";
-import { inventedSeed } from "./seed/invented.ts";
+import { inventedSeedAt, runningCycle } from "./seed/invented.ts";
+
+/** The invented seed as loaded on 2026-11-07, so Sprint 4 runs from 2026-11-05 to 2026-11-19. */
+const inventedSeed = inventedSeedAt(new Date("2026-11-07T08:00:00Z"));
 import {
   addCard,
   addTeammate,
@@ -19,6 +22,7 @@ import {
   eventsAfter,
   getTeammate,
   listCards,
+  listCycles,
   listTeammates,
   logFilters,
   profileEvents,
@@ -137,6 +141,11 @@ describe("cycle log", () => {
 
   it("rejects an unknown cycle", async () => {
     await expect(cycleLog(db, "nope")).rejects.toThrow(StoreError);
+  });
+
+  it("lists the cycles in the order they start", async () => {
+    expect((await listCycles(db)).map((c) => c.id)).toEqual(["c-early", "c-late"]);
+    expect((await listCycles(db))[1]).toEqual(tiny.cycles[1]);
   });
 });
 
@@ -398,11 +407,54 @@ describe("invented seed", () => {
     expect(log101.filter((t) => t === "answered")).toHaveLength(2);
   });
 
-  it("lists events in time order and splits them between the three sprints", async () => {
+  it("lists events in time order and splits them between the four sprints", async () => {
     const times = inventedSeed.events.map((e) => Date.parse(e.at));
     expect(times).toEqual([...times].sort((a, b) => a - b));
     const lengths = await Promise.all(inventedSeed.cycles.map(async (c) => (await cycleLog(seeded, c.id)).length));
     expect(lengths.every((n) => n > 0)).toBe(true);
     expect(lengths.reduce((a, b) => a + b, 0)).toBe(inventedSeed.events.length);
+  });
+
+  it("puts only #108's move to Ready in Sprint 4, after the history's log", async () => {
+    const sprint4 = await cycleLog(seeded, "invented-sprint-4");
+    expect(sprint4).toHaveLength(1);
+    expect(sprint4[0]).toMatchObject({ type: "status_changed", card_id: "invented-108", actor: "invented-po", at: "2026-11-05T09:00:00.000Z", to: { state: "ready" } });
+    expect(inventedSeed.events.at(-1)).toEqual(sprint4[0]);
+  });
+});
+
+describe("runningCycle", () => {
+  const holds = (c: { starts_at: string; ends_at: string }, at: string) => Date.parse(c.starts_at) <= Date.parse(at) && Date.parse(at) < Date.parse(c.ends_at);
+
+  it("runs two weeks from 06:00 UTC two days before the seed time", () => {
+    expect(runningCycle(new Date("2026-11-09T14:00:00Z"))).toEqual({
+      id: "invented-sprint-4",
+      name: "Sprint 4 (invented)",
+      starts_at: "2026-11-07T06:00:00.000Z",
+      ends_at: "2026-11-21T06:00:00.000Z",
+    });
+  });
+
+  it("holds the seed time and ConCon on 2026-11-18 when seeded from 2026-11-07 to the morning of the talk", () => {
+    for (const day of ["2026-11-07T00:30:00Z", "2026-11-09T09:00:00Z", "2026-11-17T22:00:00Z", "2026-11-18T07:00:00Z"]) {
+      const c = runningCycle(new Date(day));
+      expect(holds(c, day)).toBe(true);
+      expect(holds(c, "2026-11-18T12:00:00Z")).toBe(true);
+    }
+  });
+
+  it("never starts before Sprint 3 ends", () => {
+    expect(runningCycle(new Date("2026-10-13T12:00:00Z")).starts_at).toBe("2026-10-12T06:00:00.000Z");
+  });
+
+  it("keeps #108's move to Ready in the window and in the past for any seed time", () => {
+    for (const day of ["2026-10-12T07:00:00Z", "2026-11-09T05:00:00Z", "2026-11-18T07:00:00Z"]) {
+      const seededAt = new Date(day);
+      const data = inventedSeedAt(seededAt);
+      const ready = data.events.at(-1)!;
+      expect(ready).toMatchObject({ type: "status_changed", card_id: "invented-108" });
+      expect(holds(data.cycles.at(-1)!, ready.at)).toBe(true);
+      expect(Date.parse(ready.at)).toBeLessThanOrEqual(seededAt.getTime());
+    }
   });
 });
