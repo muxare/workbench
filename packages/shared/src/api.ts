@@ -2,12 +2,14 @@
 // apps/web so neither side copies them. Field names are snake_case, like the
 // domain schemas. There is no sign-in yet, so every write names its `actor`.
 import { z } from "zod";
+import { functionRole } from "./functionFile.ts";
 import {
   card,
   cardEvent,
   cardLink,
   cardStatus,
   functionId,
+  humanTeammate,
   mode,
   question,
   teammate,
@@ -117,6 +119,52 @@ export type WriteResponse = z.infer<typeof writeResponse>;
  */
 export const teammateRunResponse = writeResponse;
 export type TeammateRunResponse = WriteResponse;
+
+/**
+ * One step in a person's chain on `GET /teammates/:id/profile`. Everything but
+ * `mode`, `mode_is_default` and `ai_may_pick` is read from the function's file
+ * in process/functions; the app never lists a function's fields itself.
+ */
+export const profileStep = z.object({
+  function_id: functionId,
+  role: functionRole,
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  /** The function file's `modes`: the modes a person may choose, and the one used until they do. */
+  modes: z.object({ default: mode, allowed: z.array(mode).min(1) }),
+  /** The mode this person works the step in: their choice, or the function's default. */
+  mode,
+  /** True when the person has not chosen a mode, so `mode` is the function's default. */
+  mode_is_default: z.boolean(),
+  /**
+   * Whether an AI teammate may pick a Ready card on this step on its own, given
+   * `mode`: the mode is one it works in and the mode's protocol lets the AI ask.
+   */
+  ai_may_pick: z.boolean(),
+});
+export type ProfileStep = z.infer<typeof profileStep>;
+
+/**
+ * `GET /teammates/:id/profile`: a person and their chain of steps. The chain is
+ * every function whose `role` is the person's role, then every other function
+ * in their process profile. `unknown_functions` lists profile entries with no
+ * file in process/functions, which the API cannot describe.
+ */
+export const teammateProfileResponse = z.object({
+  teammate: humanTeammate,
+  steps: z.array(profileStep),
+  unknown_functions: z.array(functionId),
+});
+export type TeammateProfileResponse = z.infer<typeof teammateProfileResponse>;
+
+/**
+ * `POST /teammates/:id/modes`: a person sets the mode they work one step in.
+ * The mode must be in the function's `modes.allowed`, and only the person may
+ * change their own profile, since there is no sign-in yet to say who is
+ * asking. The answer is the profile as it now stands.
+ */
+export const setModeRequest = z.strictObject({ actor: teammateId, function_id: functionId, mode });
+export type SetModeRequest = z.infer<typeof setModeRequest>;
 
 export const apiErrorCode = z.enum(["invalid_request", "not_found", "conflict", "forbidden", "rule_violation"]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;

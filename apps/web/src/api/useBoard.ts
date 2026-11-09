@@ -5,7 +5,7 @@
 // comes from. The server sets each message's SSE `id` to its seq, so the
 // browser's own reconnect sends `Last-Event-ID` and resumes without a gap; a
 // stream the browser gives up on is reopened here after the board's last_seq.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { BoardResponse } from "@workbench/shared";
 import { ApiRequestError, eventsUrl, fetchBoard } from "./client.ts";
 import {
@@ -24,7 +24,13 @@ export type BoardConnection = "connecting" | "live" | "reconnecting";
 export type BoardState =
   | { phase: "loading" }
   | { phase: "error"; reason: string; retry: () => void }
-  | { phase: "ready"; board: BoardResponse; connection: BoardConnection };
+  | {
+      phase: "ready";
+      board: BoardResponse;
+      connection: BoardConnection;
+      /** Refetch the board, for a change that reaches no event stream, such as a person's modes. */
+      refresh: () => void;
+    };
 
 /** How long to wait for the rest of a burst of events before refetching. */
 const BURST_MS = 150;
@@ -40,6 +46,8 @@ export function useBoard(): BoardState {
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   const [state, setState] = useState<BoardState>({ phase: "loading" });
+  const refreshRef = useRef<() => void>(() => {});
+  const refresh = useCallback(() => refreshRef.current(), []);
 
   useEffect(() => {
     let disposed = false;
@@ -61,7 +69,7 @@ export function useBoard(): BoardState {
     };
 
     const publish = () => {
-      if (!disposed && live) setState({ phase: "ready", board: live.board, connection });
+      if (!disposed && live) setState({ phase: "ready", board: live.board, connection, refresh });
     };
 
     const runRefetch = () => {
@@ -132,6 +140,10 @@ export function useBoard(): BoardState {
       };
     };
 
+    refreshRef.current = () => {
+      if (!disposed && live) askForRefetch();
+    };
+
     setState((s) => (s.phase === "loading" ? s : { phase: "loading" }));
     fetchBoard(abort.signal).then(
       (board) => {
@@ -152,7 +164,7 @@ export function useBoard(): BoardState {
       for (const t of timers) clearTimeout(t);
       timers.clear();
     };
-  }, [attempt, retry]);
+  }, [attempt, retry, refresh]);
 
   return state;
 }

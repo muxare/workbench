@@ -21,6 +21,34 @@ export type Eligibility =
   | { eligible: true; card: Card; definition: FunctionFrontMatter; mode: Mode; protocol: Protocol; owner: HumanTeammate }
   | { eligible: false; card: Card; reason: string };
 
+/** The mode `owner` works `definition` in: their choice, or the function's `modes.default`. */
+export function ownerMode(owner: HumanTeammate, definition: FunctionFrontMatter): Mode {
+  return owner.process_profile[definition.name] ?? definition.modes.default;
+}
+
+/**
+ * Whether this AI teammate can work a step of `definition` in `mode`, before
+ * looking at any card: rules 3 to 5 below. The teammate profile uses it to say
+ * on which steps the AI may pick on its own.
+ */
+export function workableMode(
+  definition: FunctionFrontMatter,
+  mode: Mode,
+): { ok: true; protocol: Protocol } | { ok: false; reason: string } {
+  const refuse = (reason: string) => ({ ok: false as const, reason });
+  if (!definition.modes.allowed.includes(mode)) {
+    return refuse(`mode '${mode}' is not in ${definition.name}'s modes.allowed (${definition.modes.allowed.join(", ")})`);
+  }
+  if (!TEAMMATE_MODES.includes(mode)) {
+    return refuse(`the owner works ${definition.name} in '${mode}'; this teammate works only in ${TEAMMATE_MODES.join(", ")}`);
+  }
+  const protocol = definition.protocols[mode];
+  if (!protocol) return refuse(`${definition.name} has no protocol for '${mode}'`);
+  if (!AI_ASKS.has(protocol.asks)) return refuse(`in ${definition.name}/${mode}, asks is '${protocol.asks}', so the AI may not ask`);
+  if (protocol.decides !== "human") return refuse(`in ${definition.name}/${mode}, decides is not human`);
+  return { ok: true, protocol };
+}
+
 /**
  * Decide whether the AI teammate may pick `card`:
  *
@@ -54,18 +82,10 @@ export function checkEligibility(
   const owner = teammates.find((t) => t.id === card.owner);
   if (owner?.kind !== "human") return refuse(`owner ${card.owner} is not a human teammate`);
 
-  const mode = owner.process_profile[definition.name] ?? definition.modes.default;
-  if (!definition.modes.allowed.includes(mode)) {
-    return refuse(`mode '${mode}' is not in ${definition.name}'s modes.allowed (${definition.modes.allowed.join(", ")})`);
-  }
-  if (!TEAMMATE_MODES.includes(mode)) {
-    return refuse(`the owner works ${definition.name} in '${mode}'; this teammate works only in ${TEAMMATE_MODES.join(", ")}`);
-  }
-
-  const protocol = definition.protocols[mode];
-  if (!protocol) return refuse(`${definition.name} has no protocol for '${mode}'`);
-  if (!AI_ASKS.has(protocol.asks)) return refuse(`in ${definition.name}/${mode}, asks is '${protocol.asks}', so the AI may not ask`);
-  if (protocol.decides !== "human") return refuse(`in ${definition.name}/${mode}, decides is not human`);
+  const mode = ownerMode(owner, definition);
+  const work = workableMode(definition, mode);
+  if (!work.ok) return refuse(work.reason);
+  const { protocol } = work;
 
   if (protocol.opens === "human") {
     const opened = [...log].reverse().find((e) => e.type === "status_changed" && e.to.state === "ready");

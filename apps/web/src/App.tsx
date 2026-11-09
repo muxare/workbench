@@ -1,8 +1,15 @@
 import { useBoard } from "./api/useBoard.ts";
 import { BoardView } from "./board/BoardView.tsx";
+import { ProfileView } from "./profile/ProfileView.tsx";
+import { useRoute } from "./route.ts";
 
 export function App() {
   const state = useBoard();
+  const route = useRoute();
+
+  if (route.view === "teammate") {
+    return <ProfileView teammateId={route.teammateId} onChanged={state.phase === "ready" ? state.refresh : undefined} />;
+  }
 
   if (state.phase === "loading") {
     return (

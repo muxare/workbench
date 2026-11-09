@@ -38,14 +38,18 @@ export type ProcessProfile = z.infer<typeof processProfile>;
 export const teammateRole = z.enum(["po", ...functionRole.exclude(["team"]).options]);
 export type TeammateRole = z.infer<typeof teammateRole>;
 
+/** A person on the team: a role and the mode they work each of their functions in. */
+export const humanTeammate = z.object({
+  kind: z.literal("human"),
+  id: teammateId,
+  name: z.string().min(1),
+  role: teammateRole,
+  process_profile: processProfile,
+});
+export type HumanTeammate = z.infer<typeof humanTeammate>;
+
 export const teammate = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("human"),
-    id: teammateId,
-    name: z.string().min(1),
-    role: teammateRole,
-    process_profile: processProfile,
-  }),
+  humanTeammate,
   z.object({ kind: z.literal("ai"), id: teammateId, name: z.string().min(1) }),
 ]);
 export type Teammate = z.infer<typeof teammate>;
