@@ -1,0 +1,42 @@
+# Runs `pnpm check` (lint, typecheck, tests, process validator) on every pull
+# request and on every push to main. The workflow and its one job are both
+# named `check`: the webhook endpoint in apps/api will match on that name to
+# record a `check_ran` event with `check: structural` on the card
+# (docs/dev-loop.md). Rename them only together with that mapping, and keep the
+# job free of a matrix, which would change the job's reported name.
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run per pull request (or per pushed ref); a newer push cancels the older run.
+  group: check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # No `version`: the action reads `packageManager` from package.json.
+      - uses: pnpm/action-setup@v6
+
+      # Node 24 strips TypeScript types natively, which `pnpm validate` needs,
+      # and is inside every tool's engines range (docs/decisions.md, 2026-11-11).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm check
