@@ -39,6 +39,15 @@ export function takeMessages(buffer: string): { data: string[]; rest: string } {
   return { data, rest };
 }
 
+/** The JSON in an SSE message, or undefined for one that is not JSON, which the wait skips. */
+function parseJson(data: string): unknown {
+  try {
+    return JSON.parse(data);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Wait until question `questionId` on `cardId` is answered, or `timeoutMs` passes. */
 export async function waitForAnswer(client: WorkbenchClient, cardId: string, questionId: string, options: WaitOptions): Promise<WaitResult> {
   const stop = new AbortController();
@@ -74,7 +83,7 @@ export async function waitForAnswer(client: WorkbenchClient, cardId: string, que
       const { data, rest } = takeMessages(buffer);
       buffer = rest;
       for (const d of data) {
-        const event = streamEvent.safeParse(JSON.parse(d));
+        const event = streamEvent.safeParse(parseJson(d));
         if (event.success && event.data.type === "answered" && event.data.card_id === cardId && event.data.question_id === questionId) {
           return { answered: true, question: await question(client, cardId, questionId) };
         }

@@ -8,8 +8,9 @@ import { loadFunctionIds } from "@workbench/api/src/process.ts";
 import { appendEvents } from "@workbench/api/src/store.ts";
 import { enterCards, startTeam, type CardsFile, type TeamFile } from "@workbench/api/src/team/team.ts";
 import { WorkbenchClient, type Fetch } from "./client.ts";
+import { writeResponse } from "@workbench/shared";
 import { createTools, type ToolResult, type Tools } from "./tools.ts";
-import { takeMessages } from "./wait.ts";
+import { takeMessages, waitForAnswer } from "./wait.ts";
 
 const PERSON = "invented-person";
 const AI = "invented-ai";
@@ -246,6 +247,57 @@ describe("when the API is down", () => {
     const result = await down.list_cards({});
     expect(result.isError).toBe(true);
     expect(text(result)).toMatch(/did not answer \(fetch failed\); is team:serve running\?/);
+  });
+});
+
+describe("when a step after a write fails", () => {
+  /** Tools whose fetch fails for the paths `broken` matches, and reaches the API otherwise. */
+  function toolsFailing(broken: (url: string, init?: RequestInit) => boolean): Tools {
+    const fetchFn: Fetch = async (input, init) => (broken(input, init) ? Promise.reject(new TypeError("fetch failed")) : app.request(input, init));
+    return createTools({ client: new WorkbenchClient(BASE, fetchFn) });
+  }
+
+  it("returns the question id when the ask succeeds but the wait fails, so the session does not ask twice", async () => {
+    await tools.pick_card({ card_id: "1" });
+    const flaky = toolsFailing((url) => url.endsWith("/api/events"));
+    const result = await flaky.ask_question({ card_id: "1", text: "Invented: one slot or two?", why_it_blocks: "Invented: it sets the rule.", wait_seconds: 5 });
+    const out = json(result);
+    const id = (out.question as { id: string }).id;
+    expect(out.answered).toBe(false);
+    expect(out.next).toMatch(new RegExp(`waiting for the answer failed .*Do not ask again: call wait_for_answer .*"${id}"`));
+    expect((await questionOf("1")).map((q) => q.id)).toEqual([id]);
+  });
+
+  it("reads the card before picking, so a failed read leaves the card unpicked", async () => {
+    const flaky = toolsFailing((url, init) => url.endsWith("/api/cards/1") && (init?.method ?? "GET") === "GET");
+    expect((await flaky.pick_card({ card_id: "1" })).isError).toBe(true);
+    expect(json(await tools.get_card({ card_id: "1" })).card).toMatchObject({ status: { state: "ready" } });
+    expect(json(await tools.pick_card({ card_id: "1" })).mode).toBe("delegate");
+  });
+});
+
+describe("waitForAnswer", () => {
+  it("skips a stream message that is not JSON and still finds the answer", async () => {
+    await tools.pick_card({ card_id: "1" });
+    const asked = json(await tools.ask_question({ card_id: "1", text: "Invented: q?", why_it_blocks: "Invented: w.", wait_seconds: 0 }));
+    const id = (asked.question as { id: string }).id;
+    const encoder = new TextEncoder();
+    let pulls = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(": open\n\nid: 90\ndata: {not json\n\n"));
+      },
+      // The second read comes after the wait has checked the card, so the answer is given now.
+      async pull(controller) {
+        if (++pulls < 2) return;
+        const res = await post(`/api/cards/1/questions/${id}/answer`, { actor: PERSON, answer: "Invented: one." });
+        const answered = writeResponse.parse(await res.json()).events[0];
+        controller.enqueue(encoder.encode(`id: 91\ndata: ${JSON.stringify(answered)}\n\n`));
+      },
+    });
+    const fetchFn: Fetch = async (input, init) => (input.endsWith("/api/events") ? new Response(stream) : app.request(input, init));
+    const result = await waitForAnswer(new WorkbenchClient(BASE, fetchFn), "1", id, { timeoutMs: 5000 });
+    expect(result).toMatchObject({ answered: true, question: { id, answer: "Invented: one." } });
   });
 });
 

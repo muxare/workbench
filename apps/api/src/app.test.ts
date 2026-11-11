@@ -388,6 +388,17 @@ describe("POST /api/cards/:id/reports", () => {
     expect(await lastSeq(db)).toBe(before);
   });
 
+  it("refuses a report by the AI teammate on a card a person picked last, and lets a person report on any card in work", async () => {
+    // The AI's pick is undone and FE picks the card, so the last pick is FE's.
+    await post("/api/cards/invented-108/pick", { actor: AI });
+    await post("/api/cards/invented-108/status", { actor: FE, from: "in_progress", to: { state: "ready" } });
+    await post("/api/cards/invented-108/pick", { actor: FE });
+    const before = await lastSeq(db);
+    await expectProblem(await post("/api/cards/invented-108/reports", report), 403, "forbidden", /invented-ai did not pick invented-108 last/);
+    expect(await lastSeq(db)).toBe(before);
+    expect((await post("/api/cards/invented-108/reports", { actor: PO, text: "Invented: a note from the PO." })).status).toBe(200);
+  });
+
   it("refuses an empty report, an unknown actor and an unknown card", async () => {
     await post("/api/cards/invented-108/pick", { actor: AI });
     await expectProblem(await post("/api/cards/invented-108/reports", { actor: AI, text: "" }), 400, "invalid_request", /text/);

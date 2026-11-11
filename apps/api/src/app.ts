@@ -72,7 +72,7 @@ import {
 } from "@workbench/shared";
 import type { Db } from "./db/client.ts";
 import { loadFunctionDefinitions } from "./process.ts";
-import { buildAiProfile } from "./aiProfile.ts";
+import { buildAiProfile, cardsInHand } from "./aiProfile.ts";
 import { buildProfile } from "./profile.ts";
 import { eventStream, startingPoint } from "./sse.ts";
 import { validSignature } from "./github/signature.ts";
@@ -362,12 +362,16 @@ export function createApp(deps: AppDeps) {
     .post("/cards/:id/reports", async (c) => {
       const card = await cardOr404(c.req.param("id"));
       const req = await body(c, reportRequest);
-      await teammateOr422(req.actor, "actor");
+      const actor = await teammateOr422(req.actor, "actor");
       if (!REPORTABLE.includes(card.status.state)) {
         throw new ApiProblem(
           "conflict",
           `${card.id} is ${card.status.state}; a report is posted on a card in ${REPORTABLE.join(", ")}`,
         );
+      }
+      // The AI teammate reports only on a card it holds: it made the card's last pick, as its profile works out.
+      if (actor.kind === "ai" && cardsInHand(actor.id, [card], await cardLog(db, card.id)).length === 0) {
+        throw new ApiProblem("forbidden", `${actor.id} did not pick ${card.id} last, so it may not report on it`);
       }
       return c.json(await write(card.id, [{ ...base(card.id, req.actor), type: "report_posted", text: req.text }]));
     })

@@ -198,10 +198,11 @@ export function createTools(deps: ToolDeps): Tools {
 
     pick_card: (input) =>
       guarded(async () => {
+        // Read the function before picking: after a pick, nothing may fail, or a retry meets a 409.
+        const definition = (await client.card(input.card_id)).function;
         const out = await client.pick(input.card_id, { actor: await self() });
         const picked = out.events.find((e) => e.type === "picked");
         const mode = picked?.type === "picked" ? picked.mode : null;
-        const definition = (await client.card(input.card_id)).function;
         const branch = branchForCard(out.card);
         return ok({
           card: out.card,
@@ -221,7 +222,18 @@ export function createTools(deps: ToolDeps): Tools {
         const out = await client.ask(input.card_id, { actor: by, asked_of, text: input.text, why_it_blocks: input.why_it_blocks });
         const asked = out.events.find((e) => e.type === "asked");
         if (asked?.type !== "asked") throw new Error("the API recorded no asked event");
-        return ok(await wait(input.card_id, asked.question_id, input.wait_seconds, signal));
+        // The question is on the card now. If waiting fails, say so with its id, so the session
+        // waits again instead of asking the same question twice.
+        try {
+          return ok(await wait(input.card_id, asked.question_id, input.wait_seconds, signal));
+        } catch (err) {
+          const why = err instanceof Error ? err.message : String(err);
+          return ok({
+            answered: false,
+            question: { id: asked.question_id, asked_of: asked.asked_of, text: asked.text, why_it_blocks: asked.why_it_blocks, answer: null, decided_by: null },
+            next: `The question was asked, but waiting for the answer failed (${why}). Do not ask again: call wait_for_answer with card_id "${input.card_id}" and question_id "${asked.question_id}".`,
+          });
+        }
       }),
 
     wait_for_answer: (input, signal) => guarded(async () => ok(await wait(input.card_id, input.question_id, input.wait_seconds, signal))),
