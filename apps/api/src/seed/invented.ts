@@ -443,12 +443,14 @@ export function inventedSeedAt(seededAt: Date): SeedData {
 
 const base: Omit<SeedData, "events"> = {
   teammates: [
-    { kind: "human", id: PO, name: "Robin Example (invented product owner)", role: "po" },
-    { kind: "human", id: UX, name: "Sam Example (invented UX designer)", role: "ux" },
-    { kind: "human", id: FE, name: "Alex Example (invented frontend developer)", role: "fe" },
-    { kind: "human", id: BE, name: "Pat Example (invented backend developer)", role: "be" },
+    { kind: "human", id: PO, name: "Robin Example (invented product owner)", roles: ["po"] },
+    { kind: "human", id: UX, name: "Sam Example (invented UX designer)", roles: ["ux"] },
+    { kind: "human", id: FE, name: "Alex Example (invented frontend developer)", roles: ["fe"] },
+    { kind: "human", id: BE, name: "Pat Example (invented backend developer)", roles: ["be"] },
     { kind: "ai", id: AI, name: "AI teammate (invented)" },
   ],
+  // The team joins when Sprint 1 starts, before anyone sets a mode.
+  joined_at: "2026-08-31T06:00:00Z",
 
   cycles: [
     { id: "invented-sprint-1", name: "Sprint 1 (invented)", starts_at: "2026-08-31T06:00:00Z", ends_at: "2026-09-14T06:00:00Z" },

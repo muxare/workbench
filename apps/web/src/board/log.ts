@@ -1,6 +1,6 @@
 // Log lines as the board and card detail show them, and the cycle log under
 // the board: one line per event, newest first. Events about a card, a
-// teammate (a mode change) and the team (a filter change) share it. It shows
+// teammate (a mode or roles change) and the team (a filter change) share it. It shows
 // the current cycle's log (`board.cycle`), so the cycle log's filter applies.
 import { shownInLog, type BoardResponse, type Cycle, type LogName, type StreamEvent } from "@workbench/shared";
 import { columnLabel } from "./columns.ts";
@@ -23,6 +23,12 @@ export function describeEvent(e: StreamEvent, board: BoardResponse): string {
     const whose = e.teammate_id === e.actor ? "their" : `${labelOf(board, e.teammate_id)}'s`;
     const was = e.from === null ? "the default" : modeLabel[e.from];
     return `${who} changed ${whose} mode for ${e.function_id} to ${modeLabel[e.to]} · was: ${was}`;
+  }
+  if (e.type === "roles_changed") {
+    const roles = (list: readonly string[]) => list.map((r) => r.toUpperCase()).join(", ");
+    if (e.from.length === 0) return `${labelOf(board, e.teammate_id)} joined the team as ${roles(e.to)}`;
+    const whose = e.teammate_id === e.actor ? "their" : `${labelOf(board, e.teammate_id)}'s`;
+    return `${who} changed ${whose} roles to ${roles(e.to)} · was: ${roles(e.from)}`;
   }
   if (e.type === "log_filter_changed") {
     const hides = e.hidden.length === 0 ? "shows every event type" : `hides ${e.hidden.join(", ")}`;

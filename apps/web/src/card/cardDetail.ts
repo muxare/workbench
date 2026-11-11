@@ -17,7 +17,7 @@ import {
 import { columnLabel } from "../board/columns.ts";
 import { describeEvent, logTime } from "../board/log.ts";
 import { modeMeaning } from "../board/modes.ts";
-import { cardRef, findTeammate, labelOf, roleTitle } from "../board/teammates.ts";
+import { cardRef, findTeammate, labelOf, mainRole, roleTitle } from "../board/teammates.ts";
 
 /** Colour of a status, as the artboard and the board columns use them. */
 export type StatusTone = "needs-input" | "assist" | "neutral";
@@ -34,11 +34,11 @@ export function statusText(card: Card, board: BoardResponse): string {
   return card.status.state === "needs_input" ? `${label} · waiting on ${labelOf(board, card.status.waiting_on)}` : label;
 }
 
-/** A teammate's long name: a person's role title ("Backend developer"), or an AI teammate's "AI". */
+/** A teammate's long name: a person's main role title ("Backend developer"), or an AI teammate's "AI". */
 export function longLabel(board: BoardResponse, id: string): string {
   const t = findTeammate(board, id);
   if (!t) return id;
-  return t.kind === "human" ? roleTitle[t.role] : "AI";
+  return t.kind === "human" ? roleTitle[mainRole(t)] : "AI";
 }
 
 /**

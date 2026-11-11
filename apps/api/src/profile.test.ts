@@ -49,12 +49,12 @@ const fePerson: HumanTeammate = {
   kind: "human",
   id: FE,
   name: "Invented frontend developer",
-  role: "fe",
+  roles: ["fe"],
   process_profile: { polish_widget: "delegate", plan_sprint: "assist", gone_function: "manual" },
 };
 const teammates: TeammateRecord[] = [
-  { kind: "human", id: FE, name: fePerson.name, role: "fe" },
-  { kind: "human", id: UX, name: "Invented designer", role: "ux" },
+  { kind: "human", id: FE, name: fePerson.name, roles: ["fe"] },
+  { kind: "human", id: UX, name: "Invented designer", roles: ["ux"] },
   { kind: "ai", id: AI, name: "Invented AI teammate" },
 ];
 /** FE's profile as mode_changed events; gone_function stands for a function file removed since. */
@@ -65,6 +65,11 @@ describe("buildProfile", () => {
 
   it("lists the person's role's functions first, then the other functions in their profile", () => {
     expect(profile.steps.map((s) => s.function_id)).toEqual(["shape_widget", "polish_widget", "plan_sprint"]);
+  });
+
+  it("lists the functions of every role a person holds, in file order", () => {
+    const both = buildProfile({ ...fePerson, roles: ["ux", "fe"] }, definitions);
+    expect(both.steps.map((s) => s.function_id)).toEqual(["shape_widget", "polish_widget", "design_widget", "plan_sprint"]);
   });
 
   it("reads title, summary, role and modes from the function definition", () => {
@@ -109,7 +114,7 @@ describe("profile routes", () => {
   let app: ReturnType<typeof createApp>;
   beforeEach(async () => {
     db = await openDb(":memory:");
-    await seed(db, { teammates, cycles: [], cards: [], events: feModes }, new Set(definitions.keys()));
+    await seed(db, { teammates, joined_at: "2026-11-01T09:00:00Z", cycles: [], cards: [], events: feModes }, new Set(definitions.keys()));
     let n = 0;
     app = createApp({
       db,

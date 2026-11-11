@@ -475,6 +475,12 @@ a:hover {
   color: var(--muted);
 }
 
+/* A person's other roles, under the heading that names their main role. */
+.teammate__roles {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
 /* The heading opens the person's profile; it keeps the text colour, since the link colour is the delegate token. */
 .teammate__link {
   color: inherit;

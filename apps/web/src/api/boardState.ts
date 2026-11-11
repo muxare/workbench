@@ -4,6 +4,8 @@
 // into cards; it keeps the log current between refetches. A `mode_changed`
 // event is folded into its teammate's process profile at once, as the server
 // derives it, so the board's mode pills and counts follow it without a refetch.
+// A `roles_changed` event replaces its teammate's roles in the same way, so the
+// person moves seat and label at once; a person who joins appears on refetch.
 // A `log_filter_changed` event replaces its log's filter at once in the same
 // way, so a filter changed in another browser applies here as soon as it
 // streams in. The filter only decides what a log shows; the log kept here
@@ -51,8 +53,14 @@ export function parseStreamMessage(data: string, lastEventId: string): LiveEvent
   return parsed.success ? { seq: Number(lastEventId), event: parsed.data } : undefined;
 }
 
-/** The teammates with a `mode_changed` event applied: the latest change for a function wins. */
+/**
+ * The teammates with a `mode_changed` or `roles_changed` event applied: the
+ * latest change for a function, or of the roles, wins.
+ */
 function applyToTeammates(teammates: BoardResponse["teammates"], e: StreamEvent): BoardResponse["teammates"] {
+  if (e.type === "roles_changed") {
+    return teammates.map((t) => (t.id === e.teammate_id && t.kind === "human" ? { ...t, roles: [...e.to] } : t));
+  }
   if (e.type !== "mode_changed") return teammates;
   return teammates.map((t) =>
     t.id === e.teammate_id && t.kind === "human" ? { ...t, process_profile: { ...t.process_profile, [e.function_id]: e.to } } : t,

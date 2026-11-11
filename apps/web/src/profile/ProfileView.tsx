@@ -108,7 +108,7 @@ export function ProfileView({
         </span>
         <div className="profile__intro">
           <nav className="profile__crumbs" aria-label="Breadcrumb">
-            <a href={boardHref}>Team board</a> › Team › <span title={teammate.name}>{roleTitle[teammate.role]}</span>
+            <a href={boardHref}>Team board</a> › Team › <span title={teammate.name}>{teammate.roles.map((r) => roleTitle[r]).join(" · ")}</span>
           </nav>
           <h1>How I work with AI</h1>
           <p>This sets how the AI joins every card I pick. Change a step and the board shows it on my cards from the next pick.</p>

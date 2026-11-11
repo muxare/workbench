@@ -11,6 +11,7 @@ import {
   defaultLogFilters,
   deriveLogFilters,
   deriveProfile,
+  deriveRoles,
   eventSubject,
   isCardEvent,
   logEventTypes,
@@ -18,6 +19,7 @@ import {
   normalizeEventTypes,
   question,
   sameEventTypes,
+  sameRoles,
   shownInLog,
   status,
   streamEvent,
@@ -29,6 +31,7 @@ import {
   unfinishedDependencies,
   type Card,
   type LogFilterChangedEvent,
+  type RolesChangedEvent,
   type StreamEvent,
   type Teammate,
 } from "./domain.ts";
@@ -40,7 +43,7 @@ const pat: Teammate = {
   kind: "human",
   id: "invented-be",
   name: "Pat Example (invented)",
-  role: "be",
+  roles: ["be"],
   process_profile: { define_api_contract: "assist", write_issues: "delegate" },
 };
 const bot: Teammate = { kind: "ai", id: "invented-ai", name: "AI teammate (invented)" };
@@ -61,16 +64,25 @@ describe("teammate", () => {
   });
 
   it("requires a process profile for a human", () => {
-    expect(teammate.safeParse({ kind: "human", id: "invented-ux", name: "Invented", role: "ux" }).success).toBe(false);
+    expect(teammate.safeParse({ kind: "human", id: "invented-ux", name: "Invented", roles: ["ux"] }).success).toBe(false);
   });
 
-  it("requires a human's role to be po, ux, fe or be", () => {
+  it("requires a human's roles to be po, ux, fe or be", () => {
     const base = { kind: "human", id: "invented-ux", name: "Invented", process_profile: {} };
     expect(teammateRole.options).toEqual(["po", "ux", "fe", "be"]);
-    for (const role of teammateRole.options) expect(teammate.safeParse({ ...base, role }).success).toBe(true);
+    for (const role of teammateRole.options) expect(teammate.safeParse({ ...base, roles: [role] }).success).toBe(true);
     expect(teammate.safeParse(base).success).toBe(false);
-    expect(teammate.safeParse({ ...base, role: "team" }).success).toBe(false);
-    expect(teammate.safeParse({ ...base, role: "PO" }).success).toBe(false);
+    expect(teammate.safeParse({ ...base, roles: ["team"] }).success).toBe(false);
+    expect(teammate.safeParse({ ...base, roles: ["PO"] }).success).toBe(false);
+    expect(teammate.safeParse({ ...base, role: "ux" }).success).toBe(false);
+  });
+
+  it("lets a person hold several roles, in their own order, but at least one and each once", () => {
+    const base = { kind: "human", id: "invented-all", name: "Invented", process_profile: {} };
+    const every = { ...base, roles: ["fe", "po", "ux", "be"] };
+    expect(teammate.parse(every)).toEqual(every);
+    expect(teammate.safeParse({ ...base, roles: [] }).success).toBe(false);
+    expect(teammate.safeParse({ ...base, roles: ["fe", "be", "fe"] }).success).toBe(false);
   });
 
   it("derives the person roles from the function roles, less team", () => {
@@ -78,7 +90,8 @@ describe("teammate", () => {
   });
 
   it("rejects an unknown mode and a function id that is not snake_case", () => {
-    const base = { kind: "human", id: "invented-ux", name: "Invented", role: "ux" };
+    const base = { kind: "human", id: "invented-ux", name: "Invented", roles: ["ux"] };
+    expect(teammate.safeParse({ ...base, process_profile: {} }).success).toBe(true);
     expect(teammate.safeParse({ ...base, process_profile: { frame_problem: "auto" } }).success).toBe(false);
     expect(teammate.safeParse({ ...base, process_profile: { "Frame Problem": "assist" } }).success).toBe(false);
   });
@@ -215,6 +228,43 @@ describe("teammate events", () => {
     ];
     expect(deriveProfile(events, "invented-be")).toEqual({ define_api_contract: "manual", write_issues: "delegate" });
     expect(deriveProfile(events, "invented-po")).toEqual({});
+  });
+
+  const joined: RolesChangedEvent = {
+    id: "invented-r1",
+    type: "roles_changed",
+    teammate_id: "invented-all",
+    actor: "invented-all",
+    at,
+    from: [],
+    to: ["po", "ux"],
+  };
+
+  it("accept a roles change from no roles or from roles, to at least one role", () => {
+    expect(teammateEvent.parse(joined)).toEqual(joined);
+    expect(streamEvent.parse({ ...joined, from: ["po"] })).toEqual({ ...joined, from: ["po"] });
+    expect(streamEvent.safeParse({ ...joined, to: [] }).success).toBe(false);
+    expect(streamEvent.safeParse({ ...joined, to: ["po", "po"] }).success).toBe(false);
+    expect(streamEvent.safeParse({ ...joined, from: ["po", "po"] }).success).toBe(false);
+    expect(eventSubject(teammateEvent.parse(joined))).toEqual({ kind: "teammate", id: "invented-all" });
+  });
+
+  it("give a person's roles: the latest change wins, and none before they join", () => {
+    const events: StreamEvent[] = [
+      joined,
+      change,
+      { ...joined, id: "invented-r2", from: ["po", "ux"], to: ["fe", "po", "ux", "be"] },
+      { ...joined, id: "invented-r3", teammate_id: "invented-ux", actor: "invented-ux", to: ["ux"] },
+    ];
+    expect(deriveRoles(events, "invented-all")).toEqual(["fe", "po", "ux", "be"]);
+    expect(deriveRoles(events, "invented-be")).toEqual([]);
+    expect(deriveProfile(events, "invented-all")).toEqual({});
+  });
+
+  it("compare roles in order, since the first is the main role", () => {
+    expect(sameRoles(["po", "fe"], ["po", "fe"])).toBe(true);
+    expect(sameRoles(["po", "fe"], ["fe", "po"])).toBe(false);
+    expect(sameRoles([], ["po"])).toBe(false);
   });
 });
 

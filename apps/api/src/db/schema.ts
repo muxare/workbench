@@ -6,17 +6,16 @@
 // owner, milestone, links). A card's status is not stored: it is derived from
 // its `status_changed` events, so the event stream stays the one record of
 // what happened. A person's process profile is not stored either: it is
-// derived from their `mode_changed` events. The card, board and cycle logs are
-// queries over `events`.
+// derived from their `mode_changed` events, and their roles from their
+// `roles_changed` events. The card, board and cycle logs are queries over
+// `events`.
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type { CardLink, StreamEventType, Teammate, TeammateRole } from "@workbench/shared";
+import type { CardLink, StreamEventType, Teammate } from "@workbench/shared";
 
 export const teammates = sqliteTable("teammates", {
   id: text("id").primaryKey(),
   kind: text("kind").$type<Teammate["kind"]>().notNull(),
   name: text("name").notNull(),
-  /** Set for humans only: po, ux, fe or be. */
-  role: text("role").$type<TeammateRole>(),
 });
 
 export const cycles = sqliteTable("cycles", {
