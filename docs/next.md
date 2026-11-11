@@ -41,14 +41,14 @@ Last updated 2026-11-11 by Claude.
 5. **Who approves a pull request Mikael wrote?** `review_pull_request` requires an approver who did not write the change, and GitHub refuses self-approval. Recommendation: on this repository the AI writes the code and Mikael reviews; for his own changes, merge without the review step until a second person joins.
 6. **Does the template need a "one of these inputs is required" field?** `open_pull_request` is the first function that needs it; for now a structural rule says so. Recommendation: wait for a second case before bumping the template.
 
-7. **Should `POST /cards` number new cards?** It gives a random UUID today, which makes `#` labels and `wb/<card id>-…` branch names unreadable; the two workbench cards were entered with ids 1 and 2 through the store. Recommendation: give the next number, before the webhook endpoint, because its branch mapping depends on it.
-8. **Is the workbench cycle right?** The repo has no sprints; "Development loop, stages 1 and 2", 2026-11-11 to 2026-11-25, was chosen so the board has a running cycle log. Recommendation: keep two-week windows named for the stage.
-9. **Does tooling work, like the CI workflow card, get its own function?** It uses `implement_services` for now, a loose fit. Recommendation: keep it until the board shows whether tooling work keeps coming up.
+7. **Is the workbench cycle right?** The repo has no sprints; "Development loop, stages 1 and 2", 2026-11-11 to 2026-11-25, was chosen so the board has a running cycle log. Recommendation: keep two-week windows named for the stage.
+8. **Does tooling work, like the CI workflow card, get its own function?** It uses `implement_services` for now, a loose fit. Recommendation: keep it until the board shows whether tooling work keeps coming up.
 
 ## Next, in the suggested order
 
 Stage 2 of `docs/dev-loop.md`:
 
 1. Add a GitHub Actions workflow that runs `pnpm check` on every pull request (card #1).
-2. Build the webhook endpoint in `apps/api` with the mapping in `docs/dev-loop.md`, tested against recorded payloads (card #2; blocked by question 7).
-3. With Mikael on GitHub: protect `main`, install the GitHub App, and forward webhooks to the local API.
+2. Make `POST /cards` give a new card the next number instead of a UUID (decided 2026-11-11, see `docs/decisions.md`).
+3. Build the webhook endpoint in `apps/api` with the mapping in `docs/dev-loop.md`, tested against recorded payloads (card #2).
+4. With Mikael on GitHub: protect `main`, install the GitHub App, and forward webhooks to the local API.
