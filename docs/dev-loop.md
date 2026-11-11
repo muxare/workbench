@@ -23,7 +23,9 @@ The loop is built and tried on this repository, `muxare/workbench`, before any o
 
 This makes it an unusual project, and the doc says so rather than hide it. The team is two teammates: Mikael and the AI. Mikael holds every role, product owner, designer, frontend and backend, while the model today gives each person exactly one role. A person who holds several roles is therefore the first change the model needs. The project also says little about handoffs between people, because there is only one person, which is why it does not replace the Phase 2 run on a past project with a real team.
 
-The work on this repository is mostly building code, and `process/` defines only the four design-segment functions so far. Every card must name a function, so the coding functions from `docs/reference/team-process-map.md` have to be drafted first, following `process/template.md`. The ones the loop needs are `implement_services`, `implement_interactions`, `fix_bug`, `open_pull_request` and a pull request review. Drafting them is Phase 3 work brought forward; it adds functions and no template fields, so it does not touch the open question about the four gaps the laundry room example found.
+The work on this repository is mostly building code, and until 2026-11-11 `process/` defined only the four design-segment functions. Every card must name a function, so the coding functions from `docs/reference/team-process-map.md` had to be drafted first, following `process/template.md`. They were drafted on 2026-11-11: `implement_services` (be), `implement_interactions` (fe), and `fix_bug`, `open_pull_request` and `review_pull_request` (team). Drafting them was Phase 3 work brought forward; it added functions and no template fields, so it does not touch the open question about the four gaps the laundry room example found. Where they depart from the map is recorded in `docs/decisions.md`.
+
+In loop terms, step 3 is one of the three building functions, which ends with commits on the card's branch; step 4 is `open_pull_request`; and step 5's human check is the approval in `review_pull_request`, with the AI critic as its `assist` mode. The model gives a card one function, so whether a card that names `implement_services` also passes through `open_pull_request` and `review_pull_request`, or each of those is a card of its own, is not decided yet.
 
 The board for this project runs on its own database with real data and no invented seed. The invented laundry room seed stays as it is for the ConCon demo, which runs from the tag `concon-demo`.
 
@@ -76,4 +78,4 @@ Each stage is useful on its own, and each one shows what the next one needs.
 
 ## Not decided here
 
-Where the board runs once it should not depend on Mikael's machine. How Figma frames and documents are linked to cards. Whether GitHub Issues mirror the cards; the board is the source for cards and status either way.
+Where the board runs once it should not depend on Mikael's machine. How Figma frames and documents are linked to cards. Whether GitHub Issues mirror the cards; the board is the source for cards and status either way. Whether opening and reviewing the pull request are steps on the building card or cards of their own.
