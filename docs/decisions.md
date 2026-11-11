@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-11: `main` is protected, and the AI acts on GitHub as its own App (with Mikael)
+
+Stage 2 of `docs/dev-loop.md` is set up on `muxare/workbench`, and the first pull request, #1 for card #3, went through the loop.
+
+- **`main` needs a pull request and a passing `check`, for admins too, with no approvals required by GitHub.** GitHub refuses self-approval, so with one required approval Mikael could not merge his own changes at all. The rule that a person decides is kept by the workbench instead: the webhook endpoint moves a card to done only after a person's approval. This is to be raised to one approval when every pull request is opened by the AI or a second person joins. Local merges to `main` can no longer be pushed, so every change, `docs/next.md` included, now lands through a pull request.
+- **The AI acts on GitHub as the GitHub App `workbench-ai-muxare` (App ID 5713979), installed on this repository only.** A pull request opened under Mikael's account could never be approved by him, so the card it carried could never reach done; the App is its own account, so Mikael can approve what it opens. `pnpm --filter @workbench/api github:token <owner/repo>` mints an installation token from the App's private key, which is kept at `~/.config/workbench/app.pem`, outside the repository; the code signs the JWT with Node's crypto rather than adding a dependency. `workbench-ai-muxare[bot]` maps to the AI teammate in `teams/workbench/team.json`. The App has no webhook of its own: deliveries reach the API through `gh webhook forward`, which makes a temporary repository webhook, with the secret kept at `~/.config/workbench/webhook-secret`.
+- **The first loop matched the mapping in `docs/dev-loop.md` on every step it exercised.** Card #3's log, after Mikael moved it to ready and picked it: `workspace_linked` and `work_pushed` on the App's push, `review_requested` and the move to review when the App opened the pull request, `check_ran` passed when the `check` workflow succeeded, `approved` by Mikael, and the move to done on merge. Changes requested and a failed check were not exercised. Two things to note: the AI moved a card owned by Mikael to review, which the decision on moves following the mode (above) is to stop; and `check_ran` is recorded with the AI as actor, because the App's push triggered the run and the actor is the delivery's sender.
+
 ## 2026-11-11: Who moves a card follows the mode; done always needs a person, with the AI critic as an optional gate (with Mikael)
 
 Mikael proposed that moving a card be done by a person or the AI depending on the mode the owner has set for the step, and that the move from review to done follow an actual review, by a person, the AI or both, as a setting. He accepted Claude's recommendation, which keeps the first half and narrows the second.
