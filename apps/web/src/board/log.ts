@@ -1,6 +1,6 @@
 // Log lines as the board and card detail show them, and the cycle log under
 // the board: one line per event, newest first. Events about a card, a
-// teammate (a mode or roles change) and the team (a filter change) share it. It shows
+// teammate (a mode or roles change) and the team (a filter or critic gate change) share it. It shows
 // the current cycle's log (`board.cycle`), so the cycle log's filter applies.
 import { shownInLog, type BoardResponse, type Cycle, type LogName, type StreamEvent } from "@workbench/shared";
 import { columnLabel } from "./columns.ts";
@@ -33,6 +33,10 @@ export function describeEvent(e: StreamEvent, board: BoardResponse): string {
   if (e.type === "log_filter_changed") {
     const hides = e.hidden.length === 0 ? "shows every event type" : `hides ${e.hidden.join(", ")}`;
     return `${who} changed the ${e.log} log filter · now ${hides}`;
+  }
+  if (e.type === "critic_gate_changed") {
+    const now = e.required ? "must pass before a person approves" : "is optional before a person approves";
+    return `${who} changed the AI critic for ${e.function_id} · now ${now}`;
   }
   const card = cardRef(e.card_id);
   switch (e.type) {

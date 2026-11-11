@@ -12,6 +12,10 @@
 // `POST /api/logs/:log/filter` appends a `log_filter_changed` event about the
 // team, and each log's filter is derived from those events; the API never
 // applies a filter to what it returns, because a filter is a view setting.
+// `POST /api/functions/:id/critic-gate` appends a `critic_gate_changed` event
+// about the team, which sets whether the AI critic must pass before a
+// person's approval lets a merge move a card of that function to done;
+// `GET /api/functions/critic-gates` answers every gate someone has set.
 // `GET /api/teammates/:id/profile` reads the person's chain of steps from
 // process/functions on each request; for an AI teammate it answers a
 // separate, derived profile (aiProfile.ts).
@@ -32,6 +36,7 @@ import {
   cardEvent,
   cardStatus,
   createCardRequest,
+  criticRequired,
   currentCycle,
   isManualMove,
   logName,
@@ -41,6 +46,7 @@ import {
   pickRequest,
   sameEventTypes,
   sameRoles,
+  setCriticGateRequest,
   setLogFilterRequest,
   setModeRequest,
   setRolesRequest,
@@ -51,6 +57,7 @@ import {
   type AiTeammateProfileResponse,
   type ApiError,
   type ApiErrorCode,
+  type CriticGatesResponse,
   type BoardCycle,
   type BoardResponse,
   type Card,
@@ -75,6 +82,7 @@ import {
   appendEvents,
   boardLog,
   cardLog,
+  criticGates,
   cycleLog,
   getCard,
   getTeammate,
@@ -457,6 +465,36 @@ export function createApp(deps: AppDeps) {
       return c.json(response);
     })
 
+    .get("/functions/critic-gates", async (c) => {
+      const response: CriticGatesResponse = { critic_gates: await criticGates(db) };
+      return c.json(response);
+    })
+
+    .post("/functions/:id/critic-gate", async (c) => {
+      const functionId = c.req.param("id");
+      if (!functionIds.has(functionId)) throw new ApiProblem("not_found", `no function '${functionId}' in process/functions`);
+      const req = await body(c, setCriticGateRequest);
+      const actor = await teammateOr422(req.actor, "actor");
+      if (actor.kind !== "human") throw new ApiProblem("forbidden", `a function's critic gate is set by a person, not ${actor.id}`);
+      // Asking for the setting the function already has changes nothing, so it records nothing.
+      // Otherwise `was_required` is what the caller saw; the store refuses it with 409 if the setting has moved on.
+      if (criticRequired(await criticGates(db), functionId) !== req.required) {
+        await appendEvents(db, [
+          {
+            id: newId(),
+            type: "critic_gate_changed",
+            actor: actor.id,
+            at: now().toISOString(),
+            function_id: functionId,
+            required: req.required,
+            was_required: req.was_required,
+          },
+        ]);
+      }
+      const response: CriticGatesResponse = { critic_gates: await criticGates(db) };
+      return c.json(response);
+    })
+
     .post("/teammates/:id/run", async (c) => {
       const id = c.req.param("id");
       const self = await getTeammate(db, id);
@@ -495,7 +533,7 @@ export function createApp(deps: AppDeps) {
       }
       try {
         const response: WebhookResponse = await handleDelivery(
-          { db, logins: deps.githubLogins ?? new Map<string, string>(), now },
+          { db, logins: deps.githubLogins ?? new Map<string, string>(), definitions: definitions(), now },
           { event, id: deliveryId, payload },
         );
         return c.json(response);

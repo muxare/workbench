@@ -4,8 +4,8 @@
 // differently. Everything about a function is read from its file in
 // process/functions; these rules only need its name, role and default mode.
 import { z } from "zod";
-import { functionId, mode, type HumanTeammate, type Mode } from "./domain.ts";
-import { functionRole } from "./functionFile.ts";
+import { functionId, mode, type HumanTeammate, type Mode, type Teammate } from "./domain.ts";
+import { functionRole, type ProtocolActor } from "./functionFile.ts";
 
 /**
  * The part of a function's front matter that decides who works it and in
@@ -43,4 +43,42 @@ export function chainModeCounts(person: HumanTeammate, definitions: Iterable<Cha
   const counts = Object.fromEntries(mode.options.map((m) => [m, 0])) as Record<Mode, number>;
   for (const d of chainOf(person, definitions)) counts[ownerMode(person, d)] += 1;
   return counts;
+}
+
+/**
+ * The part of a function's front matter that says who writes in each mode,
+ * which is who may move a card of that function along its work.
+ * `FunctionFrontMatter` fits it as it is.
+ */
+export type MoveFunction = ChainFunction & { protocols: Partial<Record<Mode, { writes: ProtocolActor }>> };
+
+/** Whether `mover` may move a card owned by `owner`, and if not, why. */
+export type MoveVerdict = { allowed: true } | { allowed: false; reason: string };
+
+/**
+ * Who may move a card along its work (to review, and back to in progress on
+ * changes requested): the one who writes in the protocol of the owner's mode
+ * for the card's function (docs/decisions.md, 2026-11-11). The owner may
+ * always move their own card. The AI may move it only when that protocol's
+ * `writes` is `ai` or `both`, which in every function file today is
+ * `delegate`. Nobody else may: in `manual` and `assist` the person writes,
+ * and the person is the card's owner. A card owned by an AI teammate has no
+ * mode, so only that teammate moves it. The protocol is read from the
+ * function's file, never assumed from the mode's name.
+ */
+export function mayMoveCard(mover: Teammate, owner: Teammate, definition: MoveFunction): MoveVerdict {
+  if (mover.id === owner.id) return { allowed: true };
+  if (owner.kind !== "human") {
+    return { allowed: false, reason: `${owner.id} is an AI teammate with no mode, so only ${owner.id} moves its card` };
+  }
+  const m = ownerMode(owner, definition);
+  const writes = definition.protocols[m]?.writes;
+  if (mover.kind === "ai" && (writes === "ai" || writes === "both")) return { allowed: true };
+  const writer = writes === undefined ? `${definition.name} has no protocol for ${m}` : `${writes} writes`;
+  return {
+    allowed: false,
+    reason: `${owner.id} works ${definition.name} in ${m}, where ${writer}, so only ${owner.id}${
+      writes === "ai" || writes === "both" ? " or the AI" : ""
+    } may move the card, not ${mover.id}`,
+  };
 }

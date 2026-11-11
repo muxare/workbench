@@ -6,13 +6,15 @@
 // stored on its own. A card's status is derived from
 // its `status_changed` events, a person's process profile from their
 // `mode_changed` events, their roles from their `roles_changed` events, and
-// the team's log filters from the `log_filter_changed` events, in the same
+// the team's log filters from the `log_filter_changed` events, and each
+// function's critic gate from the `critic_gate_changed` events, in the same
 // way. The filters are a view setting: no query here applies them.
 import { and, asc, desc, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   card as cardSchema,
   cardEvent,
   cycle as cycleSchema,
+  deriveCriticGates,
   deriveLogFilters,
   deriveProfile,
   deriveRoles,
@@ -23,6 +25,8 @@ import {
   teammate as teammateSchema,
   type Card,
   type CardEvent,
+  type CriticGateChangedEvent,
+  type CriticGates,
   type Cycle,
   type LogFilterChangedEvent,
   type LogFilters,
@@ -178,6 +182,16 @@ export async function logFilters(db: Db): Promise<LogFilters> {
   return deriveLogFilters(rows.map(fromRow));
 }
 
+/**
+ * Whether the AI critic must pass before a person's approval leads to done,
+ * for each function someone has set it for, derived from the
+ * `critic_gate_changed` events: the latest change per function wins.
+ */
+export async function criticGates(db: Db): Promise<CriticGates> {
+  const rows = await db.select().from(events).where(eq(events.type, "critic_gate_changed")).orderBy(asc(events.seq));
+  return deriveCriticGates(rows.map(fromRow));
+}
+
 interface Pending {
   statuses: Map<string, Status>;
   /** Keyed by teammate id and function id. */
@@ -186,6 +200,33 @@ interface Pending {
   roles: Map<string, TeammateRole[]>;
   /** What earlier events in the write set each log's filter to. */
   filters: Map<LogName, StreamEventType[]>;
+  /** What earlier events in the write set each function's critic gate to. */
+  gates: Map<string, boolean>;
+}
+
+/**
+ * A critic gate change must come from a person, must change the setting, and
+ * must name as `was_required` the setting the function has now, so two
+ * changes made from the same view cannot both win.
+ */
+async function checkCriticGateChange(db: Db, event: CriticGateChangedEvent, pending: Pending): Promise<void> {
+  const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
+  if (!actor) throw new StoreError(`${event.id}: no teammate '${event.actor}'`, "not_found");
+  if (actor.kind !== "human") {
+    throw new StoreError(`${event.id}: a function's critic gate is set by a person, not ${event.actor}`, "forbidden");
+  }
+  const setting = (required: boolean) => (required ? "required" : "optional");
+  const current = pending.gates.get(event.function_id) ?? (await criticGates(db))[event.function_id] ?? false;
+  if (current !== event.was_required) {
+    throw new StoreError(
+      `${event.id}: the AI critic is ${setting(current)} for ${event.function_id}, not ${setting(event.was_required)}`,
+      "conflict",
+    );
+  }
+  if (event.required === event.was_required) {
+    throw new StoreError(`${event.id}: a critic gate change must change the setting, not keep it ${setting(event.required)}`);
+  }
+  pending.gates.set(event.function_id, event.required);
 }
 
 /**
@@ -267,8 +308,8 @@ async function checkRolesChange(db: Db, event: RolesChangedEvent, pending: Pendi
  * Check an event against the stream so far: it must parse; a status change's
  * `from` must be the card's current state; an answer must come from a human,
  * because in every protocol `decides` is human; a mode change must pass
- * `checkModeChange`, a roles change `checkRolesChange`, and a filter change
- * `checkLogFilterChange`.
+ * `checkModeChange`, a roles change `checkRolesChange`, a filter change
+ * `checkLogFilterChange`, and a critic gate change `checkCriticGateChange`.
  * `pending` holds what earlier events in the same write have changed.
  */
 async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise<StreamEvent> {
@@ -283,6 +324,7 @@ async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise
   if (event.type === "mode_changed") await checkModeChange(db, event, pending);
   if (event.type === "roles_changed") await checkRolesChange(db, event, pending);
   if (event.type === "log_filter_changed") await checkLogFilterChange(db, event, pending);
+  if (event.type === "critic_gate_changed") await checkCriticGateChange(db, event, pending);
   if (event.type === "answered") {
     const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
     if (actor?.kind !== "human") {
@@ -342,7 +384,7 @@ export function onAppend(db: Db, listener: Listener): () => void {
 export function appendEvents(db: Db, inputs: readonly StreamEvent[]): Promise<StoredEvent[]> {
   return serialized(db, async () => {
     if (inputs.length === 0) return [];
-    const pending: Pending = { statuses: new Map(), modes: new Map(), roles: new Map(), filters: new Map() };
+    const pending: Pending = { statuses: new Map(), modes: new Map(), roles: new Map(), filters: new Map(), gates: new Map() };
     const checked: StreamEvent[] = [];
     for (const input of inputs) checked.push(await checkEvent(db, input, pending));
     // One multi-row INSERT is one statement, so SQLite stores all rows or none.

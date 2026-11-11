@@ -6,6 +6,7 @@ import {
   boardResponse,
   chainModeCounts,
   cardResponse,
+  criticGatesResponse,
   logFiltersResponse,
   streamEvent,
   streamEventType,
@@ -657,6 +658,59 @@ describe("POST /api/teammates/:id/roles", () => {
     await expectProblem(await setFeRoles([]), 400, "invalid_request");
     await expectProblem(await setFeRoles(["fe", "fe"]), 400, "invalid_request");
     await expectProblem(await post(`/api/teammates/${AI}/roles`, { actor: PO, roles: ["fe"], was: ["fe"] }), 422, "rule_violation");
+    expect(await lastSeq(db)).toBe(seeded.length);
+  });
+});
+
+describe("POST /api/functions/:id/critic-gate", () => {
+  const gates = async () => criticGatesResponse.parse(await (await app.request("/api/functions/critic-gates")).json()).critic_gates;
+  const setGate = (functionId: string, actor: string, required: boolean, wasRequired: boolean) =>
+    post(`/api/functions/${functionId}/critic-gate`, { actor, required, was_required: wasRequired });
+
+  it("leaves the AI critic optional for every function until someone requires it", async () => {
+    expect(await gates()).toEqual({});
+  });
+
+  it("appends one team event and answers with every gate that is set", async () => {
+    const res = await setGate("implement_services", PO, true, false);
+    expect(res.status).toBe(200);
+    expect(criticGatesResponse.parse(await res.json()).critic_gates).toEqual({ implement_services: true });
+    const board = boardResponse.parse(await (await app.request("/api/board")).json());
+    expect(board.log.at(-1)).toEqual({
+      id: "invented-new-1",
+      type: "critic_gate_changed",
+      actor: PO,
+      at: "2026-11-07T10:00:00.000Z",
+      function_id: "implement_services",
+      required: true,
+      was_required: false,
+    });
+    expect((await setGate("implement_services", BE, false, true)).status).toBe(200);
+    expect(await gates()).toEqual({ implement_services: false });
+  });
+
+  it("refuses a change made from a stale view with 409", async () => {
+    // Both people saw the gate off; the first requires it, so the second's view is stale. Asking for what the
+    // stale view showed is refused, rather than undoing the other change.
+    expect((await setGate("fix_bug", PO, true, false)).status).toBe(200);
+    await expectProblem(await setGate("fix_bug", BE, false, false), 409, "conflict", /the AI critic is required for fix_bug, not optional/);
+    expect(await gates()).toEqual({ fix_bug: true });
+    expect(await lastSeq(db)).toBe(seeded.length + 1);
+    // Reloaded, the second person's change goes through.
+    expect((await setGate("fix_bug", BE, false, true)).status).toBe(200);
+    expect(await gates()).toEqual({ fix_bug: false });
+  });
+
+  it("appends nothing when the function already has that setting", async () => {
+    expect((await setGate("fix_bug", PO, false, false)).status).toBe(200);
+    expect(await lastSeq(db)).toBe(seeded.length);
+  });
+
+  it("refuses an AI actor with 403, an unknown actor with 422 and an unknown function with 404, appending nothing", async () => {
+    await expectProblem(await setGate("fix_bug", AI, true, false), 403, "forbidden", /set by a person/);
+    await expectProblem(await setGate("fix_bug", "invented-nobody", true, false), 422, "rule_violation");
+    await expectProblem(await setGate("no_such_function", PO, true, false), 404, "not_found", /no function 'no_such_function'/);
+    await expectProblem(await post("/api/functions/fix_bug/critic-gate", { actor: PO, required: "yes", was_required: false }), 400, "invalid_request");
     expect(await lastSeq(db)).toBe(seeded.length);
   });
 });
