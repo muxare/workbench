@@ -5,6 +5,7 @@
 // repository root.
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { formatGithubLogins } from "../github/logins.ts";
 import { boardDatabasePath, readTeamFile, teamDir } from "./team.ts";
 
 const arg = process.argv[2];
@@ -22,5 +23,7 @@ if (!existsSync(path)) {
 process.env.DATABASE_URL = pathToFileURL(path).href;
 const ai = team.teammates.find((t) => t.kind === "ai");
 if (ai && process.env.TEAMMATE_ID === undefined) process.env.TEAMMATE_ID = ai.id;
+// Which teammate each GitHub account is, for the webhook endpoint; an explicit GITHUB_LOGINS wins.
+if (team.github_logins && process.env.GITHUB_LOGINS === undefined) process.env.GITHUB_LOGINS = formatGithubLogins(team.github_logins);
 console.log(`${team.name}'s board: ${path}`);
 await import("../main.ts");

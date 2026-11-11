@@ -19,6 +19,9 @@
 // server's clock) and its cycle log, for the panel under the board, and each
 // function's name, role and default mode from process/functions, so a panel
 // counts modes over the same chain as the profile.
+// `POST /api/github/webhook` takes GitHub's webhooks, checks their signature
+// against GITHUB_WEBHOOK_SECRET, and records the card events they map to
+// (github/webhook.ts).
 // Request and response shapes live in @workbench/shared (api.ts).
 import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
@@ -57,6 +60,7 @@ import {
   type LogFiltersResponse,
   type Teammate,
   type TeammateRunResponse,
+  type WebhookResponse,
   type WriteResponse,
 } from "@workbench/shared";
 import type { Db } from "./db/client.ts";
@@ -64,6 +68,8 @@ import { loadFunctionDefinitions } from "./process.ts";
 import { buildAiProfile } from "./aiProfile.ts";
 import { buildProfile } from "./profile.ts";
 import { eventStream, startingPoint } from "./sse.ts";
+import { validSignature } from "./github/signature.ts";
+import { handleDelivery, WebhookPayloadError } from "./github/webhook.ts";
 import {
   addNumberedCard,
   appendEvents,
@@ -102,6 +108,10 @@ export interface AppDeps {
   definitions?: ReadonlyMap<string, FunctionFrontMatter>;
   /** The optional timer (TEAMMATE_INTERVAL_MS) and the AI teammate it runs, for that teammate's profile. */
   teammateTimer?: { teammateId: string; intervalMs: number };
+  /** The secret GitHub signs webhooks with (GITHUB_WEBHOOK_SECRET); without it the webhook endpoint answers 503. */
+  githubWebhookSecret?: string;
+  /** GitHub login (lower case) to teammate id (GITHUB_LOGINS); a webhook from an unmapped account records nothing. */
+  githubLogins?: ReadonlyMap<string, string>;
 }
 
 /** How many of the latest events `GET /board` returns as its log. */
@@ -109,10 +119,12 @@ const BOARD_LOG_LIMIT = 50;
 
 const httpStatus = {
   invalid_request: 400,
+  unauthorized: 401,
   forbidden: 403,
   not_found: 404,
   conflict: 409,
   rule_violation: 422,
+  unavailable: 503,
 } as const satisfies Record<ApiErrorCode, number>;
 
 const fromStoreCode: Record<StoreErrorCode, ApiErrorCode> = {
@@ -460,6 +472,37 @@ export function createApp(deps: AppDeps) {
       if (!run) throw new ApiProblem("conflict", `${id} has no card it may pick`);
       const response: TeammateRunResponse = { card: await cardOr404(run.card.id), events: run.events };
       return c.json(response);
+    })
+
+    .post("/github/webhook", async (c) => {
+      const secret = deps.githubWebhookSecret;
+      if (!secret) throw new ApiProblem("unavailable", "GITHUB_WEBHOOK_SECRET is not set, so no webhook signature can be checked");
+      // The signature covers the body exactly as sent, so it is read as text and checked before parsing.
+      const raw = await c.req.text();
+      if (!validSignature(secret, raw, c.req.header("x-hub-signature-256"))) {
+        throw new ApiProblem("unauthorized", "X-Hub-Signature-256 is missing or does not match the body");
+      }
+      const event = c.req.header("x-github-event");
+      const deliveryId = c.req.header("x-github-delivery");
+      if (!event || !deliveryId) throw new ApiProblem("invalid_request", "X-GitHub-Event and X-GitHub-Delivery are required");
+      // A webhook may be set to send JSON, or a form with the JSON in `payload`.
+      const form = (c.req.header("content-type") ?? "").includes("application/x-www-form-urlencoded");
+      let payload: unknown;
+      try {
+        payload = JSON.parse(form ? (new URLSearchParams(raw).get("payload") ?? "") : raw);
+      } catch {
+        throw new ApiProblem("invalid_request", "the webhook body is not JSON");
+      }
+      try {
+        const response: WebhookResponse = await handleDelivery(
+          { db, logins: deps.githubLogins ?? new Map<string, string>(), now },
+          { event, id: deliveryId, payload },
+        );
+        return c.json(response);
+      } catch (err) {
+        if (err instanceof WebhookPayloadError) throw new ApiProblem("invalid_request", err.message);
+        throw err;
+      }
     })
 
     .get("/events", async (c) => {

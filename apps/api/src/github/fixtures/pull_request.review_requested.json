@@ -1,0 +1,60 @@
+{
+  "//": "Trimmed pull_request review_requested payload, sent when a reviewer is asked, or asked again after changes were requested; shaped after GitHub's webhook reference and octokit/webhooks payload-examples pull_request/review_requested. Numbers, ids, shas and the bot account workbench-agent[bot] are invented.",
+  "action": "review_requested",
+  "number": 3,
+  "pull_request": {
+    "id": 900000010,
+    "number": 3,
+    "html_url": "https://github.com/muxare/workbench/pull/3",
+    "state": "open",
+    "locked": false,
+    "title": "feat(api): GitHub webhook endpoint",
+    "user": {
+      "login": "workbench-agent[bot]",
+      "id": 900000002,
+      "type": "Bot"
+    },
+    "body": "Maps GitHub webhooks to card events, as in docs/dev-loop.md.\n\nWorkbench: #2",
+    "created_at": "2026-11-11T10:20:00Z",
+    "updated_at": "2026-11-11T11:10:00Z",
+    "closed_at": null,
+    "merged_at": null,
+    "merge_commit_sha": null,
+    "draft": false,
+    "head": {
+      "label": "muxare:wb/2-github-webhooks",
+      "ref": "wb/2-github-webhooks",
+      "sha": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d"
+    },
+    "base": {
+      "label": "muxare:main",
+      "ref": "main",
+      "sha": "2128c926251523911522601b232e48524e46181e"
+    },
+    "merged": false,
+    "mergeable": null,
+    "merged_by": null,
+    "commits": 1,
+    "additions": 412,
+    "deletions": 3,
+    "changed_files": 9
+  },
+  "repository": {
+    "id": 900000001,
+    "name": "workbench",
+    "full_name": "muxare/workbench",
+    "private": false,
+    "html_url": "https://github.com/muxare/workbench",
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "workbench-agent[bot]",
+    "id": 900000002,
+    "type": "Bot"
+  },
+  "requested_reviewer": {
+    "login": "muxare",
+    "id": 900000003,
+    "type": "User"
+  }
+}

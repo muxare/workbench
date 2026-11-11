@@ -1,0 +1,35 @@
+{
+  "//": "Trimmed pull_request ready_for_review payload, shaped after GitHub's webhook reference and octokit/webhooks payload-examples pull_request/ready_for_review. Numbers, ids, shas and the bot account workbench-agent[bot] are invented. The branch does not follow the wb/ convention; the body names the card.",
+  "action": "ready_for_review",
+  "number": 4,
+  "pull_request": {
+    "id": 900000011,
+    "number": 4,
+    "html_url": "https://github.com/muxare/workbench/pull/4",
+    "state": "open",
+    "locked": false,
+    "title": "feat(api): GitHub webhook endpoint",
+    "user": { "login": "workbench-agent[bot]", "id": 900000002, "type": "Bot" },
+    "body": "Workbench: #2",
+    "created_at": "2026-11-11T10:20:00Z",
+    "updated_at": "2026-11-11T10:31:00Z",
+    "closed_at": null,
+    "merged_at": null,
+    "merge_commit_sha": null,
+    "draft": false,
+    "head": { "label": "muxare:github-webhooks", "ref": "github-webhooks", "sha": "5a1c0e7d3b9f24a6c8e1d0f3b7a2c4e6d8f0a1b2" },
+    "base": { "label": "muxare:main", "ref": "main", "sha": "2128c926251523911522601b232e48524e46181e" },
+    "merged": false,
+    "mergeable": null,
+    "merged_by": null
+  },
+  "repository": {
+    "id": 900000001,
+    "name": "workbench",
+    "full_name": "muxare/workbench",
+    "private": false,
+    "html_url": "https://github.com/muxare/workbench",
+    "default_branch": "main"
+  },
+  "sender": { "login": "workbench-agent[bot]", "id": 900000002, "type": "Bot" }
+}

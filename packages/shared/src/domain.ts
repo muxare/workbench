@@ -185,10 +185,21 @@ export function currentCycle(cycles: readonly Cycle[], now: Date): { cycle: Cycl
 const cardEventBase = { id: eventId, card_id: cardId, actor: teammateId, at: timestamp };
 const teammateEventBase = { id: eventId, teammate_id: teammateId, actor: teammateId, at: timestamp };
 
+const url = z.url();
+const pullRequestNumber = z.int().positive();
+
 /**
  * An event whose subject is a card, so it carries `card_id`. The card log is
  * these events for one card. Question and card state are derived from them:
  * `asked` opens a question, `answered` closes it (its actor is the decider).
+ *
+ * The development loop (docs/dev-loop.md) adds the events that report work
+ * done in the card's workspace, which today is a GitHub repository; the API
+ * records them from GitHub's webhooks. `workspace_linked` says a branch named
+ * for the card exists, `work_pushed` that commits reached it,
+ * `review_requested` that a pull request for the card is open for review, and
+ * `approved` and `changes_requested` a person's review of it. A card reaches
+ * `done` from a merge only after an `approved` by a person.
  */
 export const cardEvent = z.discriminatedUnion("type", [
   z.object({ ...cardEventBase, type: z.literal("picked"), mode }),
@@ -207,9 +218,46 @@ export const cardEvent = z.discriminatedUnion("type", [
     check: z.enum(["structural", "consistency", "human"]),
     passed: z.boolean(),
     summary: z.string().min(1),
+    /** Where the check's own record is, such as a CI run; absent for a check with no page. */
+    url: url.optional(),
   }),
   z.object({ ...cardEventBase, type: z.literal("status_changed"), from: cardStatus, to: status }),
   z.object({ ...cardEventBase, type: z.literal("report_posted"), text: z.string().min(1) }),
+  z.object({
+    ...cardEventBase,
+    type: z.literal("workspace_linked"),
+    workspace: z.literal("github"),
+    /** The repository as `owner/name`. */
+    repository: z.string().min(1),
+    branch: z.string().min(1),
+    url,
+  }),
+  z.object({
+    ...cardEventBase,
+    type: z.literal("work_pushed"),
+    branch: z.string().min(1),
+    head_sha: z.string().min(1),
+    /** How many commits the push carried. */
+    commits: z.int().nonnegative(),
+    forced: z.boolean(),
+    url,
+  }),
+  z.object({
+    ...cardEventBase,
+    type: z.literal("review_requested"),
+    pull_request: pullRequestNumber,
+    title: z.string().min(1),
+    url,
+  }),
+  z.object({ ...cardEventBase, type: z.literal("approved"), pull_request: pullRequestNumber, url }),
+  z.object({
+    ...cardEventBase,
+    type: z.literal("changes_requested"),
+    pull_request: pullRequestNumber,
+    url,
+    /** The review's text, when the reviewer wrote one. */
+    text: z.string().min(1).optional(),
+  }),
 ]);
 export type CardEvent = z.infer<typeof cardEvent>;
 export type CardEventType = CardEvent["type"];

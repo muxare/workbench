@@ -33,7 +33,7 @@ The board for this project runs on its own database with real data and no invent
 
 Each layer of the check already has a tool here, though not all of it reports anywhere yet.
 
-The structural check is `pnpm check`: lint, typecheck, tests and the process validator. Today it runs only in the Stop hook in a local Claude Code session. There is no CI on GitHub yet, so stage 2 adds a workflow that runs `pnpm check` on every pull request; that run is what reaches the card as `check_ran`.
+The structural check is `pnpm check`: lint, typecheck, tests and the process validator. It runs in the Stop hook in a local Claude Code session, and since 2026-11-11 also on GitHub, in the workflow `check` (`.github/workflows/check.yml`) on every pull request and every push to `main`. A completed run on a pull request is what reaches the card as `check_ran`.
 
 The AI critic is a review by an agent that has not seen the code being written: the `design-reviewer` subagent for screens, a code review for the rest. Its findings are posted on the pull request as comments, and it never approves.
 
@@ -45,16 +45,18 @@ There are three directions, and each has its own mechanism.
 
 **From the workbench to GitHub**, for example to start the AI on a card, the workbench calls the GitHub API as a GitHub App installed on the repository. An App is chosen over a personal token because it acts as itself rather than as Mikael, its permissions are limited to the one repository and what the loop needs, and it can deliver webhooks.
 
-**From GitHub to the workbench**, GitHub sends webhooks to a new endpoint in `apps/api`, which turns them into card events. A card is linked to its work by a naming convention: the branch is `wb/<card id>-<short title>`, and the pull request body says `Workbench: #<card id>`. The proposed mapping is:
+**From GitHub to the workbench**, GitHub sends webhooks to `POST /api/github/webhook` in `apps/api` (built on 2026-11-11), which turns them into card events. A card is linked to its work by a naming convention: the branch is `wb/<card id>-<short title>`, and the pull request body says `Workbench: #<card id>`; the body wins when both name a card, and a CI run, whose payload has no body, is matched to the card a `review_requested` event already linked to its pull request, and only then by its branch. The endpoint checks each delivery's signature against `GITHUB_WEBHOOK_SECRET`, and the actor of each event is the teammate the GitHub account maps to in the team file's `github_logins`; a delivery from an account that is not mapped records nothing. The mapping is:
 
 | GitHub event | Card event |
 | --- | --- |
-| A branch named for the card is pushed | `workspace_linked` the first time, then `work_pushed` |
-| A pull request for the card is opened or marked ready | `review_requested` |
-| CI finishes on the pull request | `check_ran`, which exists today |
+| A branch named for the card is pushed | `workspace_linked` the first time the card sees the branch, and `work_pushed` for every push that carries commits, the first included; a push with no commits records nothing more |
+| A pull request for the card is opened (not as a draft), marked ready, or has a reviewer requested again | `review_requested`, and a card in progress moves to review |
+| A completed run of the workflow `check` on the pull request (`workflow_run`) | `check_ran` with `check: "structural"`, passed on `success` and failed on `failure`, `timed_out`, `startup_failure` or `action_required`; every other conclusion, and runs on `main`, are skipped |
 | A person approves the pull request | `approved` |
-| A person requests changes | `changes_requested` |
-| The pull request is merged | `status_changed` to `done`, allowed only after `approved` |
+| A person requests changes | `changes_requested`, and a card in review moves back to in progress |
+| The pull request is merged | `status_changed` from review to `done`, allowed only when the card is in review and the latest verdict on that pull request is an `approved` by a person; otherwise nothing is recorded and the answer says why |
+
+Everything else answers 200 and records nothing. The reasons for each choice are in `docs/decisions.md`.
 
 While the API runs on Mikael's machine, GitHub cannot reach it directly. During development, webhooks are forwarded with the GitHub CLI extension `cli/gh-webhook` (`gh webhook forward`), which needs to be installed first. A hosted API comes later, when the board must run without Mikael's machine.
 

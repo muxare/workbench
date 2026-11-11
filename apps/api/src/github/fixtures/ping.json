@@ -1,0 +1,15 @@
+{
+  "//": "Trimmed ping payload, which GitHub sends when a webhook is created. Ids are invented.",
+  "zen": "Keep it logically awesome.",
+  "hook_id": 900000040,
+  "hook": { "type": "Repository", "id": 900000040, "active": true, "events": ["push", "pull_request", "pull_request_review", "workflow_run"] },
+  "repository": {
+    "id": 900000001,
+    "name": "workbench",
+    "full_name": "muxare/workbench",
+    "private": false,
+    "html_url": "https://github.com/muxare/workbench",
+    "default_branch": "main"
+  },
+  "sender": { "login": "muxare", "id": 900000003, "type": "User" }
+}

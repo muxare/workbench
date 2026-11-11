@@ -1,0 +1,35 @@
+{
+  "//": "Trimmed pull_request closed payload for a merge, shaped after GitHub's webhook reference and octokit/webhooks payload-examples pull_request/closed. A merge is action closed with merged true; there is no merged action. Numbers, ids, shas and the bot account workbench-agent[bot] are invented.",
+  "action": "closed",
+  "number": 3,
+  "pull_request": {
+    "id": 900000010,
+    "number": 3,
+    "html_url": "https://github.com/muxare/workbench/pull/3",
+    "state": "closed",
+    "locked": false,
+    "title": "feat(api): GitHub webhook endpoint",
+    "user": { "login": "workbench-agent[bot]", "id": 900000002, "type": "Bot" },
+    "body": "Maps GitHub webhooks to card events, as in docs/dev-loop.md.\n\nWorkbench: #2",
+    "created_at": "2026-11-11T10:20:00Z",
+    "updated_at": "2026-11-11T12:05:00Z",
+    "closed_at": "2026-11-11T12:05:00Z",
+    "merged_at": "2026-11-11T12:05:00Z",
+    "merge_commit_sha": "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d",
+    "draft": false,
+    "head": { "label": "muxare:wb/2-github-webhooks", "ref": "wb/2-github-webhooks", "sha": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d" },
+    "base": { "label": "muxare:main", "ref": "main", "sha": "2128c926251523911522601b232e48524e46181e" },
+    "merged": true,
+    "mergeable": null,
+    "merged_by": { "login": "muxare", "id": 900000003, "type": "User" }
+  },
+  "repository": {
+    "id": 900000001,
+    "name": "workbench",
+    "full_name": "muxare/workbench",
+    "private": false,
+    "html_url": "https://github.com/muxare/workbench",
+    "default_branch": "main"
+  },
+  "sender": { "login": "muxare", "id": 900000003, "type": "User" }
+}
