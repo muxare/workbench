@@ -10,7 +10,8 @@ import {
   rolesLabel,
   shortLabel,
 } from "./teammates.ts";
-import { testBoard } from "./testBoard.ts";
+import { liveBoard, mergeEvent, type LiveBoard } from "../api/boardState.ts";
+import { TEST_FUNCTIONS, testBoard } from "./testBoard.ts";
 import { teammateRole, type HumanTeammate, type Teammate, type TeammateRole } from "@workbench/shared";
 
 const human = (id: string, ...roles: [TeammateRole, ...TeammateRole[]]): HumanTeammate => ({
@@ -94,15 +95,46 @@ describe("placeTeammates", () => {
 });
 
 describe("modeCounts", () => {
-  it("counts a person's functions per mode, zeros included", () => {
+  const counts = (manual: number, assist: number, delegate: number) => [
+    { mode: "manual", count: manual },
+    { mode: "assist", count: assist },
+    { mode: "delegate", count: delegate },
+  ];
+
+  it("counts a person's chain per mode: their role's functions and the ones they chose, zeros included", () => {
+    // frame_problem (ux) in assist and fix_bug (team, chosen) in manual.
     const ux = testBoard().teammates[1]!;
-    expect(modeCounts(ux)).toEqual([
-      { mode: "manual", count: 1 },
-      { mode: "assist", count: 1 },
-      { mode: "delegate", count: 0 },
-    ]);
+    expect(modeCounts(ux, TEST_FUNCTIONS)).toEqual(counts(1, 1, 0));
+  });
+  it("counts a person with no modes of their own at each function's default", () => {
+    // The bug seen on 2026-11-11: this panel read "0 I do · 0 assist · 0 AI".
+    const all = human("x", "po", "ux", "fe", "be");
+    // frame_problem, refine_ui_spec and define_api_contract default to assist; implement_services to delegate.
+    expect(modeCounts(all, TEST_FUNCTIONS)).toEqual(counts(0, 3, 1));
+  });
+  it("counts every role of a person with several, their own choices over the defaults", () => {
+    const p: HumanTeammate = { ...human("x", "fe", "be"), process_profile: { refine_ui_spec: "manual", write_issues: "assist" } };
+    expect(modeCounts(p, TEST_FUNCTIONS)).toEqual(counts(1, 2, 1));
   });
   it("is empty for an AI teammate", () => {
-    expect(modeCounts({ kind: "ai", id: "a", name: "AI" })).toEqual([]);
+    expect(modeCounts({ kind: "ai", id: "a", name: "AI" }, TEST_FUNCTIONS)).toEqual([]);
+  });
+  it("follows streamed roles_changed and mode_changed events without a refetch", () => {
+    const at = "2026-11-11T10:00:00.000Z";
+    const start = testBoard({ teammates: [human("x", "po")] });
+    const countsOf = (s: LiveBoard) => modeCounts(s.board.teammates[0]!, s.board.functions);
+    let state = liveBoard(start);
+    expect(countsOf(state)).toEqual(counts(0, 0, 0));
+    state = mergeEvent(state, {
+      seq: start.last_seq + 1,
+      event: { id: "r1", type: "roles_changed", teammate_id: "x", actor: "x", at, from: ["po"], to: ["po", "ux", "be"] },
+    });
+    expect(countsOf(state)).toEqual(counts(0, 2, 1));
+    state = mergeEvent(state, {
+      seq: start.last_seq + 2,
+      event: { id: "m1", type: "mode_changed", teammate_id: "x", actor: "x", at, function_id: "implement_services", from: null, to: "manual" },
+    });
+    expect(countsOf(state)).toEqual(counts(1, 2, 0));
   });
 });
+

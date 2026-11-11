@@ -2,6 +2,7 @@
 // apps/web so neither side copies them. Field names are snake_case, like the
 // domain schemas. There is no sign-in yet, so every write names its `actor`.
 import { z } from "zod";
+import { chainFunction } from "./chain.ts";
 import { functionFrontMatter, functionRole } from "./functionFile.ts";
 import {
   aiTeammate,
@@ -109,10 +110,15 @@ export type BoardCycle = z.infer<typeof boardCycle>;
  * `log_filter_changed` events; the screens apply it where they show a log,
  * because the log here is also what the board follows the stream with.
  * `cycle` is the current cycle with its log, or null when no cycle has started.
+ * `functions` is every function in process/functions, in file order, with
+ * just what `chainOf` and `ownerMode` need, so a panel counts a person's modes
+ * over the same chain and with the same default as their profile, and keeps
+ * doing so as `mode_changed` and `roles_changed` events stream in.
  */
 export const boardResponse = z.object({
   cards: z.array(card),
   teammates: z.array(teammate),
+  functions: z.array(chainFunction),
   open_questions: z.array(questionView),
   log: z.array(streamEvent),
   log_filters: logFilters,

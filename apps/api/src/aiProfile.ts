@@ -16,11 +16,10 @@ import type {
   Question,
   Teammate,
 } from "@workbench/shared";
-import { isCardEvent } from "@workbench/shared";
+import { chainOf, isCardEvent, ownerMode } from "@workbench/shared";
 import type { Db } from "./db/client.ts";
-import { chainOf } from "./profile.ts";
 import { boardLog, listCards, listQuestions, listTeammates } from "./store.ts";
-import { ownerMode, TEAMMATE_MODES, workableMode, type HumanTeammate } from "./teammates/eligibility.ts";
+import { TEAMMATE_MODES, workableMode, type HumanTeammate } from "./teammates/eligibility.ts";
 import { eligibleCards } from "./teammates/runner.ts";
 
 /** How many of the teammate's latest events the profile shows. */
@@ -40,7 +39,7 @@ function ownersOf(
   definitions: ReadonlyMap<string, FunctionFrontMatter>,
   cards: readonly Card[],
 ): HumanTeammate[] {
-  const listed = people.filter((p) => chainOf(p, definitions).some((d) => d.name === definition.name));
+  const listed = people.filter((p) => chainOf(p, definitions.values()).some((d) => d.name === definition.name));
   const byCard = people.filter(
     (p) => !listed.includes(p) && cards.some((c) => c.function_id === definition.name && c.owner === p.id),
   );

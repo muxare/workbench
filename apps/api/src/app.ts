@@ -16,7 +16,9 @@
 // process/functions on each request; for an AI teammate it answers a
 // separate, derived profile (aiProfile.ts).
 // `GET /api/board` also carries the current cycle (`currentCycle` at the
-// server's clock) and its cycle log, for the panel under the board.
+// server's clock) and its cycle log, for the panel under the board, and each
+// function's name, role and default mode from process/functions, so a panel
+// counts modes over the same chain as the profile.
 // Request and response shapes live in @workbench/shared (api.ts).
 import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
@@ -31,6 +33,7 @@ import {
   isManualMove,
   logName,
   normalizeEventTypes,
+  ownerMode,
   moveStatusRequest,
   pickRequest,
   sameEventTypes,
@@ -78,7 +81,6 @@ import {
   StoreError,
   type StoreErrorCode,
 } from "./store.ts";
-import { ownerMode } from "./teammates/eligibility.ts";
 import type { TeammateProvider } from "./teammates/provider.ts";
 import { runTeammate } from "./teammates/runner.ts";
 import { stubProvider } from "./teammates/stubProvider.ts";
@@ -204,6 +206,7 @@ export function createApp(deps: AppDeps) {
       const response: BoardResponse = {
         cards: await listCards(db),
         teammates: await listTeammates(db),
+        functions: [...definitions().values()].map((d) => ({ name: d.name, role: d.role, modes: { default: d.modes.default } })),
         open_questions: (await listQuestions(db)).filter((q) => q.answer === undefined),
         log: await boardLog(db, { limit: BOARD_LOG_LIMIT }),
         log_filters: await logFilters(db),

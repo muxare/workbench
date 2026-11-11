@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   apiError,
   boardResponse,
+  chainModeCounts,
   cardResponse,
   logFiltersResponse,
   streamEvent,
@@ -22,7 +23,7 @@ import { inventedSeedAt } from "./seed/invented.ts";
 /** The invented seed as loaded on 2026-11-07, so Sprint 4 runs from 2026-11-05 to 2026-11-19. */
 const inventedSeed = inventedSeedAt(new Date("2026-11-07T08:00:00Z"));
 import { withProfile } from "./seed/withProfile.ts";
-import { appendEvent, cardStatus, lastSeq, seed, seedEvents, type SeedData } from "./store.ts";
+import { addTeammate, appendEvent, cardStatus, lastSeq, seed, seedEvents, type SeedData } from "./store.ts";
 
 /** Every event the seed stores, the people's joining events first, so positions in the stream match. */
 const seeded = seedEvents(inventedSeed);
@@ -540,6 +541,56 @@ describe("mode changes as teammate events", () => {
     const res = await app.request(`/api/teammates/${AI}/run`, { method: "POST" });
     expect(res.status).toBe(200);
     expect(teammateRunResponse.parse(await res.json()).card.id).toBe("invented-108");
+  });
+});
+
+describe("GET /api/board, functions for the panels' mode counts", () => {
+  const getBoard = async () => boardResponse.parse(await (await app.request("/api/board")).json());
+
+  /** The profile's steps tallied per mode, as the profile page shows them. */
+  async function profileCounts(id: string): Promise<Record<string, number>> {
+    const profile = teammateProfileResponse.parse(await (await app.request(`/api/teammates/${id}/profile`)).json());
+    const counts: Record<string, number> = { manual: 0, assist: 0, delegate: 0 };
+    for (const s of profile.steps) counts[s.mode]! += 1;
+    return counts;
+  }
+
+  /** Every person's panel counts, as the board computes them from its own response, against their profile's. */
+  async function expectPanelsMatchProfiles() {
+    const board = await getBoard();
+    const people = board.teammates.filter((t) => t.kind === "human");
+    expect(people.length).toBeGreaterThan(0);
+    for (const person of people) expect([person.id, chainModeCounts(person, board.functions)]).toEqual([person.id, await profileCounts(person.id)]);
+  }
+
+  it("lists every function in process/functions, in file order, with its role and default mode", async () => {
+    const board = await getBoard();
+    expect(board.functions).toEqual(
+      [...loadFunctionDefinitions().values()].map((d) => ({ name: d.name, role: d.role, modes: { default: d.modes.default } })),
+    );
+  });
+
+  it("gives each seeded person the same counts on the panel as on the profile", async () => {
+    await expectPanelsMatchProfiles();
+  });
+
+  it("counts every function of a person with no modes of their own at its default, as the profile does", async () => {
+    await addTeammate(db, { kind: "human", id: "invented-new", name: "Invented newcomer", roles: ["po", "ux", "fe", "be"] }, "2026-11-07T09:00:00Z");
+    const board = await getBoard();
+    const person = board.teammates.find((t) => t.id === "invented-new");
+    expect(person?.kind === "human" && person.process_profile).toEqual({});
+    const counts = person?.kind === "human" ? chainModeCounts(person, board.functions) : undefined;
+    expect(counts).toEqual(await profileCounts("invented-new"));
+    // Every ux, fe and be function; none of the team ones, which nobody chose.
+    const own = board.functions.filter((f) => f.role !== "team");
+    expect(counts!.manual + counts!.assist + counts!.delegate).toBe(own.length);
+    expect(counts!.manual).toBe(0);
+  });
+
+  it("still matches after a person gains roles and changes a mode", async () => {
+    expect((await post(`/api/teammates/${FE}/roles`, { actor: PO, roles: ["fe", "ux", "be"], was: ["fe"] })).status).toBe(200);
+    expect((await post(`/api/teammates/${FE}/modes`, { actor: FE, function_id: "frame_problem", mode: "manual" })).status).toBe(200);
+    await expectPanelsMatchProfiles();
   });
 });
 

@@ -2,7 +2,7 @@
 // definition in process/ and its owner's process profile. Nothing here names
 // a function or copies a protocol; the only fixed facts are the board status a
 // card is picked from and the modes this teammate knows how to work in.
-import { unfinishedDependencies, type Card, type CardEvent, type FunctionFrontMatter, type Mode, type Protocol, type Teammate } from "@workbench/shared";
+import { ownerMode, unfinishedDependencies, type Card, type CardEvent, type FunctionFrontMatter, type Mode, type Protocol, type Teammate } from "@workbench/shared";
 
 /**
  * The modes this AI teammate works in. It only assists for now: in `assist`
@@ -20,11 +20,6 @@ export type HumanTeammate = Extract<Teammate, { kind: "human" }>;
 export type Eligibility =
   | { eligible: true; card: Card; definition: FunctionFrontMatter; mode: Mode; protocol: Protocol; owner: HumanTeammate }
   | { eligible: false; card: Card; reason: string };
-
-/** The mode `owner` works `definition` in: their choice, or the function's `modes.default`. */
-export function ownerMode(owner: HumanTeammate, definition: FunctionFrontMatter): Mode {
-  return owner.process_profile[definition.name] ?? definition.modes.default;
-}
 
 /**
  * Whether this AI teammate can work a step of `definition` in `mode`, before

@@ -23,7 +23,7 @@ export function TeammatePanel({ board, teammate }: { board: BoardResponse; teamm
           <span className="teammate__sub">{sub}</span>
         ) : (
           <span className="teammate__modes mono">
-            {modeCounts(teammate).map((m, i) => (
+            {modeCounts(teammate, board.functions).map((m, i) => (
               <span key={m.mode}>
                 {i > 0 && " · "}
                 <span className={`mode-text--${m.mode}`}>
