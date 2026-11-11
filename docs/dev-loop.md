@@ -59,11 +59,35 @@ There are three directions, and each has its own mechanism.
 
 Everything else answers 200 and records nothing. The reasons for each choice are in `docs/decisions.md`.
 
-While the API runs on Mikael's machine, GitHub cannot reach it directly. During development, webhooks are forwarded with the GitHub CLI extension `cli/gh-webhook` (`gh webhook forward`), which needs to be installed first. A hosted API comes later, when the board must run without Mikael's machine.
+While the API runs on Mikael's machine, GitHub cannot reach it directly. During development, webhooks are forwarded with the GitHub CLI extension `cli/gh-webhook` (`gh webhook forward`), which needs to be installed first; "Running the loop locally" below gives the commands. A hosted API comes later, when the board must run without Mikael's machine.
 
 **Between the agent doing the work and the workbench**, an MCP server wraps the existing REST API. The API stays the one place where rules are enforced, and the MCP server only gives agents a way to use it: list and read cards with their function definition, pick a card, ask a person a question on the card and wait for the answer, post a report, and link a branch. It is what lets the AI in a Claude Code session stop and ask instead of guessing. It also lets anyone working in Claude Code pick a card from the terminal.
 
 The server was built on 2026-11-11 in `apps/mcp` and is registered for Claude Code in `.mcp.json`; `apps/mcp/README.md` says how to use it. It runs over stdio, talks to the API over HTTP and acts as the board's AI teammate. Two things work differently from the sentence above. Picking a card as the AI now checks the same rules as the AI teammate's runner, in the API itself: the owner's mode must give the AI a part (`assist` or `delegate`, never `manual`), a person must have moved the card to ready where the protocol says a person opens, and every card it depends on must be done. And linking a branch records nothing: the tool names the branch and the pull request body line and says whether the board has seen the branch, while the link itself is still recorded by the webhook on the first push, because `workspace_linked` says a branch exists on GitHub and only GitHub can say that. Reports are posted through a new route, `POST /api/cards/:id/reports`, which appends `report_posted`. The reasons are in `docs/decisions.md`.
+
+## Running the loop locally
+
+The loop needs two processes on Mikael's machine, started in this order from the repository root: the API on the workbench's board, then the forwarder that carries GitHub's webhooks to it. The board itself must exist first; `team:start teams/workbench` makes `teams/workbench/board.db` once.
+
+```sh
+# 1. The API on the workbench's board, on port 3000.
+GITHUB_WEBHOOK_SECRET="$(cat ~/.config/workbench/webhook-secret)" \
+  pnpm --filter @workbench/api team:serve teams/workbench
+
+# 2. In a second terminal: forward the four event types the endpoint reads.
+gh webhook forward --repo=muxare/workbench \
+  --events=push,pull_request,pull_request_review,workflow_run \
+  --url=http://localhost:3000/api/github/webhook \
+  --secret="$(cat ~/.config/workbench/webhook-secret)"
+```
+
+The secret has to be the same in both commands. The forwarder signs each delivery with it, and the API checks the signature against `GITHUB_WEBHOOK_SECRET`; an API started without the variable answers every delivery with 503 and records nothing. `team:serve` fills in the rest from `teams/workbench/team.json`, including which GitHub login is which teammate. The forwarder needs the GitHub CLI extension, installed once with `gh extension install cli/gh-webhook`.
+
+While it runs, the forwarder appears on the repository as a webhook named `cli` that points at `webhook-forwarder.github.com`, which relays deliveries to the command on Mikael's machine; on 2026-11-11 `gh api repos/muxare/workbench/hooks` listed it with exactly the four events above. GitHub's page on forwarding with the CLI says it is meant for testing and development only, and that only one person at a time can forward webhooks for a repository: a second attempt fails with `Hook already exists`. The page does not say what happens to deliveries made while the forwarder is not running, so they should be treated as lost. A missed delivery leaves the card behind GitHub rather than wrong: a missed first push is repaired by the next push, which links the branch, but a missed approval or merge is not repeated, and the card then has to be moved by hand or the event repeated on GitHub. The forwarder therefore has to be running before the AI pushes and until the pull request is merged.
+
+The MCP server needs nothing extra: Claude Code starts it from `.mcp.json`, and it reaches the same API at `http://localhost:3000` unless `WORKBENCH_API_URL` says otherwise (see `apps/mcp/README.md`). A Claude Code session that pushes and opens pull requests as the App mints its token with `pnpm --silent --filter @workbench/api github:token muxare/workbench`, with `GITHUB_APP_ID=5713979` and `GITHUB_APP_PRIVATE_KEY_PATH` pointing at `~/.config/workbench/app.pem`.
+
+Because the app being developed is this repository, a merged pull request changes the code the running API was started from. After pulling `main`, restart `team:serve` so the board runs the merged rules; the forwarder can keep running, but a delivery it receives while the API is down cannot be handed on, so the restart should fall between pushes.
 
 ## The loop in two diagrams
 
