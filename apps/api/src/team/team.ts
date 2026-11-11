@@ -62,8 +62,10 @@ export async function startTeam(db: Db, team: TeamFile, joinedAt: string): Promi
 
 /**
  * Enter cards on a started board, in file order, each in `backlog`. A card
- * whose id is already on the board is skipped, so the file can be entered
- * again after cards are added to it. Checks what `POST /cards` checks: the
+ * already on the board with the same id, title and function is skipped, so
+ * the file can be entered again after cards are added to it. A card whose id
+ * is taken by a different card is refused: `POST /cards` numbers cards from
+ * the same pool, so the API may have used the id first. Checks what `POST /cards` checks: the
  * function exists in process/ (`functionIds`), the owner is a teammate, and
  * every `depends_on` card exists, earlier in the file or already on the board.
  */
@@ -75,7 +77,15 @@ export async function enterCards(
   const added: string[] = [];
   const skipped: string[] = [];
   for (const c of file.cards) {
-    if (await getCard(db, c.id)) {
+    const existing = await getCard(db, c.id);
+    if (existing) {
+      if (existing.title !== c.title || existing.function_id !== c.function_id) {
+        throw new StoreError(
+          `${c.id}: the board already has a different card '${c.id}' ("${existing.title}", ${existing.function_id}); ` +
+            `cards made through the API take the next number too, so give this card a free id`,
+          "conflict",
+        );
+      }
       skipped.push(c.id);
       continue;
     }

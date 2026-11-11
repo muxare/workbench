@@ -447,6 +447,10 @@ export async function addCard(db: Db, input: CardRecord, functionIds: ReadonlySe
   if (!functionIds.has(c.function_id)) {
     throw new StoreError(`${c.id}: no function '${c.function_id}' in process/functions`, "unknown_function");
   }
+  // A plain-number id joins the pool `addNumberedCard` counts from, which SQLite reads as a 64-bit integer.
+  if (/^[0-9]+$/.test(c.id) && !Number.isSafeInteger(Number(c.id))) {
+    throw new StoreError(`${c.id}: a numeric card id must be at most ${Number.MAX_SAFE_INTEGER}`, "rule_violation");
+  }
   await db.insert(cards).values({
     id: c.id,
     title: c.title,
@@ -461,10 +465,12 @@ export async function addCard(db: Db, input: CardRecord, functionIds: ReadonlySe
  * Add a card under the next number: one more than the highest card id on the
  * board that is a plain number ("1", "2", …), or "1" when there is none. Ids
  * that are not plain numbers, such as an old UUID or "invented-101", are
- * ignored. The number is read and the row written in one INSERT … SELECT,
- * and SQLite runs a statement under its write lock, so two creates at the
- * same time, from this process or another, cannot take the same number.
- * Answers with the new card's id.
+ * ignored. The number is read and the row written in one INSERT … SELECT.
+ * Within one server process, which holds one connection, two creates at the
+ * same time cannot take the same number. Across processes on one file (the
+ * server and `team:cards`, say) two writers can read the same MAX; then the
+ * primary key stops a duplicate, and the losing writer may instead fail with
+ * SQLITE_BUSY, since no busy_timeout is set. Answers with the new card's id.
  */
 export async function addNumberedCard(db: Db, input: Omit<CardRecord, "id">, functionIds: ReadonlySet<string>): Promise<string> {
   const c = cardRecord.omit({ id: true }).parse(input);

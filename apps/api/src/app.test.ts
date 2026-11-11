@@ -211,10 +211,16 @@ describe("POST /api/cards", () => {
 
   it("gives one more than the highest numeric id, ignoring ids that are not plain numbers", async () => {
     // The invented seed's ids ("invented-101" …) are not plain numbers.
-    for (const id of ["1", "2", "9", "0b6c1e2a-6f43-4c1e-9d4e-2f0a1b3c4d5e", "12abc", "042"]) {
+    // "10" and "9" together catch a MAX taken over text, which would answer "9" + 1.
+    for (const id of ["1", "2", "10", "9", "0b6c1e2a-6f43-4c1e-9d4e-2f0a1b3c4d5e", "12abc", "042"]) {
       await addCard(db, { id, title: `Invented: card ${id}`, function_id: "frame_problem", owner: UX, links: [] }, functionIds);
     }
-    expect(await created(post("/api/cards", card))).toBe("10");
+    expect(await created(post("/api/cards", card))).toBe("11");
+  });
+
+  it("refuses a numeric card id too large for a safe integer", async () => {
+    const huge = { id: "9007199254740993", title: "Invented: too far", function_id: "frame_problem", owner: UX, links: [] };
+    await expect(addCard(db, huge, functionIds)).rejects.toThrow(/at most 9007199254740991/);
   });
 
   it("gives two creates in a row consecutive numbers, also when they run at the same time", async () => {
