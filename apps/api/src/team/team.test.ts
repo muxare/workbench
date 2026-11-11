@@ -75,6 +75,18 @@ describe("enterCards", () => {
     expect(await eventsAfter(db, 0)).toHaveLength(1);
   });
 
+  it("refuses a card whose id the board already gives to a different card, and enters nothing for it", async () => {
+    await enterCards(db, { cards: [cards.cards[0]!] }, functionIds);
+    const retitled = { cards: [{ ...cards.cards[0]!, title: "Invented: a different card" }] };
+    const err = await enterCards(db, retitled, functionIds).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StoreError);
+    expect((err as StoreError).code).toBe("conflict");
+    expect((err as StoreError).message).toMatch(/already has a different card '1'/);
+    const refunctioned = { cards: [{ ...cards.cards[0]!, function_id: "write_issues" }] };
+    await expect(enterCards(db, refunctioned, functionIds)).rejects.toThrow(/different card '1'/);
+    expect((await listCards(db)).map((c) => c.title)).toEqual([cards.cards[0]!.title]);
+  });
+
   it("refuses a function that process/ does not have", async () => {
     const bad = { cards: [{ ...cards.cards[0]!, function_id: "invented_missing" }] };
     await expect(enterCards(db, bad, functionIds)).rejects.toThrow(/invented_missing/);

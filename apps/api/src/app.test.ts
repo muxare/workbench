@@ -23,7 +23,7 @@ import { inventedSeedAt } from "./seed/invented.ts";
 /** The invented seed as loaded on 2026-11-07, so Sprint 4 runs from 2026-11-05 to 2026-11-19. */
 const inventedSeed = inventedSeedAt(new Date("2026-11-07T08:00:00Z"));
 import { withProfile } from "./seed/withProfile.ts";
-import { addTeammate, appendEvent, cardStatus, lastSeq, seed, seedEvents, type SeedData } from "./store.ts";
+import { addCard, addTeammate, appendEvent, cardStatus, lastSeq, seed, seedEvents, type SeedData } from "./store.ts";
 
 /** Every event the seed stores, the people's joining events first, so positions in the stream match. */
 const seeded = seedEvents(inventedSeed);
@@ -191,7 +191,43 @@ describe("POST /api/cards", () => {
   it("adds a card in backlog", async () => {
     const res = await post("/api/cards", card);
     expect(res.status).toBe(201);
-    expect(await res.json()).toMatchObject({ card: { id: "invented-new-1", status: { state: "backlog" }, links: [] } });
+    expect(await res.json()).toMatchObject({ card: { id: "1", status: { state: "backlog" }, links: [] } });
+  });
+
+  async function created(res: Response | Promise<Response>): Promise<string> {
+    const r = await res;
+    expect(r.status).toBe(201);
+    return ((await r.json()) as { card: { id: string } }).card.id;
+  }
+
+  it("numbers the first card on an empty board 1", async () => {
+    const empty = await openDb(":memory:");
+    await addTeammate(empty, { kind: "human", id: PO, name: "Invented product owner", roles: ["po"] }, "2026-11-07T09:00:00Z");
+    await addTeammate(empty, { kind: "human", id: UX, name: "Invented UX designer", roles: ["ux"] }, "2026-11-07T09:00:00Z");
+    const a = createApp({ db: empty, functionIds });
+    const res = a.request("/api/cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(card) });
+    expect(await created(res)).toBe("1");
+  });
+
+  it("gives one more than the highest numeric id, ignoring ids that are not plain numbers", async () => {
+    // The invented seed's ids ("invented-101" …) are not plain numbers.
+    // "10" and "9" together catch a MAX taken over text, which would answer "9" + 1.
+    for (const id of ["1", "2", "10", "9", "0b6c1e2a-6f43-4c1e-9d4e-2f0a1b3c4d5e", "12abc", "042"]) {
+      await addCard(db, { id, title: `Invented: card ${id}`, function_id: "frame_problem", owner: UX, links: [] }, functionIds);
+    }
+    expect(await created(post("/api/cards", card))).toBe("11");
+  });
+
+  it("refuses a numeric card id too large for a safe integer", async () => {
+    const huge = { id: "9007199254740993", title: "Invented: too far", function_id: "frame_problem", owner: UX, links: [] };
+    await expect(addCard(db, huge, functionIds)).rejects.toThrow(/at most 9007199254740991/);
+  });
+
+  it("gives two creates in a row consecutive numbers, also when they run at the same time", async () => {
+    expect(await created(post("/api/cards", card))).toBe("1");
+    expect(await created(post("/api/cards", card))).toBe("2");
+    const ids = await Promise.all([created(post("/api/cards", card)), created(post("/api/cards", card))]);
+    expect(ids.sort()).toEqual(["3", "4"]);
   });
 
   it("rejects a function that process/ does not have, with 422", async () => {
@@ -285,8 +321,8 @@ describe("POST /api/cards/:id/pick", () => {
 
   it("refuses a card owned by an AI teammate, which has no process profile", async () => {
     await post("/api/cards", { actor: PO, title: "Invented: a card the AI owns", function_id: "refine_ui_spec", owner: AI });
-    await post("/api/cards/invented-new-1/status", { actor: PO, from: "backlog", to: { state: "ready" } });
-    await expectProblem(await post("/api/cards/invented-new-1/pick", { actor: PO }), 422, "rule_violation", /AI teammate/);
+    await post("/api/cards/1/status", { actor: PO, from: "backlog", to: { state: "ready" } });
+    await expectProblem(await post("/api/cards/1/pick", { actor: PO }), 422, "rule_violation", /AI teammate/);
   });
 });
 
