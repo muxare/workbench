@@ -2,6 +2,15 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-11: Who moves a card follows the mode; done always needs a person, with the AI critic as an optional gate (with Mikael)
+
+Mikael proposed that moving a card be done by a person or the AI depending on the mode the owner has set for the step, and that the move from review to done follow an actual review, by a person, the AI or both, as a setting. He accepted Claude's recommendation, which keeps the first half and narrows the second.
+
+- **Moves before review follow the protocol of the owner's mode.** `process/template.md` already says who writes in each mode: the person in `manual` and `assist`, the AI in `delegate`. The one who writes is the one who may move the card to review, so in `delegate` the AI may make that move, and in the other modes only the person may. The webhook endpoint today moves the card for whoever sent the GitHub event and does not read the mode; it is to read it through the shared `ownerMode` rule, as the pick already does.
+- **Review to done always needs a person's approval.** In every protocol `decides` is `human`, and `docs/dev-loop.md` makes a person's approval the only way to done. Letting the AI alone approve would drop that rule, which is a founding decision of the model, so it is not offered as a setting.
+- **What is configurable is whether the AI critic must pass before the person approves.** The template's three checks already run in that order, structural, AI, human, with only drafts that pass the first two reaching the person. A per-function setting decides whether the AI critic's review is a required gate on the way to done or an optional one. The person's approval is always last.
+- **For later, not now: a run where the AI does all the work, including the approvals.** Mikael wants to try posting requirements, or only a project idea, as a product owner and letting the AI carry the whole chain. That would deliberately suspend `decides: human` and is to be run as an explicit experiment, outside the rules above, after the development loop works. This is the one case that would reopen the decision.
+
 ## 2026-11-11: GitHub webhooks become card events at `POST /api/github/webhook` (by Claude)
 
 This is card #2 on the workbench board and the second task of stage 2 in `docs/dev-loop.md`. The endpoint lives in `apps/api/src/github/` and is tested against trimmed payloads recorded under `apps/api/src/github/fixtures/`, shaped after GitHub's webhook reference and the payload examples GitHub publishes in `octokit/webhooks`; the ids, shas and the bot account in them are invented. No GitHub App or forwarding is set up yet; that is the next task, with Mikael.

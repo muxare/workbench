@@ -51,4 +51,5 @@ Last updated 2026-11-11 by Claude.
 Stage 2 of `docs/dev-loop.md`, then stage 3:
 
 1. With Mikael on GitHub: protect `main` with `check` as a required status, install the GitHub App, set `GITHUB_WEBHOOK_SECRET`, restart `team:serve` (the running one predates the endpoint) and forward webhooks to `POST /api/github/webhook` with `gh webhook forward`; then take one real pull request for a new card through the loop and compare the card log with the mapping in `docs/dev-loop.md`.
-2. Build the MCP server in front of the REST API (stage 3): list and read cards with their function, pick, ask and wait for the answer, post a report, link a branch.
+2. Make the webhook's moves to review follow the owner's mode for the card's function (the AI may move a card only in `delegate`), and add a per-function setting for whether the AI critic must pass before a person's approval to done (decided 2026-11-11, see `docs/decisions.md`).
+3. Build the MCP server in front of the REST API (stage 3): list and read cards with their function, pick, ask and wait for the answer, post a report, link a branch.
