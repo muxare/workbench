@@ -15,6 +15,7 @@ Build toward a working product. Demo it at ConCon on 2026-11-18 at whatever stag
 | Frontend | React + Vite, in `apps/web` |
 | Backend | Node + Hono, in `apps/api` |
 | Shared | zod schemas and types, in `packages/shared` |
+| Agent access | An MCP server over stdio in `apps/mcp`, a client of the HTTP API |
 | Storage | SQLite through Drizzle now, Postgres later |
 | Live updates | Server-sent events from the API |
 | AI | Claude Agent SDK or Anthropic SDK behind a provider interface, so the model can change |
@@ -27,6 +28,7 @@ The process model in `process/` stays the source of truth. The app reads the fun
 apps/
   web/          # board, card detail, teammate profile
   api/          # HTTP API, event store, SSE stream, AI teammate runner
+  mcp/          # MCP server for agent sessions, over the HTTP API
 packages/
   shared/       # zod schemas for cards, events, teammates, function files
 process/        # the process model (unchanged)

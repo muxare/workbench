@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "workbench": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["apps/mcp/src/main.ts"],
+      "env": {
+        "WORKBENCH_API_URL": "${WORKBENCH_API_URL:-http://localhost:3000}"
+      }
+    }
+  }
+}
