@@ -37,13 +37,13 @@ The structural check is `pnpm check`: lint, typecheck, tests and the process val
 
 The AI critic is a review by an agent that has not seen the code being written: the `design-reviewer` subagent for screens, a code review for the rest. Its findings are posted on the pull request as comments, and it never approves.
 
-The human check is Mikael's approval of the pull request. With `main` protected, a change cannot land without it, so the rule that a person decides is enforced by GitHub rather than by convention.
+The human check is Mikael's approval of the pull request. `main` is protected so that a change needs a pull request and a passing `check`, but GitHub cannot require his approval: it refuses self-approval, so a required approval would lock him out of his own changes. The workbench holds that gate instead, moving a card to done on merge only after a person's approval (decided 2026-11-11; see `docs/decisions.md`). Once every pull request is opened by the AI or a second person joins, GitHub is to require one approval as well.
 
 ## How the workbench and GitHub talk
 
 There are three directions, and each has its own mechanism.
 
-**From the workbench to GitHub**, for example to start the AI on a card, the workbench calls the GitHub API as a GitHub App installed on the repository. An App is chosen over a personal token because it acts as itself rather than as Mikael, its permissions are limited to the one repository and what the loop needs, and it can deliver webhooks.
+**From the workbench to GitHub**, the AI acts as the GitHub App `workbench-ai-muxare`, installed on the repository. As of 2026-11-11 the API itself makes no calls to GitHub: a Claude Code session mints an installation token with `pnpm --filter @workbench/api github:token muxare/workbench` and pushes the branch and opens the pull request with it, as `workbench-ai-muxare[bot]`. An App is chosen over a personal token because it acts as itself rather than as Mikael, its permissions are limited to the one repository and what the loop needs, and it can deliver webhooks.
 
 **From GitHub to the workbench**, GitHub sends webhooks to `POST /api/github/webhook` in `apps/api` (built on 2026-11-11), which turns them into card events. A card is linked to its work by a naming convention: the branch is `wb/<card id>-<short title>`, and the pull request body says `Workbench: #<card id>`; the body wins when both name a card, and a CI run, whose payload has no body, is matched to the card a `review_requested` event already linked to its pull request, and only then by its branch. The endpoint checks each delivery's signature against `GITHUB_WEBHOOK_SECRET`, and the actor of each event is the teammate the GitHub account maps to in the team file's `github_logins`; a delivery from an account that is not mapped records nothing. The mapping is:
 
