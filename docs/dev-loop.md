@@ -63,6 +63,8 @@ While the API runs on Mikael's machine, GitHub cannot reach it directly. During 
 
 **Between the agent doing the work and the workbench**, an MCP server wraps the existing REST API. The API stays the one place where rules are enforced, and the MCP server only gives agents a way to use it: list and read cards with their function definition, pick a card, ask a person a question on the card and wait for the answer, post a report, and link a branch. It is what lets the AI in a Claude Code session stop and ask instead of guessing. It also lets anyone working in Claude Code pick a card from the terminal.
 
+The server was built on 2026-11-11 in `apps/mcp` and is registered for Claude Code in `.mcp.json`; `apps/mcp/README.md` says how to use it. It runs over stdio, talks to the API over HTTP and acts as the board's AI teammate. Two things work differently from the sentence above. Picking a card as the AI now checks the same rules as the AI teammate's runner, in the API itself: the owner's mode must give the AI a part (`assist` or `delegate`, never `manual`), a person must have moved the card to ready where the protocol says a person opens, and every card it depends on must be done. And linking a branch records nothing: the tool names the branch and the pull request body line and says whether the board has seen the branch, while the link itself is still recorded by the webhook on the first push, because `workspace_linked` says a branch exists on GitHub and only GitHub can say that. Reports are posted through a new route, `POST /api/cards/:id/reports`, which appends `report_posted`. The reasons are in `docs/decisions.md`.
+
 ## The loop in two diagrams
 
 The first diagram shows the pieces as they ran on 2026-11-11 and how they connect. Everything on the left runs on Mikael's machine; everything on the right is GitHub. The two directions use different mechanisms on purpose: the AI reaches GitHub as the App `workbench-ai-muxare`, with an installation token that a Claude Code session mints from the App's private key, so that what it pushes and opens is not Mikael's and he can approve it; GitHub reaches the workbench only through repository webhooks, which `gh webhook forward` carries to the API because the API is not reachable from the internet. There are two gates on a pull request, and they sit on different sides: GitHub refuses a merge to `main` without a pull request and a passing `check`, while the workbench refuses to move a card to done unless the latest verdict on its pull request is a person's approval (and, where the card's function requires it, the AI critic passed before that approval). GitHub cannot hold the second gate, because it requires no approvals while Mikael cannot approve his own pull requests. The dotted line from `main` back to the API and the board is the unusual part of this project: the app being developed is this same repository, so a merged pull request changes the workbench that recorded it.
@@ -71,6 +73,7 @@ The first diagram shows the pieces as they ran on 2026-11-11 and how they connec
 flowchart LR
   subgraph machine["Mikael's machine"]
     claude["Claude Code session"]
+    mcp["MCP server, apps/mcp, stdio"]
     tokencli["github:token CLI"]
     key[("App private key, outside the repo")]
     api["workbench API, team:serve teams/workbench, port 3000"]
@@ -91,6 +94,8 @@ flowchart LR
   end
 
   key --> tokencli
+  claude -- "list, pick, ask and wait, report" --> mcp
+  mcp -- "REST and SSE as the AI teammate" --> api
   claude -- "mints token" --> tokencli
   tokencli -- "JWT for installation token" --> app
   claude -- "push and open PR as workbench-ai-muxare[bot]" --> branch

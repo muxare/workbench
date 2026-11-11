@@ -23,6 +23,11 @@
 // server's clock) and its cycle log, for the panel under the board, and each
 // function's name, role and default mode from process/functions, so a panel
 // counts modes over the same chain as the profile.
+// `POST /api/cards/:id/reports` appends a `report_posted` event, which is how
+// an agent session (apps/mcp) reports on the card it works.
+// `POST /api/cards/:id/pick` by an AI teammate also checks the rules its
+// runner follows (teammates/eligibility.ts), with the modes it works in from
+// an agent session.
 // `POST /api/github/webhook` takes GitHub's webhooks, checks their signature
 // against GITHUB_WEBHOOK_SECRET, and records the card events they map to
 // (github/webhook.ts).
@@ -44,6 +49,7 @@ import {
   ownerMode,
   moveStatusRequest,
   pickRequest,
+  reportRequest,
   sameEventTypes,
   sameRoles,
   setCriticGateRequest,
@@ -63,6 +69,7 @@ import {
   type Card,
   type CardEvent,
   type CardResponse,
+  type CardStatus,
   type FunctionFrontMatter,
   type LogFiltersResponse,
   type Teammate,
@@ -72,7 +79,7 @@ import {
 } from "@workbench/shared";
 import type { Db } from "./db/client.ts";
 import { loadFunctionDefinitions } from "./process.ts";
-import { buildAiProfile } from "./aiProfile.ts";
+import { buildAiProfile, cardsInHand } from "./aiProfile.ts";
 import { buildProfile } from "./profile.ts";
 import { eventStream, startingPoint } from "./sse.ts";
 import { validSignature } from "./github/signature.ts";
@@ -96,6 +103,7 @@ import {
   type StoreErrorCode,
 } from "./store.ts";
 import type { TeammateProvider } from "./teammates/provider.ts";
+import { checkEligibility, SESSION_MODES } from "./teammates/eligibility.ts";
 import { runTeammate } from "./teammates/runner.ts";
 import { stubProvider } from "./teammates/stubProvider.ts";
 
@@ -121,6 +129,9 @@ export interface AppDeps {
   /** GitHub login (lower case) to teammate id (GITHUB_LOGINS); a webhook from an unmapped account records nothing. */
   githubLogins?: ReadonlyMap<string, string>;
 }
+
+/** The states a card is being worked in, where `POST /cards/:id/reports` accepts a report. */
+const REPORTABLE: readonly CardStatus[] = ["in_progress", "needs_input", "review"];
 
 /** How many of the latest events `GET /board` returns as its log. */
 const BOARD_LOG_LIMIT = 50;
@@ -269,7 +280,7 @@ export function createApp(deps: AppDeps) {
     .post("/cards/:id/pick", async (c) => {
       const card = await cardOr404(c.req.param("id"));
       const req = await body(c, pickRequest);
-      await teammateOr422(req.actor, "actor");
+      const actor = await teammateOr422(req.actor, "actor");
       const owner = await teammateOr422(card.owner, "owner");
       if (owner.kind !== "human") {
         throw new ApiProblem(
@@ -277,7 +288,8 @@ export function createApp(deps: AppDeps) {
           `owner ${owner.id} is an AI teammate and has no process profile, so ${card.id} cannot be picked`,
         );
       }
-      const definition = definitions().get(card.function_id);
+      const defs = definitions();
+      const definition = defs.get(card.function_id);
       if (!definition) {
         throw new ApiProblem("rule_violation", `no function '${card.function_id}' in process/functions, so ${card.id} cannot be picked`);
       }
@@ -292,9 +304,16 @@ export function createApp(deps: AppDeps) {
       if (card.status.state !== "ready") {
         throw new ApiProblem("conflict", `${card.id} is ${card.status.state}; only a ready card can be picked`);
       }
-      const blockers = unfinishedDependencies(card, await listCards(db));
+      const cards = await listCards(db);
+      const blockers = unfinishedDependencies(card, cards);
       if (blockers.length > 0) {
         throw new ApiProblem("conflict", `${card.id} depends on ${blockers.join(", ")}, which is not done`);
+      }
+      // The AI teammate picks only where the owner's mode gives it a part, by
+      // the same rules as its runner, in the modes it works in from an agent session.
+      if (actor.kind === "ai") {
+        const verdict = checkEligibility(card, await cardLog(db, card.id), defs, await listTeammates(db), cards, SESSION_MODES);
+        if (!verdict.eligible) throw new ApiProblem("rule_violation", `${actor.id} may not pick ${verdict.reason}`);
       }
       return c.json(
         await write(card.id, [
@@ -346,6 +365,23 @@ export function createApp(deps: AppDeps) {
         events.push({ ...base(card.id, req.actor), type: "status_changed", from: "needs_input", to: { state: "in_progress" } });
       }
       return c.json(await write(card.id, events));
+    })
+
+    .post("/cards/:id/reports", async (c) => {
+      const card = await cardOr404(c.req.param("id"));
+      const req = await body(c, reportRequest);
+      const actor = await teammateOr422(req.actor, "actor");
+      if (!REPORTABLE.includes(card.status.state)) {
+        throw new ApiProblem(
+          "conflict",
+          `${card.id} is ${card.status.state}; a report is posted on a card in ${REPORTABLE.join(", ")}`,
+        );
+      }
+      // The AI teammate reports only on a card it holds: it made the card's last pick, as its profile works out.
+      if (actor.kind === "ai" && cardsInHand(actor.id, [card], await cardLog(db, card.id)).length === 0) {
+        throw new ApiProblem("forbidden", `${actor.id} did not pick ${card.id} last, so it may not report on it`);
+      }
+      return c.json(await write(card.id, [{ ...base(card.id, req.actor), type: "report_posted", text: req.text }]));
     })
 
     .post("/cards/:id/status", async (c) => {
