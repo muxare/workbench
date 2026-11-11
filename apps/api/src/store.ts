@@ -5,18 +5,20 @@
 // (docs/architecture.md, "Logs are views of one event stream"); no log is
 // stored on its own. A card's status is derived from
 // its `status_changed` events, a person's process profile from their
-// `mode_changed` events, and the team's log filters from the
-// `log_filter_changed` events, in the same way. The filters are a view
-// setting: no query here applies them.
-import { and, asc, desc, eq, gt, gte, lt } from "drizzle-orm";
+// `mode_changed` events, their roles from their `roles_changed` events, and
+// the team's log filters from the `log_filter_changed` events, in the same
+// way. The filters are a view setting: no query here applies them.
+import { and, asc, desc, eq, gt, gte, inArray, lt } from "drizzle-orm";
 import {
   card as cardSchema,
   cardEvent,
   cycle as cycleSchema,
   deriveLogFilters,
   deriveProfile,
+  deriveRoles,
   humanTeammate,
   sameEventTypes,
+  sameRoles,
   streamEvent,
   teammate as teammateSchema,
   type Card,
@@ -27,12 +29,14 @@ import {
   type LogName,
   type Mode,
   type ModeChangedEvent,
-  type ProcessProfile,
   type Question,
+  type RolesChangedEvent,
   type Status,
   type StreamEvent,
   type StreamEventType,
   type Teammate,
+  type TeammateRole,
+  type ProcessProfile,
 } from "@workbench/shared";
 import { z } from "zod";
 import type { Db } from "./db/client.ts";
@@ -43,9 +47,11 @@ export const cardRecord = cardSchema.omit({ status: true });
 export type CardRecord = Omit<Card, "status">;
 
 /**
- * A teammate as stored: everything but a person's process profile, which
- * comes from events. Strict, so a profile passed in by mistake is refused
- * rather than silently dropped.
+ * A teammate as added: everything but a person's process profile, which
+ * comes from events. A person's `roles` are the roles they join with:
+ * `addTeammate` records them as their first `roles_changed` event, and the
+ * row keeps only id, kind and name. Strict, so a profile passed in by mistake
+ * is refused rather than silently dropped.
  */
 export const teammateRecord = z.discriminatedUnion("kind", [
   humanTeammate.omit({ process_profile: true }).strict(),
@@ -105,36 +111,46 @@ function fromRow(row: EventRow): StreamEvent {
   });
 }
 
-function teammateFromRow(row: typeof teammates.$inferSelect, profile: ProcessProfile): Teammate {
+/** A teammate from their row and the teammate events their roles and process profile are derived from. */
+function teammateFromRow(row: typeof teammates.$inferSelect, changes: readonly StreamEvent[]): Teammate {
   return teammateSchema.parse(
     row.kind === "human"
-      ? { kind: row.kind, id: row.id, name: row.name, role: row.role, process_profile: profile }
+      ? {
+          kind: row.kind,
+          id: row.id,
+          name: row.name,
+          roles: deriveRoles(changes, row.id),
+          process_profile: deriveProfile(changes, row.id),
+        }
       : { kind: row.kind, id: row.id, name: row.name },
   );
 }
 
+/** The event types a person's settings are derived from. */
+const SETTING_TYPES: StreamEventType[] = ["mode_changed", "roles_changed"];
+
 /**
- * Every `mode_changed` event, or one teammate's, in stream order. Both
- * queries filter on `teammate_id` so SQLite searches `events_teammate_seq`
- * instead of scanning every card event. For all teammates the filter is
- * `teammate_id > ''` (ids are never empty) with the order applied here:
- * EXPLAIN QUERY PLAN shows SQLite scans the table for `IS NOT NULL`, or for
- * any range filter combined with `ORDER BY seq`.
+ * Every `mode_changed` and `roles_changed` event, or one teammate's, in
+ * stream order. Both queries filter on `teammate_id` so SQLite searches
+ * `events_teammate_seq` instead of scanning every card event. For all
+ * teammates the filter is `teammate_id > ''` (ids are never empty) with the
+ * order applied here: EXPLAIN QUERY PLAN shows SQLite scans the table for
+ * `IS NOT NULL`, or for any range filter combined with `ORDER BY seq`.
  */
-async function modeChanges(db: Db, teammateId?: string): Promise<StreamEvent[]> {
-  const isModeChange = eq(events.type, "mode_changed");
+async function settingChanges(db: Db, teammateId?: string): Promise<StreamEvent[]> {
+  const isSettingChange = inArray(events.type, SETTING_TYPES);
   if (teammateId !== undefined) {
     const rows = await db
       .select()
       .from(events)
-      .where(and(eq(events.teammateId, teammateId), isModeChange))
+      .where(and(eq(events.teammateId, teammateId), isSettingChange))
       .orderBy(asc(events.seq));
     return rows.map(fromRow);
   }
   const rows = await db
     .select()
     .from(events)
-    .where(and(gt(events.teammateId, ""), isModeChange));
+    .where(and(gt(events.teammateId, ""), isSettingChange));
   return rows.sort((a, b) => a.seq - b.seq).map(fromRow);
 }
 
@@ -143,7 +159,12 @@ async function modeChanges(db: Db, teammateId?: string): Promise<StreamEvent[]> 
  * chosen one and the function's default applies.
  */
 export async function chosenMode(db: Db, teammateId: string, functionId: string): Promise<Mode | null> {
-  return deriveProfile(await modeChanges(db, teammateId), teammateId)[functionId] ?? null;
+  return deriveProfile(await settingChanges(db, teammateId), teammateId)[functionId] ?? null;
+}
+
+/** The roles a person holds now, first role first; empty before they have joined. */
+export async function heldRoles(db: Db, teammateId: string): Promise<TeammateRole[]> {
+  return deriveRoles(await settingChanges(db, teammateId), teammateId);
 }
 
 /**
@@ -161,6 +182,8 @@ interface Pending {
   statuses: Map<string, Status>;
   /** Keyed by teammate id and function id. */
   modes: Map<string, Mode | null>;
+  /** Keyed by teammate id. */
+  roles: Map<string, TeammateRole[]>;
   /** What earlier events in the write set each log's filter to. */
   filters: Map<LogName, StreamEventType[]>;
 }
@@ -217,10 +240,35 @@ async function checkModeChange(db: Db, event: ModeChangedEvent, pending: Pending
 }
 
 /**
+ * A roles change must be about a person, must be made by a person, must
+ * change the roles, and must name as `from` the roles the person holds now, so
+ * two changes made from the same view cannot both win. Joining is the change
+ * from no roles.
+ */
+async function checkRolesChange(db: Db, event: RolesChangedEvent, pending: Pending): Promise<void> {
+  const [subject] = await db.select().from(teammates).where(eq(teammates.id, event.teammate_id));
+  if (!subject) throw new StoreError(`${event.id}: no teammate '${event.teammate_id}'`, "not_found");
+  if (subject.kind !== "human") throw new StoreError(`${event.id}: ${event.teammate_id} is not a person and holds no roles`);
+  const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
+  if (!actor) throw new StoreError(`${event.id}: no teammate '${event.actor}'`, "not_found");
+  if (actor.kind !== "human") throw new StoreError(`${event.id}: roles are set by a person, not ${event.actor}`, "forbidden");
+  const current = pending.roles.get(event.teammate_id) ?? (await heldRoles(db, event.teammate_id));
+  const list = (roles: readonly string[]) => (roles.length === 0 ? "no roles" : roles.join(", "));
+  if (!sameRoles(current, event.from)) {
+    throw new StoreError(`${event.id}: ${event.teammate_id} holds ${list(current)}, not ${list(event.from)}`, "conflict");
+  }
+  if (sameRoles(event.from, event.to)) {
+    throw new StoreError(`${event.id}: a roles change must change the roles, not keep ${list(event.to)}`);
+  }
+  pending.roles.set(event.teammate_id, [...event.to]);
+}
+
+/**
  * Check an event against the stream so far: it must parse; a status change's
  * `from` must be the card's current state; an answer must come from a human,
  * because in every protocol `decides` is human; a mode change must pass
- * `checkModeChange`; and a filter change must pass `checkLogFilterChange`.
+ * `checkModeChange`, a roles change `checkRolesChange`, and a filter change
+ * `checkLogFilterChange`.
  * `pending` holds what earlier events in the same write have changed.
  */
 async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise<StreamEvent> {
@@ -233,6 +281,7 @@ async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise
     pending.statuses.set(event.card_id, event.to);
   }
   if (event.type === "mode_changed") await checkModeChange(db, event, pending);
+  if (event.type === "roles_changed") await checkRolesChange(db, event, pending);
   if (event.type === "log_filter_changed") await checkLogFilterChange(db, event, pending);
   if (event.type === "answered") {
     const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
@@ -293,7 +342,7 @@ export function onAppend(db: Db, listener: Listener): () => void {
 export function appendEvents(db: Db, inputs: readonly StreamEvent[]): Promise<StoredEvent[]> {
   return serialized(db, async () => {
     if (inputs.length === 0) return [];
-    const pending: Pending = { statuses: new Map(), modes: new Map(), filters: new Map() };
+    const pending: Pending = { statuses: new Map(), modes: new Map(), roles: new Map(), filters: new Map() };
     const checked: StreamEvent[] = [];
     for (const input of inputs) checked.push(await checkEvent(db, input, pending));
     // One multi-row INSERT is one statement, so SQLite stores all rows or none.
@@ -331,13 +380,31 @@ export async function lastSeq(db: Db): Promise<number> {
   return row?.seq ?? 0;
 }
 
+/** The `roles_changed` event `addTeammate` records when a person joins at `at`; none for an AI teammate. */
+export function joiningEvent(t: TeammateRecord, at: string): RolesChangedEvent | undefined {
+  if (t.kind !== "human") return undefined;
+  return { id: `roles-${t.id}-joined`, type: "roles_changed", teammate_id: t.id, actor: t.id, at, from: [], to: [...t.roles] };
+}
+
 /**
- * Add a teammate. A person starts with no chosen modes; their process profile
+ * Add a teammate. A person joins with the roles in `input`, recorded as a
+ * `roles_changed` event from no roles, made by the person at `joinedAt`, with
+ * the id `roles-<teammate id>-joined`; if that event is refused, the person
+ * is not added. A person starts with no chosen modes; their process profile
  * grows from `mode_changed` events (see `profileEvents`).
  */
-export async function addTeammate(db: Db, input: TeammateRecord): Promise<void> {
+export async function addTeammate(db: Db, input: TeammateRecord, joinedAt: string = new Date().toISOString()): Promise<void> {
   const t = teammateRecord.parse(input);
-  await db.insert(teammates).values({ id: t.id, kind: t.kind, name: t.name, role: t.kind === "human" ? t.role : null });
+  await db.insert(teammates).values({ id: t.id, kind: t.kind, name: t.name });
+  const joined = joiningEvent(t, joinedAt);
+  if (!joined) return;
+  try {
+    await appendEvents(db, [joined]);
+  } catch (err) {
+    // Nothing refers to the row yet, so it goes: a person never exists without roles.
+    await db.delete(teammates).where(eq(teammates.id, t.id));
+    throw err;
+  }
 }
 
 /**
@@ -390,19 +457,18 @@ export async function addCard(db: Db, input: CardRecord, functionIds: ReadonlySe
   });
 }
 
-/** One teammate; a person comes with their process profile derived from their `mode_changed` events. */
+/** One teammate; a person comes with their roles and process profile derived from their teammate events. */
 export async function getTeammate(db: Db, teammateId: string): Promise<Teammate | undefined> {
   const [row] = await db.select().from(teammates).where(eq(teammates.id, teammateId));
   if (!row) return undefined;
-  const changes = row.kind === "human" ? await modeChanges(db, teammateId) : [];
-  return teammateFromRow(row, deriveProfile(changes, teammateId));
+  return teammateFromRow(row, row.kind === "human" ? await settingChanges(db, teammateId) : []);
 }
 
-/** Every teammate; people come with their process profiles derived from the stream. */
+/** Every teammate; people come with their roles and process profiles derived from the stream. */
 export async function listTeammates(db: Db): Promise<Teammate[]> {
   const rows = await db.select().from(teammates).orderBy(asc(teammates.id));
-  const changes = await modeChanges(db);
-  return rows.map((row) => teammateFromRow(row, deriveProfile(changes, row.id)));
+  const changes = await settingChanges(db);
+  return rows.map((row) => teammateFromRow(row, changes));
 }
 
 export async function getCycle(db: Db, cycleId: string): Promise<Cycle | undefined> {
@@ -524,12 +590,25 @@ export async function cycleLog(db: Db, cycleId: string): Promise<StreamEvent[]> 
 
 /** Everything a fresh database needs to show a board. */
 export interface SeedData {
-  /** People start with no chosen modes; `mode_changed` events in `events` give them their profiles. */
+  /**
+   * People join with their roles at `joined_at` and start with no chosen
+   * modes; `mode_changed` events in `events` give them their profiles.
+   */
   teammates: TeammateRecord[];
+  /** When the teammates joined: the time of each person's first `roles_changed` event, before every event in `events`. */
+  joined_at: string;
   cycles: Cycle[];
   cards: CardRecord[];
   /** In stream order. */
   events: StreamEvent[];
+}
+
+/**
+ * Every event `seed` stores, in stream order: each person's joining event,
+ * then `data.events`.
+ */
+export function seedEvents(data: SeedData): StreamEvent[] {
+  return [...data.teammates.flatMap((t) => joiningEvent(t, data.joined_at) ?? []), ...data.events];
 }
 
 /**
@@ -538,7 +617,7 @@ export interface SeedData {
  * project can replace it.
  */
 export async function seed(db: Db, data: SeedData, functionIds: ReadonlySet<string>): Promise<void> {
-  for (const t of data.teammates) await addTeammate(db, t);
+  for (const t of data.teammates) await addTeammate(db, t, data.joined_at);
   for (const c of data.cycles) await addCycle(db, c);
   for (const c of data.cards) await addCard(db, c, functionIds);
   for (const e of data.events) await appendEvent(db, e);

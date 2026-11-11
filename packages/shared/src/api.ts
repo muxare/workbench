@@ -19,6 +19,7 @@ import {
   streamEvent,
   teammate,
   teammateId,
+  teammateRoles,
   type CardStatus,
 } from "./domain.ts";
 
@@ -193,7 +194,7 @@ export type ProfileStep = z.infer<typeof profileStep>;
 
 /**
  * `GET /teammates/:id/profile`: a person and their chain of steps. The chain is
- * every function whose `role` is the person's role, then every other function
+ * every function whose `role` is one of the person's roles, then every other function
  * in their process profile. `unknown_functions` lists profile entries with no
  * file in process/functions, which the API cannot describe.
  */
@@ -278,6 +279,20 @@ export type AiTeammateProfileResponse = z.infer<typeof aiTeammateProfileResponse
  */
 export const setModeRequest = z.strictObject({ actor: teammateId, function_id: functionId, mode });
 export type SetModeRequest = z.infer<typeof setModeRequest>;
+
+/**
+ * `POST /teammates/:id/roles`: a person sets the roles someone holds, their
+ * own or a teammate's. `roles` is the whole list from now on, first role
+ * first; `was` is the list the caller's view showed, so a change made after
+ * someone else's is refused with 409 rather than overwriting it. A change
+ * appends a `roles_changed` event; asking for the roles the person already
+ * holds appends nothing. The answer is the teammate as they now stand.
+ */
+export const setRolesRequest = z.strictObject({ actor: teammateId, roles: teammateRoles, was: teammateRoles });
+export type SetRolesRequest = z.infer<typeof setRolesRequest>;
+
+export const teammateResponse = z.object({ teammate: humanTeammate });
+export type TeammateResponse = z.infer<typeof teammateResponse>;
 
 export const apiErrorCode = z.enum(["invalid_request", "not_found", "conflict", "forbidden", "rule_violation"]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;

@@ -7,6 +7,8 @@
 // `POST /api/teammates/:id/modes` appends a `mode_changed` event about the
 // person, and a person's process profile is derived from those events, so a
 // mode change reaches the logs and the stream like a card change.
+// `POST /api/teammates/:id/roles` appends a `roles_changed` event in the same
+// way; a person's roles are derived from those events.
 // `POST /api/logs/:log/filter` appends a `log_filter_changed` event about the
 // team, and each log's filter is derived from those events; the API never
 // applies a filter to what it returns, because a filter is a view setting.
@@ -32,10 +34,13 @@ import {
   moveStatusRequest,
   pickRequest,
   sameEventTypes,
+  sameRoles,
   setLogFilterRequest,
   setModeRequest,
+  setRolesRequest,
   unfinishedDependencies,
   type HumanTeammate,
+  type TeammateResponse,
   type TeammateProfileResponse,
   type AiTeammateProfileResponse,
   type ApiError,
@@ -387,6 +392,30 @@ export function createApp(deps: AppDeps) {
         ]);
       }
       const response: TeammateProfileResponse = buildProfile(await personOr404(person.id), defs);
+      return c.json(response);
+    })
+
+    .post("/teammates/:id/roles", async (c) => {
+      const person = await personOr404(c.req.param("id"));
+      const req = await body(c, setRolesRequest);
+      const actor = await teammateOr422(req.actor, "actor");
+      if (actor.kind !== "human") throw new ApiProblem("forbidden", `roles are set by a person, not ${actor.id}`);
+      // Asking for the roles the person already holds changes nothing, so it records nothing.
+      // Otherwise `was` is what the caller saw; the store refuses it with 409 if the roles have moved on.
+      if (!sameRoles(person.roles, req.roles)) {
+        await appendEvents(db, [
+          {
+            id: newId(),
+            type: "roles_changed",
+            teammate_id: person.id,
+            actor: actor.id,
+            at: now().toISOString(),
+            from: req.was,
+            to: req.roles,
+          },
+        ]);
+      }
+      const response: TeammateResponse = { teammate: await personOr404(person.id) };
       return c.json(response);
     })
 

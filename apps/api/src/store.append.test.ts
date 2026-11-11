@@ -27,9 +27,10 @@ beforeEach(async () => {
     db,
     {
       teammates: [
-        { kind: "human", id: "h", name: "Invented human", role: "ux" },
+        { kind: "human", id: "h", name: "Invented human", roles: ["ux"] },
         { kind: "ai", id: "a", name: "Invented AI" },
       ],
+      joined_at: "2026-11-07T09:00:00Z",
       cycles: [],
       cards: [{ id: "k", title: "Invented card", function_id: "frame_problem", owner: "h", links: [] }],
       events: [],
@@ -38,6 +39,8 @@ beforeEach(async () => {
   );
 });
 
+/** The person's joining event comes first in the stream. */
+const JOINED = 1;
 const toReady: CardEvent = { id: "e1", type: "status_changed", card_id: "k", actor: "h", at, from: "backlog", to: { state: "ready" } };
 const toProgress: CardEvent = { id: "e2", type: "status_changed", card_id: "k", actor: "h", at, from: "ready", to: { state: "in_progress" } };
 
@@ -53,23 +56,23 @@ async function storeError(p: Promise<unknown>): Promise<StoreError> {
 describe("appendEvents", () => {
   it("checks each event against the stream as the earlier ones leave it, and returns positions", async () => {
     const stored = await appendEvents(db, [toReady, toProgress]);
-    expect(stored.map((s) => s.seq)).toEqual([1, 2]);
+    expect(stored.map((s) => s.seq)).toEqual([JOINED + 1, JOINED + 2]);
     expect(await cardStatus(db, "k")).toEqual({ state: "in_progress" });
-    expect(await lastSeq(db)).toBe(2);
-    expect((await eventsAfter(db, 1)).map((s) => s.event.id)).toEqual(["e2"]);
+    expect(await lastSeq(db)).toBe(JOINED + 2);
+    expect((await eventsAfter(db, JOINED + 1)).map((s) => s.event.id)).toEqual(["e2"]);
   });
 
   it("stores all events or none", async () => {
     const stale = { ...toProgress, id: "e3", from: "backlog" } as CardEvent;
     const err = await storeError(appendEvents(db, [toReady, stale]));
     expect(err.code).toBe("conflict");
-    expect(await lastSeq(db)).toBe(0);
+    expect(await lastSeq(db)).toBe(JOINED);
   });
 
   it("serializes concurrent writes, so only one of two identical moves wins", async () => {
     const results = await Promise.allSettled([appendEvents(db, [toReady]), appendEvents(db, [{ ...toReady, id: "e1b" }])]);
     expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
-    expect(await lastSeq(db)).toBe(1);
+    expect(await lastSeq(db)).toBe(JOINED + 1);
   });
 
   it("marks a non-human answer as forbidden and an unknown function as such", async () => {
@@ -87,7 +90,7 @@ describe("onAppend", () => {
     await appendEvents(db, [toReady]);
     stop();
     await appendEvents(db, [toProgress]);
-    expect(seen.map((s) => [s.seq, s.event.id])).toEqual([[1, "e1"]]);
+    expect(seen.map((s) => [s.seq, s.event.id])).toEqual([[JOINED + 1, "e1"]]);
   });
 
   it("is not called for a write that fails", async () => {

@@ -8,6 +8,8 @@ import {
   logFiltersResponse,
   streamEvent,
   streamEventType,
+  teammateProfileResponse,
+  teammateResponse,
   teammateRunResponse,
   writeResponse,
   type StreamEvent,
@@ -20,7 +22,10 @@ import { inventedSeedAt } from "./seed/invented.ts";
 /** The invented seed as loaded on 2026-11-07, so Sprint 4 runs from 2026-11-05 to 2026-11-19. */
 const inventedSeed = inventedSeedAt(new Date("2026-11-07T08:00:00Z"));
 import { withProfile } from "./seed/withProfile.ts";
-import { appendEvent, cardStatus, lastSeq, seed, type SeedData } from "./store.ts";
+import { appendEvent, cardStatus, lastSeq, seed, seedEvents, type SeedData } from "./store.ts";
+
+/** Every event the seed stores, the people's joining events first, so positions in the stream match. */
+const seeded = seedEvents(inventedSeed);
 
 const functionIds = loadFunctionIds();
 const PO = "invented-po";
@@ -81,19 +86,19 @@ describe("GET /api/board", () => {
     });
     expect(board.open_questions.map((q) => q.id)).toEqual(["invented-q106"]);
     // The board carries the latest 50 events; the seed has more.
-    expect(board.log.map((e) => e.id)).toEqual(inventedSeed.events.slice(-50).map((e) => e.id));
-    expect(board.last_seq).toBe(inventedSeed.events.length);
+    expect(board.log.map((e) => e.id)).toEqual(seeded.slice(-50).map((e) => e.id));
+    expect(board.last_seq).toBe(seeded.length);
   });
 
-  it("gives every person their role and no AI teammate one", async () => {
+  it("gives every person their roles and no AI teammate any", async () => {
     const board = boardResponse.parse(await (await app.request("/api/board")).json());
-    const roles = Object.fromEntries(board.teammates.map((t) => [t.id, t.kind === "human" ? t.role : "none"]));
+    const roles = Object.fromEntries(board.teammates.map((t) => [t.id, t.kind === "human" ? t.roles : "none"]));
     expect(roles).toEqual({
       "invented-ai": "none",
-      "invented-be": "be",
-      "invented-fe": "fe",
-      "invented-po": "po",
-      "invented-ux": "ux",
+      "invented-be": ["be"],
+      "invented-fe": ["fe"],
+      "invented-po": ["po"],
+      "invented-ux": ["ux"],
     });
   });
 });
@@ -401,7 +406,7 @@ describe("GET /api/events", () => {
     const ra = sseReader(a);
     const rb = sseReader(b);
     await post("/api/cards/invented-108/pick", { actor: AI });
-    const seq = inventedSeed.events.length;
+    const seq = seeded.length;
     for (const r of [ra, rb]) {
       const first = await r.next();
       const second = await r.next();
@@ -426,10 +431,10 @@ describe("GET /api/events", () => {
   });
 
   it("replays the events after Last-Event-ID, then continues live without repeats", async () => {
-    const total = inventedSeed.events.length;
+    const total = seeded.length;
     const r = sseReader(await app.request("/api/events", { headers: { "Last-Event-ID": String(total - 2) } }));
     const replayed = [await r.next(), await r.next()];
-    expect(replayed.map((m) => m.event.id)).toEqual(inventedSeed.events.slice(-2).map((e) => e.id));
+    expect(replayed.map((m) => m.event.id)).toEqual(seeded.slice(-2).map((e) => e.id));
     await post("/api/cards/invented-108/status", { actor: PO, from: "ready", to: { state: "backlog" } });
     const live = await r.next();
     expect(live.id).toBe(String(total + 1));
@@ -439,7 +444,7 @@ describe("GET /api/events", () => {
 
   it("accepts ?after= as the starting point and rejects a position that is not a number", async () => {
     const r = sseReader(await app.request("/api/events?after=0"));
-    expect((await r.next()).event.id).toBe(inventedSeed.events[0]?.id);
+    expect((await r.next()).event.id).toBe(seeded[0]?.id);
     await r.close();
     await expectProblem(await app.request("/api/events", { headers: { "Last-Event-ID": "abc" } }), 400, "invalid_request");
   });
@@ -471,7 +476,7 @@ describe("POST /api/teammates/:id/run", () => {
     if (asked?.type !== "asked") throw new Error("expected asked");
     expect(body.card.status).toEqual({ state: "needs_input", waiting_on: FE, question_id: asked.question_id });
 
-    const seq = inventedSeed.events.length;
+    const seq = seeded.length;
     const streamed = [];
     for (let i = 0; i < 5; i++) streamed.push(await r.next());
     expect(streamed.map((m) => m.id)).toEqual([1, 2, 3, 4, 5].map((n) => String(seq + n)));
@@ -508,14 +513,14 @@ describe("mode changes as teammate events", () => {
     const fe = board.teammates.find((t) => t.id === FE);
     expect(fe?.kind === "human" && fe.process_profile).toEqual({ refine_ui_spec: "manual" });
     expect(board.log.at(-1)).toMatchObject({ type: "mode_changed", teammate_id: FE, function_id: "refine_ui_spec", from: "assist", to: "manual" });
-    expect(board.last_seq).toBe(inventedSeed.events.length + 1);
+    expect(board.last_seq).toBe(seeded.length + 1);
   });
 
   it("reaches SSE clients like a card event", async () => {
     const r = sseReader(await app.request("/api/events"));
     await setFeMode("manual");
     const message = await r.next();
-    expect(message.id).toBe(String(inventedSeed.events.length + 1));
+    expect(message.id).toBe(String(seeded.length + 1));
     expect(message.event).toMatchObject({ type: "mode_changed", teammate_id: FE, actor: FE, from: "assist", to: "manual" });
     await r.close();
   });
@@ -535,6 +540,37 @@ describe("mode changes as teammate events", () => {
     const res = await app.request(`/api/teammates/${AI}/run`, { method: "POST" });
     expect(res.status).toBe(200);
     expect(teammateRunResponse.parse(await res.json()).card.id).toBe("invented-108");
+  });
+});
+
+describe("POST /api/teammates/:id/roles", () => {
+  const setFeRoles = (roles: string[], was: string[] = ["fe"], actor = PO) => post(`/api/teammates/${FE}/roles`, { actor, roles, was });
+
+  it("appends one roles_changed event, answers with the person, and the board and profile follow it", async () => {
+    const res = await setFeRoles(["fe", "ux"]);
+    expect(res.status).toBe(200);
+    expect(teammateResponse.parse(await res.json()).teammate).toMatchObject({ id: FE, roles: ["fe", "ux"] });
+    const board = boardResponse.parse(await (await app.request("/api/board")).json());
+    expect(board.teammates.find((t) => t.id === FE)).toMatchObject({ roles: ["fe", "ux"] });
+    expect(board.log.at(-1)).toMatchObject({ type: "roles_changed", teammate_id: FE, actor: PO, from: ["fe"], to: ["fe", "ux"] });
+    expect(board.last_seq).toBe(seeded.length + 1);
+    // The person's chain now holds the UX functions too.
+    const profile = teammateProfileResponse.parse(await (await app.request(`/api/teammates/${FE}/profile`)).json());
+    expect(profile.steps.map((s) => s.role)).toContain("ux");
+  });
+
+  it("appends nothing when the person already holds those roles, in that order", async () => {
+    expect((await setFeRoles(["fe"])).status).toBe(200);
+    expect(await lastSeq(db)).toBe(seeded.length);
+  });
+
+  it("refuses a stale view with 409, an AI actor with 403, an empty or repeated list with 400, and an AI subject with 422", async () => {
+    await expectProblem(await setFeRoles(["be"], ["ux"]), 409, "conflict", /holds fe, not ux/);
+    await expectProblem(await setFeRoles(["be"], ["fe"], AI), 403, "forbidden");
+    await expectProblem(await setFeRoles([]), 400, "invalid_request");
+    await expectProblem(await setFeRoles(["fe", "fe"]), 400, "invalid_request");
+    await expectProblem(await post(`/api/teammates/${AI}/roles`, { actor: PO, roles: ["fe"], was: ["fe"] }), 422, "rule_violation");
+    expect(await lastSeq(db)).toBe(seeded.length);
   });
 });
 
@@ -558,7 +594,7 @@ describe("POST /api/logs/:log/filter", () => {
     // Asking for a set equal to what the stale view saw is refused too, rather than undoing the other change.
     await expectProblem(await setFilter("board", BE, [], []), 409, "conflict");
     expect((await board()).log_filters.board).toEqual(["picked"]);
-    expect(await lastSeq(db)).toBe(inventedSeed.events.length + 1);
+    expect(await lastSeq(db)).toBe(seeded.length + 1);
     // Reloaded, the second browser's change goes through on top of the first.
     expect((await setFilter("board", BE, ["picked", "asked"], ["picked"])).status).toBe(200);
     expect((await board()).log_filters.board).toEqual(["picked", "asked"]);
@@ -567,7 +603,7 @@ describe("POST /api/logs/:log/filter", () => {
   it("appends nothing when a stale view asks for what the log already hides", async () => {
     await setFilter("board", UX, ["picked"], []);
     expect((await setFilter("board", BE, ["picked"], [])).status).toBe(200);
-    expect(await lastSeq(db)).toBe(inventedSeed.events.length + 1);
+    expect(await lastSeq(db)).toBe(seeded.length + 1);
   });
 
   it("appends one team event and answers with every log's filter", async () => {
@@ -587,19 +623,19 @@ describe("POST /api/logs/:log/filter", () => {
       hidden: ["report_posted", "mode_changed"],
       was_hidden: [],
     });
-    expect(after.last_seq).toBe(inventedSeed.events.length + 1);
+    expect(after.last_seq).toBe(seeded.length + 1);
   });
 
   it("never filters what the API returns: the board log, the card log and the stream keep every event", async () => {
     await setFilter("board", UX, ["status_changed", "mode_changed"]);
     await setFilter("card", UX, ["status_changed"]);
     const after = await board();
-    const expected = [...inventedSeed.events.map((e) => e.id), "invented-new-1", "invented-new-2"].slice(-50);
+    const expected = [...seeded.map((e) => e.id), "invented-new-1", "invented-new-2"].slice(-50);
     expect(after.log.map((e) => e.id)).toEqual(expected);
     const card = cardResponse.parse(await (await app.request("/api/cards/invented-106")).json());
     expect(card.log.some((e) => e.type === "status_changed")).toBe(true);
     const r = sseReader(await app.request("/api/events?after=0"));
-    expect((await r.next()).event.id).toBe(inventedSeed.events[0]!.id);
+    expect((await r.next()).event.id).toBe(seeded[0]!.id);
     await r.close();
   });
 
@@ -615,7 +651,7 @@ describe("POST /api/logs/:log/filter", () => {
     const r = sseReader(await app.request("/api/events"));
     await setFilter("cycle", BE, ["picked"]);
     const message = await r.next();
-    expect(message.id).toBe(String(inventedSeed.events.length + 1));
+    expect(message.id).toBe(String(seeded.length + 1));
     expect(message.event).toMatchObject({ type: "log_filter_changed", log: "cycle", hidden: ["picked"], was_hidden: [] });
     await r.close();
   });
@@ -624,9 +660,9 @@ describe("POST /api/logs/:log/filter", () => {
     await setFilter("board", UX, ["picked", "asked"]);
     const res = await setFilter("board", PO, ["asked", "picked"]);
     expect(res.status).toBe(200);
-    expect(await lastSeq(db)).toBe(inventedSeed.events.length + 1);
+    expect(await lastSeq(db)).toBe(seeded.length + 1);
     expect((await setFilter("card", PO, [])).status).toBe(200);
-    expect(await lastSeq(db)).toBe(inventedSeed.events.length + 1);
+    expect(await lastSeq(db)).toBe(seeded.length + 1);
   });
 
   it("shows everything again when every type is shown, recording what was hidden", async () => {
@@ -641,7 +677,7 @@ describe("POST /api/logs/:log/filter", () => {
     await expectProblem(await setFilter("board", AI, ["picked"]), 403, "forbidden", /set by a person/);
     await expectProblem(await setFilter("board", "invented-nobody", ["picked"]), 422, "rule_violation");
     await expectProblem(await setFilter("sprint", UX, ["picked"]), 404, "not_found", /no log 'sprint'/);
-    expect(await lastSeq(db)).toBe(inventedSeed.events.length);
+    expect(await lastSeq(db)).toBe(seeded.length);
   });
 
   it("refuses an unknown event type, a type listed twice and an unknown field with 400", async () => {

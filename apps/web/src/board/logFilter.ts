@@ -84,5 +84,5 @@ export function filterEditors(board: BoardResponse): HumanTeammate[] {
  */
 export function defaultFilterEditor(board: BoardResponse): string | undefined {
   const people = filterEditors(board);
-  return (people.find((p) => p.role === "po") ?? people[0])?.id;
+  return (people.find((p) => p.roles.includes("po")) ?? people[0])?.id;
 }

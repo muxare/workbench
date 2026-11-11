@@ -20,15 +20,16 @@ function step(person: HumanTeammate, definition: FunctionFrontMatter): ProfileSt
 }
 
 /**
- * A person's chain: every function whose `role` is theirs, in the order of
- * `definitions`, then every other function they have a mode for in their
- * process profile, in the same order. The AI teammate's profile uses the same
- * rule to say who owns a step.
+ * A person's chain: every function whose `role` is one of theirs, in the
+ * order of `definitions`, then every other function they have a mode for in
+ * their process profile, in the same order. The AI teammate's profile uses the
+ * same rule to say who owns a step.
  */
 export function chainOf(person: HumanTeammate, definitions: ReadonlyMap<string, FunctionFrontMatter>): FunctionFrontMatter[] {
   const all = [...definitions.values()];
-  const own = all.filter((d) => d.role === person.role);
-  const chosen = all.filter((d) => d.role !== person.role && person.process_profile[d.name] !== undefined);
+  const roles = new Set<string>(person.roles);
+  const own = all.filter((d) => roles.has(d.role));
+  const chosen = all.filter((d) => !roles.has(d.role) && person.process_profile[d.name] !== undefined);
   return [...own, ...chosen];
 }
 

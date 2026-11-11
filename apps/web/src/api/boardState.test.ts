@@ -112,7 +112,7 @@ describe("applyRefetch", () => {
 });
 
 describe("a mode_changed event", () => {
-  const person: Teammate = { kind: "human", id: "fe-1", name: "Invented developer", role: "fe", process_profile: { refine_ui_spec: "assist" } };
+  const person: Teammate = { kind: "human", id: "fe-1", name: "Invented developer", roles: ["fe"], process_profile: { refine_ui_spec: "assist" } };
   const ai: Teammate = { kind: "ai", id: "ai-1", name: "Invented AI" };
   const modeChanged = (seq: number, to: Mode, from: Mode | null, functionId = "refine_ui_spec"): LiveEvent => ({
     seq,
@@ -129,6 +129,17 @@ describe("a mode_changed event", () => {
     const next = mergeEvent(liveBoard(withTeam(3)), modeChanged(4, "manual", "assist"));
     expect(next.board.log.map((e) => e.id)).toEqual(["e1", "m4"]);
     expect(next.board.teammates).toEqual([{ ...person, process_profile: { refine_ui_spec: "manual" } }, ai]);
+  });
+
+  it("a roles_changed event replaces the person's roles at once", () => {
+    const rolesChanged: LiveEvent = {
+      seq: 4,
+      event: { id: "r4", type: "roles_changed", teammate_id: "fe-1", actor: "fe-1", at: "2026-11-09T10:00:00.000Z", from: ["fe"], to: ["po", "fe"] },
+    };
+    expect(parseStreamMessage(JSON.stringify(rolesChanged.event), "4")).toEqual(rolesChanged);
+    const next = mergeEvent(liveBoard(withTeam(3)), rolesChanged);
+    expect(next.board.teammates).toEqual([{ ...person, roles: ["po", "fe"] }, ai]);
+    expect(next.board.log.map((e) => e.id)).toEqual(["e1", "r4"]);
   });
 
   it("adds a function the person had left at its default, and leaves other teammates alone", () => {

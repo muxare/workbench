@@ -1,6 +1,6 @@
 // All example data in these tests is invented.
 import { beforeEach, describe, expect, it } from "vitest";
-import type { CardEvent, Mode, StreamEvent, StreamEventType } from "@workbench/shared";
+import type { CardEvent, Mode, StreamEvent, StreamEventType, TeammateRole } from "@workbench/shared";
 import { eq } from "drizzle-orm";
 import { deriveProfile } from "@workbench/shared";
 import { openDb, type Db } from "./db/client.ts";
@@ -27,6 +27,7 @@ import {
   logFilters,
   profileEvents,
   seed,
+  seedEvents,
   StoreError,
   type SeedData,
   type TeammateRecord,
@@ -38,9 +39,11 @@ const at = (minute: number) => `2026-11-06T10:${String(minute).padStart(2, "0")}
 /** A small invented board: two cards, one human, one AI, two cycles. */
 const tiny: SeedData = {
   teammates: [
-    { kind: "human", id: "t-human", name: "Invented human", role: "ux" },
+    { kind: "human", id: "t-human", name: "Invented human", roles: ["ux"] },
     { kind: "ai", id: "t-ai", name: "Invented AI" },
   ],
+  // Before both cycles, so the person's joining event is in no cycle log.
+  joined_at: "2026-11-06T09:00:00Z",
   cycles: [
     { id: "c-early", name: "Invented early", starts_at: "2026-11-06T10:00:00Z", ends_at: "2026-11-06T10:30:00Z" },
     // Same instant as c-early's end, written with an offset, to check windows compare times, not strings.
@@ -88,21 +91,67 @@ beforeEach(async () => {
 });
 
 describe("teammates", () => {
-  it("stores a person's role and reads it back, and gives an AI teammate none", async () => {
+  it("records a person's roles as a joining event and reads them back, and gives an AI teammate none", async () => {
     const byId = new Map((await listTeammates(db)).map((t) => [t.id, t]));
     expect(byId.get("t-human")).toEqual({ ...tiny.teammates[0], process_profile: { frame_problem: "assist" } });
     expect(byId.get("t-ai")).toEqual(tiny.teammates[1]);
-    expect(byId.get("t-ai")).not.toHaveProperty("role");
+    expect(byId.get("t-ai")).not.toHaveProperty("roles");
+    expect((await boardLog(db))[0]).toEqual({
+      id: "roles-t-human-joined",
+      type: "roles_changed",
+      teammate_id: "t-human",
+      actor: "t-human",
+      at: tiny.joined_at,
+      from: [],
+      to: ["ux"],
+    });
   });
 
-  it("refuses a person without a role", async () => {
+  it("refuses a person without a role, with an empty list or with a role twice, and adds nothing", async () => {
     const roleless = { kind: "human", id: "t-new", name: "Invented" } as unknown as TeammateRecord;
     await expect(addTeammate(db, roleless)).rejects.toThrow();
+    await expect(addTeammate(db, { kind: "human", id: "t-new", name: "Invented", roles: [] })).rejects.toThrow();
+    await expect(addTeammate(db, { kind: "human", id: "t-new", name: "Invented", roles: ["fe", "fe"] })).rejects.toThrow();
+    expect(await getTeammate(db, "t-new")).toBeUndefined();
   });
 
   it("refuses a stored process profile, which only events may set", async () => {
-    const withProfile = { kind: "human", id: "t-new", name: "Invented", role: "ux", process_profile: {} } as unknown as TeammateRecord;
+    const withProfile = { kind: "human", id: "t-new", name: "Invented", roles: ["ux"], process_profile: {} } as unknown as TeammateRecord;
     await expect(addTeammate(db, withProfile)).rejects.toThrow();
+  });
+
+  it("lets one person hold every role, first role first", async () => {
+    await addTeammate(db, { kind: "human", id: "t-all", name: "Invented", roles: ["po", "ux", "fe", "be"] }, at(1));
+    expect(await getTeammate(db, "t-all")).toMatchObject({ roles: ["po", "ux", "fe", "be"] });
+  });
+});
+
+describe("roles changes", () => {
+  const change = (from: TeammateRole[], to: TeammateRole[], id = "r1", actor = "t-human"): StreamEvent => ({
+    id,
+    type: "roles_changed",
+    teammate_id: "t-human",
+    actor,
+    at: at(50),
+    from,
+    to,
+  });
+
+  it("replace a person's roles, the latest change winning", async () => {
+    await appendEvents(db, [change(["ux"], ["ux", "fe"]), change(["ux", "fe"], ["fe", "ux"], "r2")]);
+    expect(await getTeammate(db, "t-human")).toMatchObject({ roles: ["fe", "ux"] });
+  });
+
+  it("refuse a stale `from` as a conflict, and a change that keeps the roles", async () => {
+    await expect(appendEvent(db, change(["fe"], ["be"]))).rejects.toMatchObject({ code: "conflict" });
+    await expect(appendEvent(db, change([], ["be"]))).rejects.toMatchObject({ code: "conflict" });
+    await expect(appendEvent(db, change(["ux"], ["ux"]))).rejects.toMatchObject({ code: "rule_violation" });
+  });
+
+  it("are made by a person, about a person", async () => {
+    await expect(appendEvent(db, change(["ux"], ["be"], "r1", "t-ai"))).rejects.toMatchObject({ code: "forbidden" });
+    const aboutAi = { ...change([], ["be"]), teammate_id: "t-ai" } as StreamEvent;
+    await expect(appendEvent(db, aboutAi)).rejects.toMatchObject({ code: "rule_violation" });
   });
 });
 
@@ -124,8 +173,8 @@ describe("card log", () => {
 
 describe("board log", () => {
   it("holds every event on the board, teammate events included, in stream order", async () => {
-    expect(ids(await boardLog(db))).toEqual(["v1", "m1", "v2", "v3", "v4", "v5"]);
-    expect(await boardLog(db)).toEqual(tiny.events);
+    expect(ids(await boardLog(db))).toEqual(["roles-t-human-joined", "v1", "m1", "v2", "v3", "v4", "v5"]);
+    expect(await boardLog(db)).toEqual(seedEvents(tiny));
   });
 
   it("keeps the latest events, oldest first, with a limit", async () => {
@@ -279,7 +328,7 @@ describe("log filter changes", () => {
     await appendEvent(db, change("f1", ["mode_changed", "status_changed"], []));
     const [row] = await db.select().from(events).where(eq(events.id, "f1"));
     expect(row).toMatchObject({ cardId: null, teammateId: null, type: "log_filter_changed" });
-    expect(ids(await boardLog(db))).toEqual(["v1", "m1", "v2", "v3", "v4", "v5", "f1"]);
+    expect(ids(await boardLog(db))).toEqual(["roles-t-human-joined", "v1", "m1", "v2", "v3", "v4", "v5", "f1"]);
     expect(ids(await cardLog(db, "k1"))).toEqual(["v1", "v2", "v4", "v5"]);
     expect((await eventsAfter(db, 0)).map((s) => s.event.id)).toContain("m1");
     expect(await cardStatus(db, "k1")).toMatchObject({ state: "needs_input" });
@@ -329,7 +378,7 @@ describe("invented seed", () => {
   });
 
   it("loads through the store's checks and stores every event", async () => {
-    expect(await boardLog(seeded)).toEqual(inventedSeed.events);
+    expect(await boardLog(seeded)).toEqual(seedEvents(inventedSeed));
     expect(await listTeammates(seeded)).toHaveLength(inventedSeed.teammates.length);
   });
 
@@ -346,7 +395,7 @@ describe("invented seed", () => {
     for (const card of inventedSeed.cards) expect(functionIds).toContain(card.function_id);
   });
 
-  it("gives each person the role of the functions they own, except shared team functions", () => {
+  it("gives each person a role of each function they own, except shared team functions", () => {
     const definitions = loadFunctionDefinitions();
     for (const t of inventedSeed.teammates) {
       if (t.kind !== "human") continue;
@@ -354,7 +403,7 @@ describe("invented seed", () => {
       const owned = [...chosen, ...inventedSeed.cards.filter((c) => c.owner === t.id).map((c) => c.function_id)];
       for (const fn of owned) {
         const role = definitions.get(fn)?.role;
-        if (role !== "team") expect(`${t.id} owns ${fn} (${role})`).toBe(`${t.id} owns ${fn} (${t.role})`);
+        if (role !== "team") expect(t.roles.map((r) => `${t.id} owns ${fn} (${r})`)).toContain(`${t.id} owns ${fn} (${role})`);
       }
     }
   });
@@ -407,12 +456,12 @@ describe("invented seed", () => {
     expect(log101.filter((t) => t === "answered")).toHaveLength(2);
   });
 
-  it("lists events in time order and splits them between the four sprints", async () => {
-    const times = inventedSeed.events.map((e) => Date.parse(e.at));
+  it("lists events, joining included, in time order and splits them between the four sprints", async () => {
+    const times = seedEvents(inventedSeed).map((e) => Date.parse(e.at));
     expect(times).toEqual([...times].sort((a, b) => a - b));
     const lengths = await Promise.all(inventedSeed.cycles.map(async (c) => (await cycleLog(seeded, c.id)).length));
     expect(lengths.every((n) => n > 0)).toBe(true);
-    expect(lengths.reduce((a, b) => a + b, 0)).toBe(inventedSeed.events.length);
+    expect(lengths.reduce((a, b) => a + b, 0)).toBe(seedEvents(inventedSeed).length);
   });
 
   it("puts only #108's move to Ready in Sprint 4, after the history's log", async () => {

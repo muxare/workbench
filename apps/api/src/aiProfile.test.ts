@@ -46,8 +46,8 @@ const FE = "invented-fe-person";
 const UX = "invented-ux-person";
 const AI = "invented-ai-teammate";
 const teammates: Teammate[] = [
-  { kind: "human", id: FE, name: "Invented frontend developer", role: "fe", process_profile: { shape_widget: "delegate", plan_sprint: "assist" } },
-  { kind: "human", id: UX, name: "Invented designer", role: "ux", process_profile: {} },
+  { kind: "human", id: FE, name: "Invented frontend developer", roles: ["fe"], process_profile: { shape_widget: "delegate", plan_sprint: "assist" } },
+  { kind: "human", id: UX, name: "Invented designer", roles: ["ux"], process_profile: {} },
   { kind: "ai", id: AI, name: "Invented AI teammate" },
 ];
 

@@ -3,11 +3,12 @@ import { teammateHref } from "../route.ts";
 import { Avatar } from "./Avatar.tsx";
 import { teammateNotes } from "./cardView.ts";
 import { modeCountLabel } from "./modes.ts";
-import { modeCounts, panelSubline, panelTitle } from "./teammates.ts";
+import { modeCounts, otherRolesLine, panelSubline, panelTitle } from "./teammates.ts";
 
 export function TeammatePanel({ board, teammate }: { board: BoardResponse; teammate: Teammate }) {
   const ai = teammate.kind === "ai";
   const sub = panelSubline(teammate);
+  const otherRoles = otherRolesLine(teammate);
   return (
     <article className={`teammate${ai ? " teammate--ai" : ""}`} aria-label={teammate.name}>
       <Avatar board={board} id={teammate.id} size={ai ? "lg" : "md"} />
@@ -17,6 +18,7 @@ export function TeammatePanel({ board, teammate }: { board: BoardResponse; teamm
             {panelTitle(teammate)}
           </a>
         </b>
+        {otherRoles !== undefined && <span className="teammate__roles mono">{otherRoles}</span>}
         {sub !== undefined ? (
           <span className="teammate__sub">{sub}</span>
         ) : (

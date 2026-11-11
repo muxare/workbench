@@ -37,21 +37,33 @@ export type ProcessProfile = z.infer<typeof processProfile>;
  * shared steps anyone may carry out, so it names a kind of function, not a
  * kind of person. The product owner owns the order of the board and the
  * milestone but no chain of functions yet, so `po` is the one role added here.
- * The board seats people and labels their avatars by this role.
+ * The board seats people and labels them by their roles.
  */
 export const teammateRole = z.enum(["po", ...functionRole.exclude(["team"]).options]);
 export type TeammateRole = z.infer<typeof teammateRole>;
 
 /**
- * A person on the team: a role and the mode they work each of their functions
- * in. `process_profile` is derived from the event stream when the teammate is
- * read; the store keeps only id, kind, name and role.
+ * The roles a person holds: at least one, each once. The order is the
+ * person's own: the first is their main role, which the board seats them by
+ * and shows in their avatar. One person on a small team may hold every role.
+ */
+export const teammateRoles = z
+  .array(teammateRole)
+  .min(1)
+  .refine((roles) => new Set(roles).size === roles.length, { message: "a role is listed twice" });
+export type TeammateRoles = z.infer<typeof teammateRoles>;
+
+/**
+ * A person on the team: the roles they hold and the mode they work each of
+ * their functions in. Both `roles` and `process_profile` are derived from the
+ * event stream when the teammate is read; the store keeps only id, kind and
+ * name.
  */
 export const humanTeammate = z.object({
   kind: z.literal("human"),
   id: teammateId,
   name: z.string().min(1),
-  role: teammateRole,
+  roles: teammateRoles,
   process_profile: processProfile,
 });
 export type HumanTeammate = z.infer<typeof humanTeammate>;
@@ -208,6 +220,9 @@ export type CardEventType = CardEvent["type"];
  * function in: `from` is the mode they had chosen before, or null when they
  * had not chosen one and the function's `modes.default` applied; `to` is the
  * new mode. A person's process profile is derived from these events.
+ * `roles_changed` records the roles a person holds: `from` is the list they
+ * held before, empty when they join the team, and `to` the list they hold
+ * from now on. A person's roles are derived from these events.
  */
 export const teammateEvent = z.discriminatedUnion("type", [
   z.object({
@@ -217,9 +232,16 @@ export const teammateEvent = z.discriminatedUnion("type", [
     from: mode.nullable(),
     to: mode,
   }),
+  z.object({
+    ...teammateEventBase,
+    type: z.literal("roles_changed"),
+    from: z.union([z.array(teammateRole).length(0), teammateRoles]),
+    to: teammateRoles,
+  }),
 ]);
 export type TeammateEvent = z.infer<typeof teammateEvent>;
 export type ModeChangedEvent = Extract<TeammateEvent, { type: "mode_changed" }>;
+export type RolesChangedEvent = Extract<TeammateEvent, { type: "roles_changed" }>;
 
 /**
  * The logs people read: one card's, the board's, a cycle's and a teammate's.
@@ -308,6 +330,22 @@ export function deriveProfile(events: readonly StreamEvent[], teammateId: string
   const profile: ProcessProfile = {};
   for (const e of events) if (e.type === "mode_changed" && e.teammate_id === teammateId) profile[e.function_id] = e.to;
   return profile;
+}
+
+/**
+ * A person's roles from the stream: the `to` of their latest `roles_changed`
+ * event, or an empty list before they have joined. `events` must be in stream
+ * order.
+ */
+export function deriveRoles(events: readonly StreamEvent[], teammateId: string): TeammateRole[] {
+  let roles: TeammateRole[] = [];
+  for (const e of events) if (e.type === "roles_changed" && e.teammate_id === teammateId) roles = [...e.to];
+  return roles;
+}
+
+/** Whether two role lists are the same roles in the same order; the order matters, since the first is the main role. */
+export function sameRoles(a: readonly TeammateRole[], b: readonly TeammateRole[]): boolean {
+  return a.length === b.length && a.every((r, i) => r === b[i]);
 }
 
 /** The event types each log hides, for every log; an empty list shows every event type. */
