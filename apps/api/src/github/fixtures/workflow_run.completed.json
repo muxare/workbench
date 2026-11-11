@@ -1,0 +1,49 @@
+{
+  "//": "Trimmed workflow_run completed payload, shaped after GitHub's webhook reference and octokit/webhooks payload-examples workflow_run/completed.with-pull-requests. name is the workflow's name from .github/workflows/check.yml. Run ids and numbers, shas and the bot account workbench-agent[bot] are invented.",
+  "action": "completed",
+  "workflow_run": {
+    "id": 43020000001,
+    "name": "check",
+    "node_id": "WFR_invented",
+    "head_branch": "wb/2-github-webhooks",
+    "head_sha": "5a1c0e7d3b9f24a6c8e1d0f3b7a2c4e6d8f0a1b2",
+    "path": ".github/workflows/check.yml",
+    "run_number": 2,
+    "run_attempt": 1,
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "workflow_id": 900000030,
+    "check_suite_id": 900000031,
+    "html_url": "https://github.com/muxare/workbench/actions/runs/43020000001",
+    "pull_requests": [
+      {
+        "url": "https://api.github.com/repos/muxare/workbench/pulls/3",
+        "id": 900000010,
+        "number": 3,
+        "head": { "ref": "wb/2-github-webhooks", "sha": "5a1c0e7d3b9f24a6c8e1d0f3b7a2c4e6d8f0a1b2", "repo": { "id": 900000001, "url": "https://api.github.com/repos/muxare/workbench", "name": "workbench" } },
+        "base": { "ref": "main", "sha": "2128c926251523911522601b232e48524e46181e", "repo": { "id": 900000001, "url": "https://api.github.com/repos/muxare/workbench", "name": "workbench" } }
+      }
+    ],
+    "created_at": "2026-11-11T10:20:05Z",
+    "updated_at": "2026-11-11T10:20:44Z",
+    "run_started_at": "2026-11-11T10:20:05Z",
+    "actor": { "login": "workbench-agent[bot]", "id": 900000002, "type": "Bot" },
+    "triggering_actor": { "login": "workbench-agent[bot]", "id": 900000002, "type": "Bot" }
+  },
+  "workflow": {
+    "id": 900000030,
+    "name": "check",
+    "path": ".github/workflows/check.yml",
+    "state": "active"
+  },
+  "repository": {
+    "id": 900000001,
+    "name": "workbench",
+    "full_name": "muxare/workbench",
+    "private": false,
+    "html_url": "https://github.com/muxare/workbench",
+    "default_branch": "main"
+  },
+  "sender": { "login": "workbench-agent[bot]", "id": 900000002, "type": "Bot" }
+}

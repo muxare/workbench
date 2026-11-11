@@ -1,0 +1,62 @@
+{
+  "//": "Trimmed push payload to an existing branch, shaped after GitHub's webhook reference and octokit/webhooks payload-examples push/payload. Shas, ids and the bot account workbench-agent[bot] are invented.",
+  "ref": "refs/heads/wb/2-github-webhooks",
+  "before": "5a1c0e7d3b9f24a6c8e1d0f3b7a2c4e6d8f0a1b2",
+  "after": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+  "created": false,
+  "deleted": false,
+  "forced": false,
+  "base_ref": null,
+  "compare": "https://github.com/muxare/workbench/compare/5a1c0e7d3b9f...9e8d7c6b5a4f",
+  "commits": [
+    {
+      "id": "7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e",
+      "tree_id": "d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f607",
+      "distinct": true,
+      "message": "test(api): record payload fixtures for the webhook",
+      "timestamp": "2026-11-11T11:02:41+01:00",
+      "url": "https://github.com/muxare/workbench/commit/7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e",
+      "author": { "name": "Workbench agent", "email": "agent@example.invalid", "username": "workbench-agent[bot]" },
+      "committer": { "name": "Workbench agent", "email": "agent@example.invalid", "username": "workbench-agent[bot]" },
+      "added": ["apps/api/src/github/webhook.test.ts"],
+      "removed": [],
+      "modified": []
+    },
+    {
+      "id": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+      "tree_id": "e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718",
+      "distinct": true,
+      "message": "docs(api): record the webhook mapping decisions",
+      "timestamp": "2026-11-11T11:09:15+01:00",
+      "url": "https://github.com/muxare/workbench/commit/9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+      "author": { "name": "Workbench agent", "email": "agent@example.invalid", "username": "workbench-agent[bot]" },
+      "committer": { "name": "Workbench agent", "email": "agent@example.invalid", "username": "workbench-agent[bot]" },
+      "added": [],
+      "removed": [],
+      "modified": ["docs/decisions.md"]
+    }
+  ],
+  "head_commit": {
+    "id": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+    "tree_id": "e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718",
+    "distinct": true,
+    "message": "docs(api): record the webhook mapping decisions",
+    "timestamp": "2026-11-11T11:09:15+01:00",
+    "url": "https://github.com/muxare/workbench/commit/9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+    "author": { "name": "Workbench agent", "email": "agent@example.invalid", "username": "workbench-agent[bot]" },
+    "committer": { "name": "Workbench agent", "email": "agent@example.invalid", "username": "workbench-agent[bot]" },
+    "added": [],
+    "removed": [],
+    "modified": ["docs/decisions.md"]
+  },
+  "pusher": { "name": "workbench-agent[bot]", "email": null },
+  "repository": {
+    "id": 900000001,
+    "name": "workbench",
+    "full_name": "muxare/workbench",
+    "private": false,
+    "html_url": "https://github.com/muxare/workbench",
+    "default_branch": "main"
+  },
+  "sender": { "login": "workbench-agent[bot]", "id": 900000002, "type": "Bot" }
+}

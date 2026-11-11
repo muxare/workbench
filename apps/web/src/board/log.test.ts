@@ -27,6 +27,27 @@ describe("describeEvent", () => {
     ).toBe("BE answered on #151: Invented: a cursor.");
   });
 
+  it("describes the events GitHub reports on a card", () => {
+    const base = { id: "g", card_id: "c-151", actor: "t-be", at: "2026-11-06T09:57:00Z" } as const;
+    const pr = "https://github.com/invented/repo/pull/7";
+    expect(
+      describeEvent({ ...base, type: "workspace_linked", workspace: "github", repository: "invented/repo", branch: "wb/151-paging", url: pr }, board),
+    ).toBe("BE linked #151 to the branch wb/151-paging in invented/repo");
+    expect(describeEvent({ ...base, type: "work_pushed", branch: "wb/151-paging", head_sha: "abc", commits: 1, forced: false, url: pr }, board)).toBe(
+      "BE pushed 1 commit to wb/151-paging for #151",
+    );
+    expect(describeEvent({ ...base, type: "work_pushed", branch: "wb/151-paging", head_sha: "abc", commits: 3, forced: true, url: pr }, board)).toBe(
+      "BE pushed 3 commits to wb/151-paging for #151 · forced",
+    );
+    expect(describeEvent({ ...base, type: "review_requested", pull_request: 7, title: "Invented: paging", url: pr }, board)).toBe(
+      "BE asked for a review of #151 · pull request #7: Invented: paging",
+    );
+    expect(describeEvent({ ...base, type: "approved", pull_request: 7, url: pr }, board)).toBe("BE approved #151 · pull request #7");
+    expect(describeEvent({ ...base, type: "changes_requested", pull_request: 7, url: pr }, board)).toBe(
+      "BE requested changes on #151 · pull request #7",
+    );
+  });
+
   it("describes a mode change, which has no card", () => {
     const change = { id: "m", type: "mode_changed", teammate_id: "t-be", actor: "t-be", at: "2026-11-06T09:55:00Z", function_id: "define_api_contract" } as const;
     expect(describeEvent({ ...change, from: "delegate", to: "assist" }, board)).toBe(

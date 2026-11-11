@@ -16,12 +16,24 @@ import { addCard, addCycle, addTeammate, cardRecord, getCard, getTeammate, listT
 /** The repository root; team directories on the command line are relative to it. */
 export const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 
-export const teamFile = z.strictObject({
-  id: z.string().regex(/^[a-z][a-z0-9-]*$/, "expected a lower-case team id"),
-  name: z.string().min(1),
-  teammates: z.array(teammateRecord).min(1),
-  cycle,
-});
+/**
+ * A team file. `github_logins` says which teammate each GitHub account is, so
+ * the webhook endpoint can name the actor of what happens on GitHub; it is
+ * kept here rather than on the teammate, because it is configuration of one
+ * workspace, not part of who the person is on the board.
+ */
+export const teamFile = z
+  .strictObject({
+    id: z.string().regex(/^[a-z][a-z0-9-]*$/, "expected a lower-case team id"),
+    name: z.string().min(1),
+    teammates: z.array(teammateRecord).min(1),
+    cycle,
+    github_logins: z.record(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]*(\[bot\])?$/, "expected a GitHub login"), z.string().min(1)).optional(),
+  })
+  .refine((t) => Object.values(t.github_logins ?? {}).every((id) => t.teammates.some((m) => m.id === id)), {
+    message: "github_logins maps an account to someone who is not a teammate",
+    path: ["github_logins"],
+  });
 export type TeamFile = z.infer<typeof teamFile>;
 
 export const cardsFile = z.strictObject({ cards: z.array(cardRecord) });

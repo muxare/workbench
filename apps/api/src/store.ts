@@ -374,6 +374,18 @@ export async function eventsAfter(db: Db, seq: number): Promise<StoredEvent[]> {
   return rows.map((row) => ({ seq: row.seq, event: fromRow(row) }));
 }
 
+/** Whether the stream holds an event with this id. */
+export async function hasEvent(db: Db, eventId: string): Promise<boolean> {
+  const [row] = await db.select({ seq: events.seq }).from(events).where(eq(events.id, eventId)).limit(1);
+  return row !== undefined;
+}
+
+/** Every event of one type, oldest first; served by the (type, seq) index. */
+export async function eventsOfType<T extends StreamEventType>(db: Db, type: T): Promise<Extract<StreamEvent, { type: T }>[]> {
+  const rows = await db.select().from(events).where(eq(events.type, type)).orderBy(asc(events.seq));
+  return rows.map(fromRow).filter((e): e is Extract<StreamEvent, { type: T }> => e.type === type);
+}
+
 /** The position of the latest event, or 0 for an empty stream. */
 export async function lastSeq(db: Db): Promise<number> {
   const [row] = await db.select({ seq: events.seq }).from(events).orderBy(desc(events.seq)).limit(1);

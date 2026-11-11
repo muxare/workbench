@@ -41,7 +41,7 @@ checks/         # Python validator, until ported to packages/shared
 - **Card**: id, title, function (from `process/functions/`), owner, status, milestone, links to other cards.
 - **Status**: `backlog`, `ready`, `in_progress`, `needs_input`, `review`, `done`. `needs_input` carries `waiting_on` (a teammate, human or AI) and the open question.
 - **Question**: asked by, asked of, card, text, why it blocks, answer, decided by. Answers go into the card's decision log; tacit knowledge goes into `writes_back` proposals.
-- **Event**: append-only, with a subject that is a card, a teammate or the team. Card events (`card_id`): picked, asked, answered, check_ran, status_changed, report_posted. Teammate events (`teammate_id`): mode_changed. Team events (neither id): log_filter_changed. A card's current status is derived from its `status_changed` events rather than stored, as a person's process profile is from their `mode_changed` events.
+- **Event**: append-only, with a subject that is a card, a teammate or the team. Card events (`card_id`): picked, asked, answered, check_ran, status_changed, report_posted, and from the development loop workspace_linked, work_pushed, review_requested, approved and changes_requested, recorded from GitHub webhooks (decided 2026-11-11). Teammate events (`teammate_id`): mode_changed, roles_changed. Team events (neither id): log_filter_changed. A card's current status is derived from its `status_changed` events rather than stored, as a person's process profile is from their `mode_changed` events.
 - **Cycle**: a named time window on the board, such as a sprint. The cycle log is the events that fall inside it.
 
 ## Logs are views of one event stream

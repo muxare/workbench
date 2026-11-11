@@ -50,6 +50,18 @@ export function describeEvent(e: StreamEvent, board: BoardResponse): string {
     }
     case "report_posted":
       return `${who} posted a report on ${card}: ${e.text}`;
+    case "workspace_linked":
+      return `${who} linked ${card} to the branch ${e.branch} in ${e.repository}`;
+    case "work_pushed": {
+      const commits = e.commits === 1 ? "1 commit" : `${String(e.commits)} commits`;
+      return `${who} pushed ${commits} to ${e.branch} for ${card}${e.forced ? " · forced" : ""}`;
+    }
+    case "review_requested":
+      return `${who} asked for a review of ${card} · pull request #${String(e.pull_request)}: ${e.title}`;
+    case "approved":
+      return `${who} approved ${card} · pull request #${String(e.pull_request)}`;
+    case "changes_requested":
+      return `${who} requested changes on ${card} · pull request #${String(e.pull_request)}`;
   }
 }
 

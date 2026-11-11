@@ -300,13 +300,46 @@ export type SetRolesRequest = z.infer<typeof setRolesRequest>;
 export const teammateResponse = z.object({ teammate: humanTeammate });
 export type TeammateResponse = z.infer<typeof teammateResponse>;
 
-export const apiErrorCode = z.enum(["invalid_request", "not_found", "conflict", "forbidden", "rule_violation"]);
+/**
+ * Why the API refused a request. `unauthorized` (401) is a GitHub webhook
+ * whose signature does not match; `unavailable` (503) is the webhook endpoint
+ * when no secret is configured, so it cannot check any signature.
+ */
+export const apiErrorCode = z.enum([
+  "invalid_request",
+  "unauthorized",
+  "not_found",
+  "conflict",
+  "forbidden",
+  "rule_violation",
+  "unavailable",
+]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
-/** Every 4xx body. `reason` is a sentence for people; `issues` lists zod's findings for a bad body. */
+/** Every 4xx body, and the webhook endpoint's 503. `reason` is a sentence for people; `issues` lists zod's findings for a bad body. */
 export const apiError = z.object({
   error: apiErrorCode,
   reason: z.string(),
   issues: z.array(z.object({ path: z.string(), message: z.string() })).optional(),
 });
 export type ApiError = z.infer<typeof apiError>;
+
+/**
+ * What `POST /api/github/webhook` did with one delivery. Every outcome but a
+ * bad signature or a malformed payload is answered 200, so GitHub does not
+ * report or retry a delivery the board chose not to record:
+ * - `recorded`: `events` were appended to the card `card_id`.
+ * - `ignored`: nothing was recorded, because the event is not one the board
+ *   maps, or names no card on the board, or `reason` says otherwise.
+ * - `refused`: the delivery names a card, but recording it would break a
+ *   rule, such as a merge without a person's approval; `reason` says which.
+ * - `duplicate`: the delivery (`X-GitHub-Delivery`) was recorded before.
+ */
+export const webhookResponse = z.object({
+  outcome: z.enum(["recorded", "ignored", "refused", "duplicate"]),
+  delivery: z.string().min(1),
+  card_id: z.string().min(1).optional(),
+  reason: z.string().min(1).optional(),
+  events: z.array(cardEvent),
+});
+export type WebhookResponse = z.infer<typeof webhookResponse>;
