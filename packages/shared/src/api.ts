@@ -80,6 +80,14 @@ export const answerRequest = z.strictObject({ actor: teammateId, answer: z.strin
 export type AnswerRequest = z.infer<typeof answerRequest>;
 
 /**
+ * `POST /cards/:id/reports`: post a report on a card someone is working on
+ * (in progress, waiting for input or in review), such as what the AI did in
+ * an agent session. It appends one `report_posted` event and moves nothing.
+ */
+export const reportRequest = z.strictObject({ actor: teammateId, text: z.string().min(1) });
+export type ReportRequest = z.infer<typeof reportRequest>;
+
+/**
  * `POST /cards/:id/status`: one of the `manualMoves`. `from` must be the
  * card's current state, so two people moving the same card cannot both win.
  */

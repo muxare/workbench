@@ -319,10 +319,80 @@ describe("POST /api/cards/:id/pick", () => {
     });
   });
 
+  describe("by the AI teammate", () => {
+    /** The app over the invented seed with FE's process profile replaced; invented-108 is FE's refine_ui_spec card. */
+    async function withFeProfile(profile: Record<string, "manual" | "assist" | "delegate">) {
+      const fresh = await openDb(":memory:");
+      await seed(fresh, withProfile(inventedSeed, FE, profile), functionIds);
+      return { db: fresh, app: createApp({ db: fresh, functionIds, now: () => new Date("2026-11-07T10:00:00Z") }) };
+    }
+    const pick = (a: ReturnType<typeof createApp>, payload: unknown) =>
+      a.request("/api/cards/invented-108/pick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+    it("picks a card the owner works in delegate, where the AI writes", async () => {
+      const { app: a } = await withFeProfile({ refine_ui_spec: "delegate" });
+      const res = await pick(a, { actor: AI });
+      expect(res.status).toBe(200);
+      expect(writeResponse.parse(await res.json()).events[0]).toMatchObject({ type: "picked", mode: "delegate", actor: AI });
+    });
+
+    it("refuses a card the owner works in manual, where the AI has no part, and appends nothing", async () => {
+      const { app: a, db: fresh } = await withFeProfile({ refine_ui_spec: "manual" });
+      const before = await lastSeq(fresh);
+      await expectProblem(await pick(a, { actor: AI }), 422, "rule_violation", /invented-ai may not pick invented-108: .*manual/);
+      expect(await lastSeq(fresh)).toBe(before);
+    });
+
+    it("lets a person pick the same card in manual", async () => {
+      const { app: a } = await withFeProfile({ refine_ui_spec: "manual" });
+      expect((await pick(a, { actor: FE })).status).toBe(200);
+    });
+
+    it("refuses a card no person opened when the protocol says a person opens", async () => {
+      // Back to backlog and into ready again, both moves made by the AI.
+      await post("/api/cards/invented-108/status", { actor: AI, from: "ready", to: { state: "backlog" } });
+      await post("/api/cards/invented-108/status", { actor: AI, from: "backlog", to: { state: "ready" } });
+      await expectProblem(await post("/api/cards/invented-108/pick", { actor: AI }), 422, "rule_violation", /opens is human/);
+    });
+  });
+
   it("refuses a card owned by an AI teammate, which has no process profile", async () => {
     await post("/api/cards", { actor: PO, title: "Invented: a card the AI owns", function_id: "refine_ui_spec", owner: AI });
     await post("/api/cards/1/status", { actor: PO, from: "backlog", to: { state: "ready" } });
     await expectProblem(await post("/api/cards/1/pick", { actor: PO }), 422, "rule_violation", /AI teammate/);
+  });
+});
+
+describe("POST /api/cards/:id/reports", () => {
+  const report = { actor: AI, text: "Invented: drafted the booking rules on wb/108-booking." };
+
+  it("appends a report_posted event on a card in progress and moves nothing", async () => {
+    await post("/api/cards/invented-108/pick", { actor: AI });
+    const res = await post("/api/cards/invented-108/reports", report);
+    expect(res.status).toBe(200);
+    const out = writeResponse.parse(await res.json());
+    expect(out.card.status).toEqual({ state: "in_progress" });
+    expect(out.events).toEqual([
+      { id: expect.any(String), type: "report_posted", card_id: "invented-108", actor: AI, at: "2026-11-07T10:00:00.000Z", text: report.text },
+    ]);
+  });
+
+  it("refuses a card nobody is working on, and appends nothing", async () => {
+    const before = await lastSeq(db);
+    await expectProblem(await post("/api/cards/invented-108/reports", report), 409, "conflict", /ready; a report is posted on a card in in_progress/);
+    await expectProblem(await post("/api/cards/invented-104/reports", report), 409, "conflict", /done/);
+    expect(await lastSeq(db)).toBe(before);
+  });
+
+  it("refuses an empty report, an unknown actor and an unknown card", async () => {
+    await post("/api/cards/invented-108/pick", { actor: AI });
+    await expectProblem(await post("/api/cards/invented-108/reports", { actor: AI, text: "" }), 400, "invalid_request", /text/);
+    await expectProblem(await post("/api/cards/invented-108/reports", { actor: "invented-ghost", text: "x" }), 422, "rule_violation", /ghost/);
+    await expectProblem(await post("/api/cards/invented-nope/reports", report), 404, "not_found");
   });
 });
 

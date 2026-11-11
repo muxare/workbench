@@ -25,7 +25,7 @@
 // card moved while it was being handled, is refused the same way. Events are
 // stored, not the payloads.
 import type { CardEvent, CardStatus, WebhookResponse } from "@workbench/shared";
-import { cardEvent } from "@workbench/shared";
+import { cardEvent, cardIdFromBody, cardIdFromBranch } from "@workbench/shared";
 import type { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { appendEvents, cardLog, eventsOfType, getCard, getTeammate, hasEvent, StoreError } from "../store.ts";
@@ -85,16 +85,6 @@ const ignore = (reason: string, cardId?: string): Plan => ({ kind: "ignore", rea
  */
 export function eventIdFor(deliveryId: string, index: number): string {
   return `github-${deliveryId}-${String(index)}`;
-}
-
-/** The card a branch names: `wb/<card id>-<short title>`, card ids being numbers. */
-export function cardIdFromBranch(branch: string): string | undefined {
-  return /^wb\/(\d+)-./.exec(branch)?.[1];
-}
-
-/** The card a pull request body names with a line such as `Workbench: #12`. */
-export function cardIdFromBody(body: string | null): string | undefined {
-  return body === null ? undefined : /\bWorkbench:\s*#(\d+)\b/.exec(body)?.[1];
 }
 
 function cardIdForPullRequest(pr: { body: string | null; head: { ref: string } }): string | undefined {

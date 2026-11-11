@@ -12,6 +12,14 @@ import { ownerMode, unfinishedDependencies, type Card, type CardEvent, type Func
  */
 export const TEAMMATE_MODES: readonly Mode[] = ["assist"];
 
+/**
+ * The modes the AI teammate works in when it works from an agent session,
+ * such as Claude Code through the MCP server (apps/mcp), and picks a card with
+ * `POST /cards/:id/pick`. There it can write as well as ask, so `delegate` is
+ * one of them; `manual` never is, because its protocol gives the AI no part.
+ */
+export const SESSION_MODES: readonly Mode[] = ["assist", "delegate"];
+
 /** Protocol values under which the AI may ask questions. */
 const AI_ASKS = new Set(["ai", "both"]);
 
@@ -29,13 +37,14 @@ export type Eligibility =
 export function workableMode(
   definition: FunctionFrontMatter,
   mode: Mode,
+  modes: readonly Mode[] = TEAMMATE_MODES,
 ): { ok: true; protocol: Protocol } | { ok: false; reason: string } {
   const refuse = (reason: string) => ({ ok: false as const, reason });
   if (!definition.modes.allowed.includes(mode)) {
     return refuse(`mode '${mode}' is not in ${definition.name}'s modes.allowed (${definition.modes.allowed.join(", ")})`);
   }
-  if (!TEAMMATE_MODES.includes(mode)) {
-    return refuse(`the owner works ${definition.name} in '${mode}'; this teammate works only in ${TEAMMATE_MODES.join(", ")}`);
+  if (!modes.includes(mode)) {
+    return refuse(`the owner works ${definition.name} in '${mode}'; this teammate works only in ${modes.join(", ")}`);
   }
   const protocol = definition.protocols[mode];
   if (!protocol) return refuse(`${definition.name} has no protocol for '${mode}'`);
@@ -52,7 +61,9 @@ export function workableMode(
  * 3. The mode is the owner's choice for the function, or the function's
  *    `modes.default` when the owner has not chosen one, and that mode is in
  *    the function's `modes.allowed`.
- * 4. The mode is one this teammate works in (TEAMMATE_MODES).
+ * 4. The mode is one this teammate works in: `modes`, which is
+ *    TEAMMATE_MODES for the runner and SESSION_MODES for a pick from an agent
+ *    session.
  * 5. The mode's protocol lets the AI ask (`asks` is `ai` or `both`) and is
  *    decided by a human.
  * 6. If the protocol's `opens` is `human`, the card was moved into Ready by a
@@ -64,6 +75,7 @@ export function checkEligibility(
   definitions: ReadonlyMap<string, FunctionFrontMatter>,
   teammates: readonly Teammate[],
   cards: readonly Card[],
+  modes: readonly Mode[] = TEAMMATE_MODES,
 ): Eligibility {
   const refuse = (reason: string): Eligibility => ({ eligible: false, card, reason: `${card.id}: ${reason}` });
 
@@ -78,7 +90,7 @@ export function checkEligibility(
   if (owner?.kind !== "human") return refuse(`owner ${card.owner} is not a human teammate`);
 
   const mode = ownerMode(owner, definition);
-  const work = workableMode(definition, mode);
+  const work = workableMode(definition, mode, modes);
   if (!work.ok) return refuse(work.reason);
   const { protocol } = work;
 

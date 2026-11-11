@@ -10,7 +10,7 @@ import { loadFunctionIds } from "../process.ts";
 import { addCard, addTeammate, appendEvents, cardLog, cardStatus } from "../store.ts";
 import { formatGithubLogins, parseGithubLogins } from "./logins.ts";
 import { signBody, validSignature } from "./signature.ts";
-import { cardIdFromBody, cardIdFromBranch, eventIdFor } from "./webhook.ts";
+import { eventIdFor } from "./webhook.ts";
 
 const SECRET = "invented-webhook-secret";
 const NOW = "2026-11-11T12:00:00.000Z";
@@ -499,23 +499,6 @@ describe("pull_request merged", () => {
     await ignored("pull_request", tweak(fixture("pull_request.closed.merged"), "pull_request.merged", false), /closed without merging/);
     await moveCard2("ready", "in_progress", "review", "done");
     await ignored("pull_request", fixture("pull_request.closed.merged"), /already done/);
-  });
-});
-
-describe("card names", () => {
-  it("reads the card from a branch named wb/<card id>-<short title>", () => {
-    expect(cardIdFromBranch("wb/2-github-webhooks")).toBe("2");
-    expect(cardIdFromBranch("wb/12-x")).toBe("12");
-    expect(cardIdFromBranch("wb/2")).toBeUndefined();
-    expect(cardIdFromBranch("wb/two-x")).toBeUndefined();
-    expect(cardIdFromBranch("feature/wb/2-x")).toBeUndefined();
-  });
-
-  it("reads the card from a body line Workbench: #<card id>", () => {
-    expect(cardIdFromBody("Text.\n\nWorkbench: #2")).toBe("2");
-    expect(cardIdFromBody("Workbench:#14 and more")).toBe("14");
-    expect(cardIdFromBody("Fixes #2")).toBeUndefined();
-    expect(cardIdFromBody(null)).toBeUndefined();
   });
 });
 
