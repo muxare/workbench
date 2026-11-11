@@ -8,6 +8,8 @@ This file is the source of truth for the plan (decided 2026-11-08). The claude.a
 
 Current status, open questions for Mikael and the next tasks live in `docs/next.md`. This plan holds the goal, decisions and phases.
 
+2026-11-11: After ConCon the work moves on to the development loop: a card links to the branch and pull request where its work happens, and GitHub reports the result back to the board. It is built on this repository first, in four stages. The ConCon demo is frozen at the git tag `concon-demo`, so the product is no longer shaped around it. The design is in `docs/dev-loop.md`, the reasons in `docs/decisions.md`.
+
 2026-11-08: The direction is now a working product, built on the process model and demoed at ConCon on 2026-11-18 at whatever stage it has reached. The first UI follows the Claude Design concept in `docs/design/`. The stack is full-stack TypeScript. Stack, layout, domain model and first slice are in `docs/architecture.md`; reasons are in `docs/decisions.md`.
 
 2026-10-23: Phase 0 and Phase 1 were drafted. The template is version 1, in markdown with YAML front matter. All four segment functions were reviewed on 2026-10-26.
@@ -28,6 +30,7 @@ The function model comes first, because the UI is generated from it and the mode
 - **The board is the hub, and the AI is a teammate.** Humans and the AI pick cards; each person's process profile sets the mode the AI works in. A question to a person or an AI moves the card to Needs input.
 - **One event stream, three logs.** The card, board and cycle logs are views of the same append-only events, which also feed the learning layer.
 - **Own board first, external trackers later.** Card storage sits behind an interface so GitHub Issues can be the source later.
+- **The work happens in GitHub, and the board hears about it.** A card links to its branch and pull request; webhooks turn pushes, CI runs and reviews into card events; a card is done only after a person approves. An MCP server over the API lets agents take part. The workbench repository is the first project.
 - **Artifacts are the unit.** A function is defined by the artifacts it reads and writes. A handoff is an artifact made in one role and used in another.
 - **Modes are conversation protocols, not automation levels.** Each mode sets who opens the work, who asks, who writes and who decides. Deciding stays human.
 - **Every function has a three-layer check.** A structural check in deterministic code, a consistency check by an AI critic, then human approval.
@@ -74,7 +77,7 @@ Six phases, each closed by a gate. Each phase feeds back to the template when it
 
 The live list of questions for Mikael, with recommendations, is in `docs/next.md`. Longer-range questions:
 
-- [ ] During a run, do artifacts live only as repo files, or also as links to Figma and Docs?
+- [ ] During a run, do artifacts live only as repo files, or also as links to Figma and Docs? For code, answered on 2026-11-11: work lives on a branch and in a pull request linked to the card (`docs/dev-loop.md`). Figma and documents are still open.
 - [x] Claude Code only at first, or model-agnostic from the start? Instructions live in `AGENTS.md` for every agent; the app's AI sits behind a provider interface.
 - [ ] What does the learning layer record from the first run: check failures, rework, review time?
 - [ ] When, if ever, does the workbench merge with the dependency tree builder?
