@@ -8,7 +8,7 @@
 // `mode_changed` events, their roles from their `roles_changed` events, and
 // the team's log filters from the `log_filter_changed` events, in the same
 // way. The filters are a view setting: no query here applies them.
-import { and, asc, desc, eq, gt, gte, inArray, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   card as cardSchema,
   cardEvent,
@@ -455,6 +455,30 @@ export async function addCard(db: Db, input: CardRecord, functionIds: ReadonlySe
     milestone: c.milestone ?? null,
     links: c.links,
   });
+}
+
+/**
+ * Add a card under the next number: one more than the highest card id on the
+ * board that is a plain number ("1", "2", …), or "1" when there is none. Ids
+ * that are not plain numbers, such as an old UUID or "invented-101", are
+ * ignored. The number is read and the row written in one INSERT … SELECT,
+ * and SQLite runs a statement under its write lock, so two creates at the
+ * same time, from this process or another, cannot take the same number.
+ * Answers with the new card's id.
+ */
+export async function addNumberedCard(db: Db, input: Omit<CardRecord, "id">, functionIds: ReadonlySet<string>): Promise<string> {
+  const c = cardRecord.omit({ id: true }).parse(input);
+  if (!functionIds.has(c.function_id)) {
+    throw new StoreError(`no function '${c.function_id}' in process/functions`, "unknown_function");
+  }
+  const row = await db.get<{ id: string }>(sql`
+    INSERT INTO ${cards} (id, title, function_id, owner, milestone, links)
+    SELECT CAST(COALESCE(MAX(CAST(id AS INTEGER)), 0) + 1 AS TEXT),
+      ${c.title}, ${c.function_id}, ${c.owner}, ${c.milestone ?? null}, ${JSON.stringify(c.links)}
+    FROM ${cards}
+    WHERE id GLOB '[1-9]*' AND id NOT GLOB '*[^0-9]*'
+    RETURNING id`);
+  return row.id;
 }
 
 /** One teammate; a person comes with their roles and process profile derived from their teammate events. */

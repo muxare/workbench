@@ -2,6 +2,10 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-11: A new card's number is read and written in one SQL statement (by Claude)
+
+`POST /cards` now names a new card one more than the highest card id on the board that is a plain number, or "1" on a board with none, as the decision "New cards get the next number, not a UUID" asked. Ids that are not plain numbers, such as an old UUID or the invented seed's "invented-101", are ignored, as are ids with a leading zero. The store does this in `addNumberedCard` with a single `INSERT … SELECT MAX(…) + 1 … RETURNING id` rather than reading the highest number first and inserting after it. SQLite runs each statement under its write lock, so two creates at the same time, whether two requests in the server or the server and a `team:cards` run on the same file, cannot both see the same highest number; this needs neither a transaction around two statements nor a retry on a primary-key conflict. A consequence on the invented seed is that the first card created through the API is "1", because none of the seeded ids is a plain number. This would change if the numbering had to survive deleting the highest card without reusing its number, which would need a counter of its own; cards are never deleted today.
+
 ## 2026-11-11: A GitHub Actions workflow runs `pnpm check` on every pull request (by Claude)
 
 This is the first task of stage 2 in `docs/dev-loop.md` and card #1 on the workbench board: the structural check that later reaches a card as `check_ran`.

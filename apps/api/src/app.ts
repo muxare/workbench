@@ -65,7 +65,7 @@ import { buildAiProfile } from "./aiProfile.ts";
 import { buildProfile } from "./profile.ts";
 import { eventStream, startingPoint } from "./sse.ts";
 import {
-  addCard,
+  addNumberedCard,
   appendEvents,
   boardLog,
   cardLog,
@@ -91,7 +91,7 @@ export interface AppDeps {
   functionIds: ReadonlySet<string>;
   /** The clock for event times; tests pass a fixed one. */
   now?: () => Date;
-  /** New card, question and event ids. */
+  /** New question and event ids. A new card takes the next number instead (see `addNumberedCard`). */
   newId?: () => string;
   /** What does the AI teammates' work. Defaults to the deterministic stub. */
   teammateProvider?: TeammateProvider;
@@ -232,11 +232,9 @@ export function createApp(deps: AppDeps) {
       await teammateOr422(req.actor, "actor");
       await teammateOr422(req.owner, "owner");
       for (const link of req.links) await cardOr404(link.card_id);
-      const id = newId();
-      await addCard(
+      const id = await addNumberedCard(
         db,
         {
-          id,
           title: req.title,
           function_id: req.function_id,
           owner: req.owner,
