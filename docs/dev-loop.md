@@ -35,7 +35,7 @@ Each layer of the check already has a tool here, though not all of it reports an
 
 The structural check is `pnpm check`: lint, typecheck, tests and the process validator. It runs in the Stop hook in a local Claude Code session, and since 2026-11-11 also on GitHub, in the workflow `check` (`.github/workflows/check.yml`) on every pull request and every push to `main`. A completed run on a pull request is what reaches the card as `check_ran`.
 
-The AI critic is a review by an agent that has not seen the code being written: the `design-reviewer` subagent for screens, a code review for the rest. Its findings are posted on the pull request as comments, and it never approves.
+The AI critic is a review by an agent that has not seen the code being written: the `design-reviewer` subagent for screens, a code review for the rest. Its findings are posted on the pull request as a review by the App, and it never approves. Since 2026-11-11 that review reaches the card as `check_ran` with `check: "consistency"` on the pull request: a review that only comments (or approves) is a pass, and a review that requests changes is a fail. Whether the critic must pass before a person's approval counts is a per-function setting, off unless someone turns it on (`POST /api/functions/:id/critic-gate`).
 
 The human check is Mikael's approval of the pull request. `main` is protected so that a change needs a pull request and a passing `check`, but GitHub cannot require his approval: it refuses self-approval, so a required approval would lock him out of his own changes. The workbench holds that gate instead, moving a card to done on merge only after a person's approval (decided 2026-11-11; see `docs/decisions.md`). Once every pull request is opened by the AI or a second person joins, GitHub is to require one approval as well.
 
@@ -50,11 +50,12 @@ There are three directions, and each has its own mechanism.
 | GitHub event | Card event |
 | --- | --- |
 | A branch named for the card is pushed | `workspace_linked` the first time the card sees the branch, and `work_pushed` for every push that carries commits, the first included; a push with no commits records nothing more |
-| A pull request for the card is opened (not as a draft), marked ready, or has a reviewer requested again | `review_requested`, and a card in progress moves to review |
+| A pull request for the card is opened (not as a draft), marked ready, or has a reviewer requested again | `review_requested`, and a card in progress moves to review if the sender may move it: the card's owner always, the AI only where the protocol of the owner's mode for the card's function has the AI write (`delegate` in every function file today); otherwise the answer says why the card stayed |
 | A completed run of the workflow `check` on the pull request (`workflow_run`) | `check_ran` with `check: "structural"`, passed on `success` and failed on `failure`, `timed_out`, `startup_failure` or `action_required`; every other conclusion, and runs on `main`, are skipped |
 | A person approves the pull request | `approved` |
-| A person requests changes | `changes_requested`, and a card in review moves back to in progress |
-| The pull request is merged | `status_changed` from review to `done`, allowed only when the card is in review and the latest verdict on that pull request is an `approved` by a person; otherwise nothing is recorded and the answer says why |
+| A person requests changes | `changes_requested`, and a card in review moves back to in progress if the reviewer may move it, by the same rule as the move to review |
+| The AI teammate reviews the pull request (the AI critic) | `check_ran` with `check: "consistency"` and the pull request's number: passed for a review that comments or approves, failed for one that requests changes, which also records `changes_requested` and moves the card back as a person's would, if the AI may move it; an AI's review is never recorded as `approved` |
+| The pull request is merged | `status_changed` from review to `done`, allowed only when the card is in review and the latest verdict on that pull request is an `approved` by a person, and, where the card's function requires the AI critic, its latest review of that pull request passed before that approval; otherwise nothing is recorded and the answer says why |
 
 Everything else answers 200 and records nothing. The reasons for each choice are in `docs/decisions.md`.
 
@@ -64,7 +65,7 @@ While the API runs on Mikael's machine, GitHub cannot reach it directly. During 
 
 ## The loop in two diagrams
 
-The first diagram shows the pieces as they ran on 2026-11-11 and how they connect. Everything on the left runs on Mikael's machine; everything on the right is GitHub. The two directions use different mechanisms on purpose: the AI reaches GitHub as the App `workbench-ai-muxare`, with an installation token that a Claude Code session mints from the App's private key, so that what it pushes and opens is not Mikael's and he can approve it; GitHub reaches the workbench only through repository webhooks, which `gh webhook forward` carries to the API because the API is not reachable from the internet. There are two gates on a pull request, and they sit on different sides: GitHub refuses a merge to `main` without a pull request and a passing `check`, while the workbench refuses to move a card to done unless the latest verdict on its pull request is a person's approval. GitHub cannot hold the second gate, because it requires no approvals while Mikael cannot approve his own pull requests. The dotted line from `main` back to the API and the board is the unusual part of this project: the app being developed is this same repository, so a merged pull request changes the workbench that recorded it.
+The first diagram shows the pieces as they ran on 2026-11-11 and how they connect. Everything on the left runs on Mikael's machine; everything on the right is GitHub. The two directions use different mechanisms on purpose: the AI reaches GitHub as the App `workbench-ai-muxare`, with an installation token that a Claude Code session mints from the App's private key, so that what it pushes and opens is not Mikael's and he can approve it; GitHub reaches the workbench only through repository webhooks, which `gh webhook forward` carries to the API because the API is not reachable from the internet. There are two gates on a pull request, and they sit on different sides: GitHub refuses a merge to `main` without a pull request and a passing `check`, while the workbench refuses to move a card to done unless the latest verdict on its pull request is a person's approval (and, where the card's function requires it, the AI critic passed before that approval). GitHub cannot hold the second gate, because it requires no approvals while Mikael cannot approve his own pull requests. The dotted line from `main` back to the API and the board is the unusual part of this project: the app being developed is this same repository, so a merged pull request changes the workbench that recorded it.
 
 ```mermaid
 flowchart LR
@@ -113,7 +114,7 @@ flowchart LR
   main -.-> web
 ```
 
-The second diagram follows one card from pick to done, as card #3 and pull request #1 went on 2026-11-11. Each webhook delivery and the card events it records are shown together, so the diagram can be read against the table above. Changes requested and a failed check were not exercised in that run, so they are left out; per the table they would move the card back to in progress or record a failed `check_ran`.
+The second diagram follows one card from pick to done, as card #3 and pull request #1 went on 2026-11-11. Each webhook delivery and the card events it records are shown together, so the diagram can be read against the table above. Changes requested and a failed check were not exercised in that run, so they are left out; per the table they would move the card back to in progress or record a failed `check_ran`. The move to review at step 6 was made by the AI on a card Mikael owns and works in `assist`; since the rule of 2026-11-11 that moves follow the owner's mode, the same delivery records `review_requested` but leaves the card in progress, and Mikael moves it to review himself.
 
 ```mermaid
 sequenceDiagram
