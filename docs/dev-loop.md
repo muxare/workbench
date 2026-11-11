@@ -62,6 +62,90 @@ While the API runs on Mikael's machine, GitHub cannot reach it directly. During 
 
 **Between the agent doing the work and the workbench**, an MCP server wraps the existing REST API. The API stays the one place where rules are enforced, and the MCP server only gives agents a way to use it: list and read cards with their function definition, pick a card, ask a person a question on the card and wait for the answer, post a report, and link a branch. It is what lets the AI in a Claude Code session stop and ask instead of guessing. It also lets anyone working in Claude Code pick a card from the terminal.
 
+## The loop in two diagrams
+
+The first diagram shows the pieces as they ran on 2026-11-11 and how they connect. Everything on the left runs on Mikael's machine; everything on the right is GitHub. The two directions use different mechanisms on purpose: the AI reaches GitHub as the App `workbench-ai-muxare`, with an installation token that a Claude Code session mints from the App's private key, so that what it pushes and opens is not Mikael's and he can approve it; GitHub reaches the workbench only through repository webhooks, which `gh webhook forward` carries to the API because the API is not reachable from the internet. There are two gates on a pull request, and they sit on different sides: GitHub refuses a merge to `main` without a pull request and a passing `check`, while the workbench refuses to move a card to done unless the latest verdict on its pull request is a person's approval. GitHub cannot hold the second gate, because it requires no approvals while Mikael cannot approve his own pull requests. The dotted line from `main` back to the API and the board is the unusual part of this project: the app being developed is this same repository, so a merged pull request changes the workbench that recorded it.
+
+```mermaid
+flowchart LR
+  subgraph machine["Mikael's machine"]
+    claude["Claude Code session"]
+    tokencli["github:token CLI"]
+    key[("App private key, outside the repo")]
+    api["workbench API, team:serve teams/workbench, port 3000"]
+    db[("teams/workbench/board.db")]
+    web["web board, apps/web, Vite port 5173"]
+    fwd["gh webhook forward"]
+    mikael(["Mikael"])
+  end
+
+  subgraph github["GitHub: muxare/workbench"]
+    app["GitHub App workbench-ai-muxare"]
+    branch["branch wb/card id-title"]
+    pr["pull request, body says Workbench: #card id"]
+    check["Actions workflow check"]
+    review["review by Mikael"]
+    main["protected main"]
+    hook["temporary repository webhook"]
+  end
+
+  key --> tokencli
+  claude -- "mints token" --> tokencli
+  tokencli -- "JWT for installation token" --> app
+  claude -- "push and open PR as workbench-ai-muxare[bot]" --> branch
+  branch --> pr
+  pr --> check
+  mikael --> review
+  review --> pr
+  pr -- "merge needs check passing and a PR" --> main
+
+  branch -. push .-> hook
+  pr -. "pull_request" .-> hook
+  review -. "pull_request_review" .-> hook
+  check -. "workflow_run" .-> hook
+  hook --> fwd
+  fwd -- "POST /api/github/webhook" --> api
+  api -- "card events, done only after a person approved" --> db
+  api -- "SSE /api/events" --> web
+  mikael --> web
+
+  main -. "a merged PR changes this same repo" .-> api
+  main -.-> web
+```
+
+The second diagram follows one card from pick to done, as card #3 and pull request #1 went on 2026-11-11. Each webhook delivery and the card events it records are shown together, so the diagram can be read against the table above. Changes requested and a failed check were not exercised in that run, so they are left out; per the table they would move the card back to in progress or record a failed `check_ran`.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor M as Mikael
+  participant B as Board and API
+  participant C as Claude Code
+  participant G as GitHub
+  participant A as check workflow
+
+  M->>B: move card #35;3 to ready and pick it
+  C->>C: github:token muxare/workbench
+  C->>G: push wb/3-... as workbench-ai-muxare[bot]
+  G->>B: push via gh webhook forward
+  Note over B: workspace_linked, work_pushed
+  C->>G: open PR #35;1, body says Workbench: #35;3
+  G->>B: pull_request opened
+  Note over B: review_requested, in progress to review
+  G->>A: run pnpm check on the PR
+  A-->>G: success
+  G->>B: workflow_run completed
+  Note over B: check_ran structural, passed
+  M->>G: approve PR #35;1
+  G->>B: pull_request_review approved
+  Note over B: approved, by a person
+  M->>G: merge PR #35;1 into main
+  Note over G: GitHub gate: PR plus passing check, 0 approvals
+  G->>B: pull_request closed, merged
+  Note over B: workbench gate: latest verdict is a person's approval, so review to done
+  B-->>M: board updates live over SSE
+```
+
 ## Stages
 
 Each stage is useful on its own, and each one shows what the next one needs.
