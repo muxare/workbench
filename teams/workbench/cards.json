@@ -15,6 +15,14 @@
       "owner": "mikael",
       "milestone": "Development loop, stage 2",
       "links": []
+    },
+    {
+      "id": "3",
+      "title": "Let the AI act on GitHub as the workbench's GitHub App: mint an installation token, and map the App's bot account to the AI teammate",
+      "function_id": "implement_services",
+      "owner": "mikael",
+      "milestone": "Development loop, stage 2",
+      "links": []
     }
   ]
 }
