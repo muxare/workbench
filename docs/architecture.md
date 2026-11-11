@@ -30,6 +30,7 @@ apps/
 packages/
   shared/       # zod schemas for cards, events, teammates, function files
 process/        # the process model (unchanged)
+teams/          # real teams: team.json and cards.json checked in, board.db ignored
 checks/         # Python validator, until ported to packages/shared
 ```
 

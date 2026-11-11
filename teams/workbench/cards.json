@@ -1,0 +1,20 @@
+{
+  "cards": [
+    {
+      "id": "1",
+      "title": "Add a GitHub Actions workflow that runs pnpm check on every pull request",
+      "function_id": "implement_services",
+      "owner": "mikael",
+      "milestone": "Development loop, stage 2",
+      "links": []
+    },
+    {
+      "id": "2",
+      "title": "Build the webhook endpoint in apps/api with the mapping in docs/dev-loop.md, tested against recorded payloads",
+      "function_id": "implement_services",
+      "owner": "mikael",
+      "milestone": "Development loop, stage 2",
+      "links": []
+    }
+  ]
+}
