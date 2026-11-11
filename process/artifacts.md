@@ -131,6 +131,71 @@ artifacts:
     made_by: write_handoff_spec
     format: markdown list
     fields: [given, when, then]
+
+  # The coding functions the development loop needs (docs/dev-loop.md)
+  - id: tasks
+    name: Backend tasks
+    owner: be
+    made_by: write_spec_and_tasks
+    format: markdown list
+    fields: [title, acceptance_test, size, depends_on]
+    note: Supplied by hand until write_spec_and_tasks is drafted; on a board, a card's description can stand in for one task.
+  - id: backend_spec
+    name: Backend spec
+    owner: be
+    made_by: write_spec_and_tasks
+    format: markdown
+    fields: [scope, behavior, data_changes, errors]
+  - id: ui_components
+    name: UI components
+    owner: fe
+    made_by: scaffold_components
+    format: code in the repository
+    fields: [components, props, stories]
+  - id: api_mocks
+    name: API mocks
+    owner: team
+    made_by: agree_contract
+    format: code in the repository
+    fields: [endpoints, examples]
+  - id: bug_report
+    name: Bug report
+    owner: team
+    made_by: debug_failure
+    format: markdown
+    fields: [observed, expected, steps_to_reproduce, where, severity]
+    note: Supplied by hand until debug_failure is drafted; a person who finds a bug writes one directly.
+  - id: service_code
+    name: Service code
+    owner: be
+    made_by: implement_services
+    format: commits on a branch
+    fields: [branch, card, summary, tests]
+  - id: working_ui
+    name: Working UI
+    owner: fe
+    made_by: implement_interactions
+    format: commits on a branch
+    fields: [branch, card, screens, states, tests]
+  - id: bug_fix
+    name: Bug fix
+    owner: team
+    made_by: fix_bug
+    format: commits on a branch
+    fields: [branch, card, cause, reproduction_test, summary]
+  - id: pull_request
+    name: Pull request
+    owner: team
+    made_by: open_pull_request
+    format: pull request on the code host
+    fields: [title, card, branch, summary, how_tested, risks]
+  - id: approved_change
+    name: Approved change
+    owner: team
+    made_by: review_pull_request
+    format: approved pull request
+    fields: [pull_request, approver, findings, resolution]
+    note: findings are the AI critic's and the reviewer's comments; resolution says for each whether it was fixed or accepted on purpose.
 ---
 
 # Artifact list
@@ -144,6 +209,7 @@ This first version covers the phase 1 segment: frame_problem → write_issues �
 - `made_by: external` means the artifact comes from outside the team's chain, or is standing context nobody in the chain produces.
 - `fields` are the required fields. The structural check of the function that makes the artifact verifies them.
 - An artifact made in one role and used in another is a **handoff**. In this segment: `problem_statement`, `success_criteria` (ux → team), `issues` (team → fe), `refined_ui_spec` (fe → be), `design_questions` (fe → ux).
+- The coding functions added on 2026-11-11 (`implement_services`, `implement_interactions`, `fix_bug`, `open_pull_request`, `review_pull_request`) hand code to each other as commits on a branch: `service_code`, `working_ui` and `bug_fix` go into `open_pull_request`, and its `pull_request` goes into `review_pull_request`. Their inputs from steps not yet drafted (`tasks`, `backend_spec`, `ui_components`, `api_mocks`, `bug_report`) are supplied by hand, like `ui_spec`.
 
 ## Artifact files
 
