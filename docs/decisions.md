@@ -2,6 +2,16 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-11: The development loop is built on the workbench repository itself (with Mikael)
+
+Mikael took the three recommendations below on 2026-11-11. The design is in `docs/dev-loop.md`.
+
+- **The workbench is the first project the development loop runs against**, on `muxare/workbench`. It is the one repository where a GitHub App can be installed and `main` protected without asking anyone, and every card on its board is work the workbench needs anyway. It is an unusual project, with one person in every role, so it shows little about handoffs between people. Would change if a second project is ready before stage 2.
+- **Work moves from local merges to pull requests in stage 2.** `main` is protected so every change needs a pull request approved by Mikael, and a CI workflow runs `pnpm check` on each one. The loop cannot be seen without pull requests, and branch protection enforces that a person decides. Until stage 2, branches are merged to `main` locally as before.
+- **Dogfooding does not replace the Phase 2 run.** Phase 2 runs the segment by hand on a past project with a real team, which is what tests the handoffs between roles; this repository has one person and cannot. Question 1 in `docs/next.md` stays open.
+- **`docs/next.md` stays the source of truth until stage 3 works**, with the board holding the same tasks as cards in the meantime, kept in step by hand. Then the board takes over, and whether `next.md` is generated or retired is decided at that point.
+- **Correction to the chat of 2026-11-09:** Claude said `pnpm check` already runs in CI. It does not; the repository has no `.github/` and the check runs only in the local Stop hook. Stage 2 adds the CI workflow.
+
 ## 2026-11-09: The demo is frozen at a tag, and the app moves on to the development loop (with Mikael)
 
 - **The ConCon demo runs from the annotated tag `concon-demo` at `35beb00`**, the commit `docs/demo.md` was last dry-run against. Mikael wants a demo that can be controlled and repeated, but he does not want the product shaped around it. A tag gives both: work on `main` continues freely, and the demo machine checks out the tag. The tag is local until Mikael asks for it to be pushed. Would change if the demo needs a fix, in which case the fix is made on a branch from the tag and the tag is moved.

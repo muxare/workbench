@@ -1,6 +1,6 @@
 # Next
 
-Last updated 2026-11-09 by Claude.
+Last updated 2026-11-11 by Claude.
 
 ## Where the work stands
 
@@ -23,7 +23,7 @@ Last updated 2026-11-09 by Claude.
 - The ConCon demo script is in `docs/demo.md` (reseed, run the AI, answer on the card, change a mode, filter the cycle log, show the AI's profile). On 2026-11-09 it was updated for the cycle log panel and Sprint 4 and dry-run again end to end against a fresh scratch database in Chrome with no console errors; it lists two small known issues seen on screen, neither of which breaks the demo. Seed on the day of the talk or at most eleven days before.
 - Merged on 2026-11-09 from `feat/cycle-log-panel`: the panel under the board shows the current cycle's log under the cycle filter, and the board title names the cycle; the board filter has no screen. The current cycle is the one holding the server's clock, or between cycles the one that ended last. Also merged: the invented seed adds a running Sprint 4, set two days before the seed runs and two weeks long, so live events enter the cycle log on the demo day; only #108's move to Ready is seeded in it. `pnpm check` passes. See `docs/decisions.md`.
 - The ConCon demo is frozen at the local annotated tag `concon-demo` (`35beb00`, set 2026-11-09, not pushed); `docs/demo.md` says to check it out. Work on `main` no longer has to serve the demo.
-- Direction decided with Mikael on 2026-11-09: next comes the development loop, where a card links to the place its work happens and the result returns as events, with GitHub as the first workspace. See `docs/decisions.md`.
+- Direction decided with Mikael on 2026-11-09: next comes the development loop, where a card links to the place its work happens and the result returns as events, with GitHub as the first workspace. On 2026-11-11 Mikael decided it is built on this repository first, in four stages; the design is in `docs/dev-loop.md`. Until stage 2, branches are merged to `main` locally as before.
 - The `design-reviewer` subagent type still cannot be spawned (2026-11-08 and 2026-11-09); reviews run through a general-purpose agent given its definition.
 - Decided with Mikael on 2026-11-09: the workbench is developed and demoed on one invented example project, a housing cooperative's laundry room booking and fault reporting, designed to stress the chain. It does not replace the Phase 2 run on a real project. See `docs/decisions.md`.
 - Decided with Mikael on 2026-11-08: the template lists the protocols' optional `note`, and a card with an unfinished `depends_on` cannot be picked (shared rule in `packages/shared`, used by the AI teammate and the API pick).
@@ -33,9 +33,16 @@ Last updated 2026-11-09 by Claude.
 1. **Which past project for the Phase 2 run?** Not needed before ConCon on 2026-11-18. Recommendation: choose it in the week after ConCon and run Phase 2 before adding any template field for failed checks or waiting on another role, because that run is what shows whether those fields are needed.
 2. **What to do about the four gaps the laundry room example found in `process/`** (listed in `examples/laundry-room/README.md`, rechecked against `docs/reference/team-process-map.md` on 2026-11-09): `refine_ui_spec` cannot propose a constraint, a card cannot wait on someone outside the team, open proposals are invisible to later steps, and `business_goals` has no owner per goal. The map answers none of them. Recommendation: change nothing in `process/` before ConCon and decide each one after the Phase 2 run, because a project we wrote ourselves cannot tell which gaps a real team hits.
 
-3. **Which project, with a GitHub repo, does the development loop run against first?** Recommendation: a small project Mikael controls fully, or the workbench repo itself, so the GitHub App can be installed and branch protection set without asking a client; the Phase 2 project can follow once the loop holds.
-
 ## Next, in the suggested order
 
-1. Write `docs/dev-loop.md`: how a workbench project connects to one GitHub repo (a GitHub App), how a card links to its branch and pull request, which webhooks become which card events, and where an MCP server over the API fits for agents doing the work.
-2. Build the webhook endpoint in `apps/api` that turns pull request and review events for a linked card into card events, tested against recorded payloads (blocked by question 3 only for the live run).
+Stage 1 of `docs/dev-loop.md`: track the workbench's own work on its board.
+
+1. Let a human teammate hold several roles (a list instead of one `role`, with a migration), so Mikael can sit on the board as PO, UX, FE and BE; the board seats a person once and labels them with every role.
+2. Draft the coding functions the loop needs, following `process/template.md`: `implement_services`, `implement_interactions`, `fix_bug`, `open_pull_request` and a pull request review, with their artifacts added to `process/artifacts.md` first. Run `pnpm validate`.
+3. Add a way to start a board with a real team and no invented data, then enter the tasks in this file as cards on it.
+
+Stage 2, after stage 1 holds:
+
+4. Add a GitHub Actions workflow that runs `pnpm check` on every pull request.
+5. Build the webhook endpoint in `apps/api` with the mapping in `docs/dev-loop.md`, tested against recorded payloads.
+6. With Mikael on GitHub: protect `main`, install the GitHub App, and forward webhooks to the local API.

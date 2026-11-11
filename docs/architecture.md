@@ -49,7 +49,7 @@ The card log, the board log and the cycle log are three queries over the same ev
 
 ## Cards and external trackers
 
-The app has its own board for now. Card storage sits behind an interface so GitHub Issues can become the source of cards later without changing the UI.
+The app has its own board for now. Card storage sits behind an interface so GitHub Issues can become the source of cards later without changing the UI. How a card links to the branch and pull request where its work happens, and how GitHub reports back, is in `docs/dev-loop.md` (2026-11-11).
 
 ## Checks
 
