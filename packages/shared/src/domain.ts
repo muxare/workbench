@@ -187,6 +187,7 @@ const teammateEventBase = { id: eventId, teammate_id: teammateId, actor: teammat
 
 const url = z.url();
 const pullRequestNumber = z.int().positive();
+const commitSha = z.string().min(1);
 
 /**
  * An event whose subject is a card, so it carries `card_id`. The card log is
@@ -228,6 +229,8 @@ export const cardEvent = z.discriminatedUnion("type", [
      * merge reads the AI critic's verdict on its own pull request by it.
      */
     pull_request: pullRequestNumber.optional(),
+    /** The commit the check ran on, when known; a merge counts the AI critic's pass only for the merged head. */
+    commit_sha: commitSha.optional(),
   }),
   z.object({ ...cardEventBase, type: z.literal("status_changed"), from: cardStatus, to: status }),
   z.object({ ...cardEventBase, type: z.literal("report_posted"), text: z.string().min(1) }),
@@ -257,7 +260,14 @@ export const cardEvent = z.discriminatedUnion("type", [
     title: z.string().min(1),
     url,
   }),
-  z.object({ ...cardEventBase, type: z.literal("approved"), pull_request: pullRequestNumber, url }),
+  z.object({
+    ...cardEventBase,
+    type: z.literal("approved"),
+    pull_request: pullRequestNumber,
+    url,
+    /** The commit the person approved; a merge counts the approval only for the merged head. Absent on events from before 2026-11-11. */
+    commit_sha: commitSha.optional(),
+  }),
   z.object({
     ...cardEventBase,
     type: z.literal("changes_requested"),

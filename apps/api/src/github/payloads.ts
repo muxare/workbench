@@ -32,7 +32,8 @@ const pullRequest = z.object({
   title: z.string().min(1),
   body: z.string().nullable(),
   draft: z.boolean().optional(),
-  head: z.object({ ref: z.string().min(1) }),
+  /** `sha` is the head commit, which a merge checks the approval and the critic's pass against. */
+  head: z.object({ ref: z.string().min(1), sha: z.string().min(1) }),
 });
 
 /** `pull_request`: opened, ready_for_review, review_requested and closed are read. A merge is `closed` with `merged: true`. */
@@ -54,6 +55,8 @@ export const pullRequestReviewPayload = z.object({
     html_url: z.url(),
     body: z.string().nullable(),
     user: account.nullable(),
+    /** The commit the review was submitted on; GitHub documents it as nullable. */
+    commit_id: z.string().min(1).nullable().optional(),
   }),
   pull_request: pullRequest.pick({ number: true, html_url: true, body: true, head: true }),
   sender: account,

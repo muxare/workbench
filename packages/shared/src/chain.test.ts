@@ -93,6 +93,12 @@ describe("mayMoveCard", () => {
     }
   });
 
+  it("takes the mode the card was picked in over the owner's current mode", () => {
+    expect(mayMoveCard(ai, person(["be"], { implement_services: "assist" }), implement, "delegate")).toEqual({ allowed: true });
+    const verdict = mayMoveCard(ai, person(["be"]), implement, "assist");
+    expect(!verdict.allowed && verdict.reason).toMatch(/^the card was picked in assist, where human writes/);
+  });
+
   it("lets only an AI owner move its own card", () => {
     expect(mayMoveCard(ai, ai, implement)).toEqual({ allowed: true });
     expect(mayMoveCard(person(["be"]), ai, implement).allowed).toBe(false);

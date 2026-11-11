@@ -65,19 +65,25 @@ export type MoveVerdict = { allowed: true } | { allowed: false; reason: string }
  * and the person is the card's owner. A card owned by an AI teammate has no
  * mode, so only that teammate moves it. The protocol is read from the
  * function's file, never assumed from the mode's name.
+ *
+ * `pickedMode` is the mode recorded on the card's `picked` event, when it has
+ * one: the card is worked in the mode it was picked in, so a profile change
+ * after the pick does not change who may move it. Without it the owner's
+ * current mode applies.
  */
-export function mayMoveCard(mover: Teammate, owner: Teammate, definition: MoveFunction): MoveVerdict {
+export function mayMoveCard(mover: Teammate, owner: Teammate, definition: MoveFunction, pickedMode?: Mode): MoveVerdict {
   if (mover.id === owner.id) return { allowed: true };
   if (owner.kind !== "human") {
     return { allowed: false, reason: `${owner.id} is an AI teammate with no mode, so only ${owner.id} moves its card` };
   }
-  const m = ownerMode(owner, definition);
+  const m = pickedMode ?? ownerMode(owner, definition);
   const writes = definition.protocols[m]?.writes;
   if (mover.kind === "ai" && (writes === "ai" || writes === "both")) return { allowed: true };
   const writer = writes === undefined ? `${definition.name} has no protocol for ${m}` : `${writes} writes`;
+  const how = pickedMode === undefined ? `${owner.id} works ${definition.name} in ${m}` : `the card was picked in ${m}`;
   return {
     allowed: false,
-    reason: `${owner.id} works ${definition.name} in ${m}, where ${writer}, so only ${owner.id}${
+    reason: `${how}, where ${writer}, so only ${owner.id}${
       writes === "ai" || writes === "both" ? " or the AI" : ""
     } may move the card, not ${mover.id}`,
   };

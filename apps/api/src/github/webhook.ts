@@ -12,21 +12,24 @@
 //   `check_ran` with `check: "structural"`, passed on `success`, failed on
 //   `failure`, `timed_out`, `startup_failure` and `action_required`. Every
 //   other conclusion, and runs on `main`, are skipped.
-// - `pull_request_review` submitted by a person as approved: `approved`; as
-//   changes requested: `changes_requested`, and a card in review moves back to
-//   in progress if the reviewer may move it.
+// - `pull_request_review` submitted by a person as approved: `approved`, with
+//   the commit reviewed; as changes requested: `changes_requested`, and a card
+//   in review moves back to in progress if the reviewer may move it. A
+//   commented review, which GitHub sends for every inline comment and reply,
+//   records nothing, from anyone.
 // - `pull_request_review` submitted by an AI teammate is the AI critic, which
-//   never approves: approved or commented is `check_ran` with
-//   `check: "consistency"` passed; changes requested is that check failed,
+//   never approves: approved is `check_ran` with `check: "consistency"`
+//   passed on the commit reviewed; changes requested is that check failed,
 //   plus `changes_requested` and the same move back as a person's.
 // - `pull_request` closed with `merged: true`: a card in review moves to done,
 //   but only when the latest verdict on that pull request is an `approved` by
-//   a person, and, where the card's function requires it
-//   (`critic_gate_changed`), the AI critic passed on it before that approval.
+//   a person on the merged head commit, and, where the card's function
+//   requires it (`critic_gate_changed`), the AI critic passed on that commit
+//   before that approval.
 //
-// Who may move a card to review or back follows the owner's mode for the
-// card's function (`mayMoveCard`): the owner always, the AI only where the
-// protocol has the AI write. A delivery whose sender may not move the card
+// Who may move a card to review or back follows the mode the card was picked
+// in, or else the owner's mode for the card's function (`mayMoveCard`): the
+// owner always, the AI only where the protocol has the AI write. A delivery whose sender may not move the card
 // still records its events, and the answer's `reason` says why the card
 // stayed where it was.
 //
@@ -206,12 +209,15 @@ async function teammateFor(ctx: WebhookContext, login: string, cardId: string) {
 async function withMove(ctx: WebhookContext, card: Card, mover: Teammate, events: Draft[], from: Card["status"]["state"], to: "review" | "in_progress"): Promise<Plan> {
   const owner = await getTeammate(ctx.db, card.owner);
   const definition = ctx.definitions.get(card.function_id);
+  // The card is worked in the mode it was picked in; a profile change after the pick does not change who may move it.
+  const picked = (await cardLog(ctx.db, card.id)).filter((e) => e.type === "picked").at(-1);
+  const pickedMode = picked?.type === "picked" ? picked.mode : undefined;
   const verdict =
     owner === undefined
       ? { allowed: false as const, reason: `its owner ${card.owner} is not a teammate` }
       : definition === undefined
         ? { allowed: false as const, reason: `no function '${card.function_id}' in process/functions` }
-        : mayMoveCard(mover, owner, definition);
+        : mayMoveCard(mover, owner, definition, pickedMode);
   if (!verdict.allowed) {
     return { kind: "record", cardId: card.id, events, reason: `card ${card.id} stays ${from}: ${verdict.reason}` };
   }
@@ -270,12 +276,14 @@ async function planPullRequest(ctx: WebhookContext, p: PullRequestPayload): Prom
 /**
  * A merge moves a card in review to done only after a person approved the
  * pull request: the latest `approved` or `changes_requested` on the card for
- * that pull request must be an `approved` whose actor is a person. Done is
+ * that pull request must be an `approved` whose actor is a person, given on
+ * the commit that was merged (the pull request's head), so an approval does
+ * not carry over to commits pushed after it. Done is
  * reached only from review, as with a move by hand (`manualMoves`). GitHub's
  * own branch protection is the first guard; this is the board's, so a merge
  * that slipped past review never reaches done on the board. Where the card's
  * function requires the AI critic (`critic_gate_changed`), the latest AI
- * critic's verdict on that pull request must be a pass recorded before the
+ * critic's verdict on that pull request must be a pass on the same head, recorded before the
  * person's approval, so the person approved with the critic's findings in
  * hand. The merge itself is not a move the mode governs: done is reached
  * by a person's decision, and whoever merges only carries it out.
@@ -293,7 +301,10 @@ async function planMerge(ctx: WebhookContext, p: PullRequestPayload, card: Card)
     };
   }
   const log = await cardLog(ctx.db, cardId);
-  const verdicts = log.filter((e) => (e.type === "approved" || e.type === "changes_requested") && e.pull_request === pr.number);
+  const verdicts = log.filter(
+    (e): e is Extract<CardEvent, { type: "approved" | "changes_requested" }> =>
+      (e.type === "approved" || e.type === "changes_requested") && e.pull_request === pr.number,
+  );
   const latest = verdicts.at(-1);
   const refuse = (why: string): Plan => ({
     kind: "refuse",
@@ -304,11 +315,16 @@ async function planMerge(ctx: WebhookContext, p: PullRequestPayload, card: Card)
   if (latest.type === "changes_requested") return refuse("the latest review requested changes");
   const approver = await getTeammate(ctx.db, latest.actor);
   if (approver?.kind !== "human") return refuse(`it was approved by ${latest.actor}, who is not a person`);
+  const head = pr.head.sha;
+  if (latest.commit_sha !== head) {
+    return refuse(`the approval is for ${latest.commit_sha ?? "an unknown commit"}, not the merged head ${head}`);
+  }
   if (criticRequired(await criticGates(ctx.db), card.function_id)) {
     const critic = log.filter((e) => e.type === "check_ran" && e.check === "consistency" && e.pull_request === pr.number).at(-1);
     const gate = `${card.function_id} requires the AI critic to pass before a person approves`;
     if (critic?.type !== "check_ran") return refuse(`${gate}, and it has not reviewed the pull request`);
     if (!critic.passed) return refuse(`${gate}, and its latest review failed`);
+    if (critic.commit_sha !== head) return refuse(`${gate}, and its pass is for ${critic.commit_sha ?? "an unknown commit"}, not the merged head ${head}`);
     if (log.indexOf(critic) > log.indexOf(latest)) return refuse(`${gate}, and it passed only after the approval`);
   }
   const who = await teammateFor(ctx, pr.merged_by?.login ?? p.sender.login, cardId);
@@ -318,7 +334,11 @@ async function planMerge(ctx: WebhookContext, p: PullRequestPayload, card: Card)
 
 async function planReview(ctx: WebhookContext, p: PullRequestReviewPayload): Promise<Plan> {
   const { review, pull_request: pr } = p;
-  if (review.state === "dismissed") return ignore(`a ${review.state} review is not mapped to a card event`);
+  // GitHub submits a `commented` review for every inline comment and thread reply, so it says nothing about a
+  // verdict, from a person or from the AI critic.
+  if (review.state !== "approved" && review.state !== "changes_requested") {
+    return ignore(`a ${review.state} review is not mapped to a card event`);
+  }
   const found = await cardOnBoard(ctx, cardIdForPullRequest(pr), `pull request #${String(pr.number)}`);
   if (!found.card) return found.plan;
   const card = found.card;
@@ -327,11 +347,13 @@ async function planReview(ctx: WebhookContext, p: PullRequestReviewPayload): Pro
   if (!who.teammate) return who.plan;
   const actor = who.teammate.id;
   const text = review.body?.trim();
+  const commit = review.commit_id ? { commit_sha: review.commit_id } : {};
   const changes: Draft = { type: "changes_requested", actor, pull_request: pr.number, url: review.html_url, ...(text ? { text } : {}) };
   const events: Draft[] = [];
   if (who.teammate.kind === "ai") {
-    // The AI critic never approves (review_pull_request); its review is the consistency check on this pull request.
-    const passed = review.state !== "changes_requested";
+    // The AI critic never approves (review_pull_request): its explicit approval is the consistency check passing
+    // on this pull request and commit, and its changes request is that check failing.
+    const passed = review.state === "approved";
     events.push({
       type: "check_ran",
       actor,
@@ -340,15 +362,14 @@ async function planReview(ctx: WebhookContext, p: PullRequestReviewPayload): Pro
       summary: `The AI critic ${passed ? "passed" : "requested changes on"} pull request #${String(pr.number)}${passed ? "" : "; see its review"}.`,
       url: review.html_url,
       pull_request: pr.number,
+      ...commit,
     });
     if (passed) return { kind: "record", cardId: card.id, events };
     events.push(changes);
   } else if (review.state === "approved") {
-    return { kind: "record", cardId: card.id, events: [{ type: "approved", actor, pull_request: pr.number, url: review.html_url }] };
-  } else if (review.state === "changes_requested") {
-    events.push(changes);
+    return { kind: "record", cardId: card.id, events: [{ type: "approved", actor, pull_request: pr.number, url: review.html_url, ...commit }] };
   } else {
-    return ignore(`a ${review.state} review by a person is not mapped to a card event`, card.id);
+    events.push(changes);
   }
   if (card.status.state !== "review") return { kind: "record", cardId: card.id, events };
   return withMove(ctx, card, who.teammate, events, "review", "in_progress");
