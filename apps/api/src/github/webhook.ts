@@ -4,26 +4,31 @@
 // `Workbench: #<card id>`, which wins when both name a card. The mapping:
 //
 // - `push` to a card's branch: `workspace_linked` the first time the card sees
-//   that branch, and `work_pushed` for the commits the push carries.
-// - `pull_request` opened (not as a draft) or ready_for_review:
-//   `review_requested`, and a card in progress moves to review.
+//   that branch, and `work_pushed` when the push carries commits.
+// - `pull_request` opened (not as a draft), ready_for_review or
+//   review_requested (a reviewer asked, or asked again): `review_requested`,
+//   and a card in progress moves to review.
 // - `workflow_run` completed for the workflow `check` on a pull request:
-//   `check_ran` with `check: "structural"`. Cancelled, skipped and stale runs,
-//   and runs on `main`, are skipped.
+//   `check_ran` with `check: "structural"`, passed on `success`, failed on
+//   `failure`, `timed_out`, `startup_failure` and `action_required`. Every
+//   other conclusion, and runs on `main`, are skipped.
 // - `pull_request_review` submitted as approved: `approved`; as changes
 //   requested: `changes_requested`, and a card in review moves back to in
 //   progress.
-// - `pull_request` closed with `merged: true`: the card moves to done, but only
-//   when the latest verdict on that pull request is an `approved` by a person.
+// - `pull_request` closed with `merged: true`: a card in review moves to done,
+//   but only when the latest verdict on that pull request is an `approved` by
+//   a person.
 //
 // Everything else, and anything that names no card on the board or comes from
 // a GitHub account that is not a teammate, is ignored: nothing is recorded,
-// and the answer still says why. Events are stored, not the payloads.
+// and the answer still says why. A delivery that would break a rule, or whose
+// card moved while it was being handled, is refused the same way. Events are
+// stored, not the payloads.
 import type { CardEvent, CardStatus, WebhookResponse } from "@workbench/shared";
 import { cardEvent } from "@workbench/shared";
 import type { z } from "zod";
 import type { Db } from "../db/client.ts";
-import { appendEvents, cardLog, eventsOfType, getCard, getTeammate, hasEvent } from "../store.ts";
+import { appendEvents, cardLog, eventsOfType, getCard, getTeammate, hasEvent, StoreError } from "../store.ts";
 import { teammateForLogin } from "./logins.ts";
 import {
   pullRequestPayload,
@@ -127,7 +132,16 @@ export async function handleDelivery(ctx: WebhookContext, delivery: Delivery): P
   const events = plan.events.map((draft, i) =>
     cardEvent.parse({ ...draft, id: eventIdFor(delivery.id, i), card_id: plan.cardId, at }),
   );
-  await appendEvents(ctx.db, events);
+  try {
+    await appendEvents(ctx.db, events);
+  } catch (err) {
+    // The plan read the card's status before the write; if another write moved the card in between, the
+    // store refuses the stale `from`. That is the board's state changing, not GitHub's mistake, so say so with 200.
+    if (err instanceof StoreError && err.code === "conflict") {
+      return answer("refused", { card_id: plan.cardId, reason: `card ${plan.cardId} moved while the delivery was handled: ${err.message}` });
+    }
+    throw err;
+  }
   return answer("recorded", { card_id: plan.cardId, events });
 }
 
@@ -138,7 +152,7 @@ async function planDelivery(ctx: WebhookContext, delivery: Delivery): Promise<Pl
     case "push":
       return planPush(ctx, parse(pushPayload, event, payload));
     case "pull_request":
-      if (action === "opened" || action === "ready_for_review" || action === "closed") {
+      if (action === "opened" || action === "ready_for_review" || action === "review_requested" || action === "closed") {
         return planPullRequest(ctx, parse(pullRequestPayload, event, payload));
       }
       return ignore(`pull_request ${String(action)} is not mapped to a card event`);
@@ -182,6 +196,7 @@ async function planPush(ctx: WebhookContext, p: PushPayload): Promise<Plan> {
   if (!who.teammate) return who.plan;
   const actor = who.teammate.id;
   const linked = (await cardLog(ctx.db, card.id)).some((e) => e.type === "workspace_linked" && e.branch === branch);
+  if (linked && p.commits.length === 0) return ignore(`the push to ${branch} carried no commits`, card.id);
   const events: Draft[] = [];
   if (!linked) {
     events.push({
@@ -194,7 +209,7 @@ async function planPush(ctx: WebhookContext, p: PushPayload): Promise<Plan> {
     });
   }
   // The first push of a branch made locally carries commits too; a branch made on GitHub carries none.
-  if (linked || p.commits.length > 0) {
+  if (p.commits.length > 0) {
     events.push({ type: "work_pushed", actor, branch, head_sha: p.after, commits: p.commits.length, forced: p.forced, url: p.compare });
   }
   return { kind: "record", cardId: card.id, events };
@@ -219,15 +234,23 @@ async function planPullRequest(ctx: WebhookContext, p: PullRequestPayload): Prom
 }
 
 /**
- * A merge moves the card to done only after a person approved the pull
- * request: the latest `approved` or `changes_requested` on the card for that
- * pull request must be an `approved` whose actor is a person. GitHub's own
- * branch protection is the first guard; this is the board's, so a merge that
- * slipped past review never reaches done on the board.
+ * A merge moves a card in review to done only after a person approved the
+ * pull request: the latest `approved` or `changes_requested` on the card for
+ * that pull request must be an `approved` whose actor is a person. Done is
+ * reached only from review, as with a move by hand (`manualMoves`). GitHub's
+ * own branch protection is the first guard; this is the board's, so a merge
+ * that slipped past review never reaches done on the board.
  */
 async function planMerge(ctx: WebhookContext, p: PullRequestPayload, cardId: string, state: CardStatus): Promise<Plan> {
   const pr = p.pull_request;
   if (state === "done") return ignore(`card ${cardId} is already done`, cardId);
+  if (state !== "review") {
+    return {
+      kind: "refuse",
+      cardId,
+      reason: `pull request #${String(pr.number)} was merged, but card ${cardId} is ${state}; a card moves to done only from review`,
+    };
+  }
   const verdicts = (await cardLog(ctx.db, cardId)).filter(
     (e) => (e.type === "approved" || e.type === "changes_requested") && e.pull_request === pr.number,
   );
@@ -269,22 +292,29 @@ async function planReview(ctx: WebhookContext, p: PullRequestReviewPayload): Pro
 }
 
 /**
- * The card a pull request's run is for: the branch names it, or, for a
- * branch that does not follow the convention, the card a `review_requested`
- * event already links to that pull request number (the run's payload has no
- * pull request body to read).
+ * The card a pull request's run is for. The run's payload has no pull request
+ * body to read, so the card a `review_requested` event already links to that
+ * pull request number comes first, as the body would; the branch name is the
+ * fallback, for a run that arrives before the pull request asked for review.
  */
 async function cardForRun(ctx: WebhookContext, pr: { number: number; head: { ref: string } }): Promise<string | undefined> {
-  const fromBranch = cardIdFromBranch(pr.head.ref);
-  if (fromBranch !== undefined) return fromBranch;
-  return (await eventsOfType(ctx.db, "review_requested")).filter((e) => e.pull_request === pr.number).at(-1)?.card_id;
+  const fromPullRequest = (await eventsOfType(ctx.db, "review_requested")).filter((e) => e.pull_request === pr.number).at(-1)?.card_id;
+  return fromPullRequest ?? cardIdFromBranch(pr.head.ref);
+}
+
+/** Whether a run's conclusion passed or failed the check; undefined for one that says nothing about the work. */
+export function checkPassed(conclusion: string | null): boolean | undefined {
+  if (conclusion === "success") return true;
+  if (conclusion === "failure" || conclusion === "timed_out" || conclusion === "startup_failure" || conclusion === "action_required") return false;
+  return undefined;
 }
 
 async function planWorkflowRun(ctx: WebhookContext, p: WorkflowRunPayload): Promise<Plan> {
   const run = p.workflow_run;
   if (run.name !== CHECK_WORKFLOW) return ignore(`the workflow ${String(run.name)} is not the structural check (${CHECK_WORKFLOW})`);
   const conclusion = run.conclusion;
-  if (conclusion === null || conclusion === "cancelled" || conclusion === "skipped" || conclusion === "stale") {
+  const passed = checkPassed(conclusion);
+  if (passed === undefined) {
     return ignore(`run ${String(run.run_number)} of ${CHECK_WORKFLOW} ended ${String(conclusion)}, which says nothing about the work`);
   }
   if (run.head_branch === MAIN_BRANCH) return ignore(`run ${String(run.run_number)} of ${CHECK_WORKFLOW} is on ${MAIN_BRANCH}, not on a card's pull request`);
@@ -296,7 +326,6 @@ async function planWorkflowRun(ctx: WebhookContext, p: WorkflowRunPayload): Prom
   // The check is run by CI on someone's push; the actor is the person or agent whose push started it.
   const who = await teammateFor(ctx, (run.triggering_actor ?? run.actor).login, card.id);
   if (!who.teammate) return who.plan;
-  const passed = conclusion === "success";
   return {
     kind: "record",
     cardId: card.id,
@@ -306,7 +335,7 @@ async function planWorkflowRun(ctx: WebhookContext, p: WorkflowRunPayload): Prom
         actor: who.teammate.id,
         check: "structural",
         passed,
-        summary: `The ${CHECK_WORKFLOW} workflow, run ${String(run.run_number)}, ended ${conclusion} on pull request #${String(pr.number)}.`,
+        summary: `The ${CHECK_WORKFLOW} workflow, run ${String(run.run_number)}, ended ${String(conclusion)} on pull request #${String(pr.number)}.`,
         url: run.html_url,
       },
     ],

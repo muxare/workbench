@@ -45,16 +45,16 @@ There are three directions, and each has its own mechanism.
 
 **From the workbench to GitHub**, for example to start the AI on a card, the workbench calls the GitHub API as a GitHub App installed on the repository. An App is chosen over a personal token because it acts as itself rather than as Mikael, its permissions are limited to the one repository and what the loop needs, and it can deliver webhooks.
 
-**From GitHub to the workbench**, GitHub sends webhooks to `POST /api/github/webhook` in `apps/api` (built on 2026-11-11), which turns them into card events. A card is linked to its work by a naming convention: the branch is `wb/<card id>-<short title>`, and the pull request body says `Workbench: #<card id>`; the body wins when both name a card. The endpoint checks each delivery's signature against `GITHUB_WEBHOOK_SECRET`, and the actor of each event is the teammate the GitHub account maps to in the team file's `github_logins`; a delivery from an account that is not mapped records nothing. The mapping is:
+**From GitHub to the workbench**, GitHub sends webhooks to `POST /api/github/webhook` in `apps/api` (built on 2026-11-11), which turns them into card events. A card is linked to its work by a naming convention: the branch is `wb/<card id>-<short title>`, and the pull request body says `Workbench: #<card id>`; the body wins when both name a card, and a CI run, whose payload has no body, is matched to the card a `review_requested` event already linked to its pull request, and only then by its branch. The endpoint checks each delivery's signature against `GITHUB_WEBHOOK_SECRET`, and the actor of each event is the teammate the GitHub account maps to in the team file's `github_logins`; a delivery from an account that is not mapped records nothing. The mapping is:
 
 | GitHub event | Card event |
 | --- | --- |
-| A branch named for the card is pushed | `workspace_linked` the first time the card sees the branch, and `work_pushed` for every push that carries commits, the first included |
-| A pull request for the card is opened (not as a draft) or marked ready | `review_requested`, and a card in progress moves to review |
-| A completed run of the workflow `check` on the pull request (`workflow_run`) | `check_ran` with `check: "structural"`; cancelled, skipped and stale runs and runs on `main` are skipped |
+| A branch named for the card is pushed | `workspace_linked` the first time the card sees the branch, and `work_pushed` for every push that carries commits, the first included; a push with no commits records nothing more |
+| A pull request for the card is opened (not as a draft), marked ready, or has a reviewer requested again | `review_requested`, and a card in progress moves to review |
+| A completed run of the workflow `check` on the pull request (`workflow_run`) | `check_ran` with `check: "structural"`, passed on `success` and failed on `failure`, `timed_out`, `startup_failure` or `action_required`; every other conclusion, and runs on `main`, are skipped |
 | A person approves the pull request | `approved` |
 | A person requests changes | `changes_requested`, and a card in review moves back to in progress |
-| The pull request is merged | `status_changed` to `done`, allowed only when the latest verdict on that pull request is an `approved` by a person; otherwise nothing is recorded and the answer says why |
+| The pull request is merged | `status_changed` from review to `done`, allowed only when the card is in review and the latest verdict on that pull request is an `approved` by a person; otherwise nothing is recorded and the answer says why |
 
 Everything else answers 200 and records nothing. The reasons for each choice are in `docs/decisions.md`.
 

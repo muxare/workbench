@@ -222,6 +222,11 @@ describe("push", () => {
     expect(types(body.events)).toEqual(["workspace_linked", "work_pushed"]);
   });
 
+  it("ignores a push with no commits to a branch already linked", async () => {
+    await recorded("push", fixture("push.created"));
+    await ignored("push", tweak(tweak(fixture("push"), "commits", []), "forced", true), /carried no commits/);
+  });
+
   it("records a forced push as forced", async () => {
     await recorded("push", fixture("push.created"));
     const body = await recorded("push", tweak(fixture("push"), "forced", true));
@@ -257,6 +262,40 @@ describe("pull_request opened or ready for review", () => {
       { type: "status_changed", actor: "ai", from: "in_progress", to: { state: "review" } },
     ]);
     expect((await cardStatus(db, "2")).state).toBe("review");
+  });
+
+  it("asks for review again when a reviewer is re-requested", async () => {
+    await moveCard2("ready", "in_progress");
+    const body = await recorded("pull_request", fixture("pull_request.review_requested"));
+    expect(body.events).toMatchObject([
+      { type: "review_requested", pull_request: 3 },
+      { type: "status_changed", from: "in_progress", to: { state: "review" } },
+    ]);
+  });
+
+  it("refuses with 200 when the card moved while the delivery was handled", async () => {
+    await moveCard2("ready", "in_progress");
+    // The clock is read after the delivery is planned and before it is written. Writes to one database run in
+    // order, so a move queued here lands first, and the planned move from in_progress is stale.
+    let moved: Promise<unknown> | undefined;
+    app = createApp({
+      db,
+      functionIds: loadFunctionIds(),
+      githubWebhookSecret: SECRET,
+      githubLogins: LOGINS,
+      now: () => {
+        moved ??= appendEvents(db, [
+          { id: "invented-move-back", type: "status_changed", card_id: "2", actor: "mikael", at: NOW, from: "in_progress", to: { state: "ready" } },
+        ]);
+        return new Date(NOW);
+      },
+    });
+    const body = await outcome(await deliver("pull_request", fixture("pull_request.opened")));
+    await moved;
+    expect(body.outcome).toBe("refused");
+    expect(body.reason).toMatch(/card 2 moved while the delivery was handled/);
+    expect(types(await cardLog(db, "2"))).not.toContain("review_requested");
+    expect((await cardStatus(db, "2")).state).toBe("ready");
   });
 
   it("asks for review without a move when the card is not in progress", async () => {
@@ -307,8 +346,8 @@ describe("workflow_run of check", () => {
     ]);
   });
 
-  it("records a failed run, a timed-out run and one needing action as failed checks", async () => {
-    for (const conclusion of ["failure", "timed_out", "action_required"]) {
+  it("records a failed, timed-out, failed-to-start and action-needing run as failed checks", async () => {
+    for (const conclusion of ["failure", "timed_out", "startup_failure", "action_required"]) {
       const body = await recorded("workflow_run", tweak(fixture("workflow_run.completed"), "workflow_run.conclusion", conclusion));
       expect(body.events).toMatchObject([{ type: "check_ran", passed: false }]);
     }
@@ -321,8 +360,20 @@ describe("workflow_run of check", () => {
     expect((await recorded("workflow_run", run)).card_id).toBe("2");
   });
 
-  it("skips cancelled, skipped and stale runs, runs on main, runs off a pull request, other workflows and unfinished runs", async () => {
-    for (const conclusion of ["cancelled", "skipped", "stale"]) {
+  it("takes the pull request's card over the branch's", async () => {
+    const functionIds = loadFunctionIds();
+    for (const id of ["3", "5"]) {
+      await addCard(db, { id, title: `Invented card ${id}`, function_id: "implement_services", owner: "mikael", links: [] }, functionIds);
+    }
+    const opened = tweak(tweak(fixture("pull_request.opened"), "pull_request.head.ref", "wb/3-misnamed"), "pull_request.body", "Workbench: #5");
+    expect((await recorded("pull_request", opened)).card_id).toBe("5");
+    let run = tweak(fixture("workflow_run.completed"), "workflow_run.head_branch", "wb/3-misnamed");
+    run = tweak(run, "workflow_run.pull_requests", [{ number: 3, head: { ref: "wb/3-misnamed" } }]);
+    expect((await recorded("workflow_run", run)).card_id).toBe("5");
+  });
+
+  it("skips neutral, cancelled, skipped, stale and unknown conclusions, runs on main, runs off a pull request, other workflows and unfinished runs", async () => {
+    for (const conclusion of ["neutral", "cancelled", "skipped", "stale", "invented_new_conclusion"]) {
       await ignored("workflow_run", tweak(fixture("workflow_run.completed"), "workflow_run.conclusion", conclusion), new RegExp(`ended ${conclusion}`));
     }
     const onMain = tweak(tweak(fixture("workflow_run.completed"), "workflow_run.head_branch", "main"), "workflow_run.event", "push");
@@ -374,13 +425,16 @@ describe("pull_request merged", () => {
     expect((await cardStatus(db, "2")).state).toBe("done");
   });
 
-  it("walks the whole loop from recorded payloads", async () => {
+  it("walks the whole loop from recorded payloads: changes requested, push, re-request, approve, merge", async () => {
     await moveCard2("ready", "in_progress");
     await recorded("push", fixture("push.created"));
     await recorded("pull_request", fixture("pull_request.opened"));
     await recorded("workflow_run", fixture("workflow_run.completed"));
     await recorded("pull_request_review", fixture("pull_request_review.changes_requested"));
+    expect((await cardStatus(db, "2")).state).toBe("in_progress");
     await recorded("push", fixture("push"));
+    await recorded("pull_request", fixture("pull_request.review_requested"));
+    expect((await cardStatus(db, "2")).state).toBe("review");
     await recorded("pull_request_review", fixture("pull_request_review.approved"));
     await recorded("pull_request", fixture("pull_request.closed.merged"));
     expect(types((await cardLog(db, "2")).slice(2))).toEqual([
@@ -392,10 +446,19 @@ describe("pull_request merged", () => {
       "changes_requested",
       "status_changed",
       "work_pushed",
+      "review_requested",
+      "status_changed",
       "approved",
       "status_changed",
     ]);
     expect((await cardStatus(db, "2")).state).toBe("done");
+  });
+
+  it("refuses a merge of a card that is not in review, even when approved", async () => {
+    await moveCard2("ready", "in_progress");
+    await recorded("pull_request_review", fixture("pull_request_review.approved"));
+    await refused(/card 2 is in_progress; a card moves to done only from review/);
+    expect((await cardStatus(db, "2")).state).toBe("in_progress");
   });
 
   async function refused(reason: RegExp) {
@@ -416,15 +479,18 @@ describe("pull_request merged", () => {
   it("refuses a merge whose latest review requested changes", async () => {
     await recorded("pull_request_review", fixture("pull_request_review.approved"));
     await recorded("pull_request_review", fixture("pull_request_review.changes_requested"));
+    await moveCard2("ready", "in_progress", "review");
     await refused(/latest review requested changes/);
   });
 
   it("refuses a merge approved only on another pull request", async () => {
+    await moveCard2("ready", "in_progress", "review");
     await recorded("pull_request_review", tweak(fixture("pull_request_review.approved"), "pull_request.number", 9));
     await refused(/nobody approved it/);
   });
 
   it("refuses a merge approved by the AI teammate, who is not a person", async () => {
+    await moveCard2("ready", "in_progress", "review");
     await recorded("pull_request_review", tweak(fixture("pull_request_review.approved"), "review.user.login", "workbench-agent[bot]"));
     await refused(/approved by ai, who is not a person/);
   });

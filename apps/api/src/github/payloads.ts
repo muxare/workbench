@@ -35,7 +35,7 @@ const pullRequest = z.object({
   head: z.object({ ref: z.string().min(1) }),
 });
 
-/** `pull_request`: opened, ready_for_review and closed are read. A merge is `closed` with `merged: true`. */
+/** `pull_request`: opened, ready_for_review, review_requested and closed are read. A merge is `closed` with `merged: true`. */
 export const pullRequestPayload = z.object({
   action: z.string(),
   pull_request: pullRequest.extend({
@@ -73,7 +73,8 @@ export const workflowRunPayload = z.object({
     run_number: z.int().positive(),
     event: z.string(),
     head_branch: z.string().nullable(),
-    conclusion: z.enum(["success", "failure", "neutral", "cancelled", "timed_out", "action_required", "stale", "skipped"]).nullable(),
+    /** A string, not an enum: GitHub has added values before (`startup_failure`), and an unknown one is ignored, not refused. */
+    conclusion: z.string().nullable(),
     html_url: z.url(),
     pull_requests: z.array(z.object({ number: z.int().positive(), head: z.object({ ref: z.string().min(1) }) })),
     actor: account,
