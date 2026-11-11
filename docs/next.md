@@ -26,6 +26,7 @@ Last updated 2026-11-11 by Claude.
 - Direction decided with Mikael on 2026-11-09: next comes the development loop, where a card links to the place its work happens and the result returns as events, with GitHub as the first workspace. On 2026-11-11 Mikael decided it is built on this repository first, in four stages; the design is in `docs/dev-loop.md`. Until stage 2, branches are merged to `main` locally as before.
 - Merged to `main` on 2026-11-11 (not pushed), built by two parallel subagents: a human teammate holds a non-empty list of `roles`, derived from `roles_changed` events (migration `0004_teammate_roles_events`, `POST /api/teammates/:id/roles`); the first role is the main one and decides the seat, and the panel lists the others. Design review run with no real mismatches; a person with several roles has not yet been seen in a browser. Also merged: five coding functions in `process/` (`implement_services`, `implement_interactions`, `fix_bug`, `open_pull_request`, `review_pull_request`) with their artifacts; `docs/dev-loop.md` was corrected where it said `process/` holds only the design functions. `pnpm check` passes with 375 tests and the validator with 9 functions. See `docs/decisions.md`.
 - The `design-reviewer` subagent type could be spawned on 2026-11-11.
+- Stage 1 of `docs/dev-loop.md` is built and merged on 2026-11-11 (not pushed): the workbench's own board starts from `teams/workbench/` (`team.json`, `cards.json`) with `pnpm --filter @workbench/api team:start teams/workbench`, then `team:cards` and `team:serve`. The database is `teams/workbench/board.db`, git-ignored and apart from the demo database; it was created in the main checkout on 2026-11-11. It holds Mikael (po, ux, fe, be), the AI teammate, the cycle "Development loop, stages 1 and 2" (2026-11-11 to 2026-11-25) and two cards, both `implement_services`: #1 the CI workflow, #2 the webhook endpoint. The start task itself and the GitHub setup task (no function fits) were left off. `pnpm check` passes with 387 tests.
 - Decided with Mikael on 2026-11-09: the workbench is developed and demoed on one invented example project, a housing cooperative's laundry room booking and fault reporting, designed to stress the chain. It does not replace the Phase 2 run on a real project. See `docs/decisions.md`.
 - Decided with Mikael on 2026-11-08: the template lists the protocols' optional `note`, and a card with an unfinished `depends_on` cannot be picked (shared rule in `packages/shared`, used by the AI teammate and the API pick).
 
@@ -39,14 +40,16 @@ Last updated 2026-11-11 by Claude.
 5. **Who approves a pull request Mikael wrote?** `review_pull_request` requires an approver who did not write the change, and GitHub refuses self-approval. Recommendation: on this repository the AI writes the code and Mikael reviews; for his own changes, merge without the review step until a second person joins.
 6. **Does the template need a "one of these inputs is required" field?** `open_pull_request` is the first function that needs it; for now a structural rule says so. Recommendation: wait for a second case before bumping the template.
 
+7. **Should `POST /cards` number new cards?** It gives a random UUID today, which makes `#` labels and `wb/<card id>-…` branch names unreadable; the two workbench cards were entered with ids 1 and 2 through the store. Recommendation: give the next number, before the webhook endpoint, because its branch mapping depends on it.
+8. **Is the workbench cycle right?** The repo has no sprints; "Development loop, stages 1 and 2", 2026-11-11 to 2026-11-25, was chosen so the board has a running cycle log. Recommendation: keep two-week windows named for the stage.
+9. **Does tooling work, like the CI workflow card, get its own function?** It uses `implement_services` for now, a loose fit. Recommendation: keep it until the board shows whether tooling work keeps coming up.
+
 ## Next, in the suggested order
 
-Stage 1 of `docs/dev-loop.md`: track the workbench's own work on its board.
+1. Run the workbench board (`team:serve` and the web app) in Chrome and check that Mikael's panel with four roles renders as the design review expected; fix what does not.
 
-1. Add a way to start a board with a real team and no invented data, then enter the tasks in this file as cards on it.
+Stage 2 of `docs/dev-loop.md`:
 
-Stage 2, after stage 1 holds:
-
-2. Add a GitHub Actions workflow that runs `pnpm check` on every pull request.
-3. Build the webhook endpoint in `apps/api` with the mapping in `docs/dev-loop.md`, tested against recorded payloads.
+2. Add a GitHub Actions workflow that runs `pnpm check` on every pull request (card #1).
+3. Build the webhook endpoint in `apps/api` with the mapping in `docs/dev-loop.md`, tested against recorded payloads (card #2; blocked by question 7).
 4. With Mikael on GitHub: protect `main`, install the GitHub App, and forward webhooks to the local API.
