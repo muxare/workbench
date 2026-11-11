@@ -12,6 +12,10 @@
 // `POST /api/logs/:log/filter` appends a `log_filter_changed` event about the
 // team, and each log's filter is derived from those events; the API never
 // applies a filter to what it returns, because a filter is a view setting.
+// `POST /api/functions/:id/critic-gate` appends a `critic_gate_changed` event
+// about the team, which sets whether the AI critic must pass before a
+// person's approval lets a merge move a card of that function to done;
+// `GET /api/functions/critic-gates` answers every gate someone has set.
 // `GET /api/teammates/:id/profile` reads the person's chain of steps from
 // process/functions on each request; for an AI teammate it answers a
 // separate, derived profile (aiProfile.ts).
@@ -19,6 +23,11 @@
 // server's clock) and its cycle log, for the panel under the board, and each
 // function's name, role and default mode from process/functions, so a panel
 // counts modes over the same chain as the profile.
+// `POST /api/cards/:id/reports` appends a `report_posted` event, which is how
+// an agent session (apps/mcp) reports on the card it works.
+// `POST /api/cards/:id/pick` by an AI teammate also checks the rules its
+// runner follows (teammates/eligibility.ts), with the modes it works in from
+// an agent session.
 // `POST /api/github/webhook` takes GitHub's webhooks, checks their signature
 // against GITHUB_WEBHOOK_SECRET, and records the card events they map to
 // (github/webhook.ts).
@@ -32,6 +41,7 @@ import {
   cardEvent,
   cardStatus,
   createCardRequest,
+  criticRequired,
   currentCycle,
   isManualMove,
   logName,
@@ -39,8 +49,10 @@ import {
   ownerMode,
   moveStatusRequest,
   pickRequest,
+  reportRequest,
   sameEventTypes,
   sameRoles,
+  setCriticGateRequest,
   setLogFilterRequest,
   setModeRequest,
   setRolesRequest,
@@ -51,11 +63,13 @@ import {
   type AiTeammateProfileResponse,
   type ApiError,
   type ApiErrorCode,
+  type CriticGatesResponse,
   type BoardCycle,
   type BoardResponse,
   type Card,
   type CardEvent,
   type CardResponse,
+  type CardStatus,
   type FunctionFrontMatter,
   type LogFiltersResponse,
   type Teammate,
@@ -65,7 +79,7 @@ import {
 } from "@workbench/shared";
 import type { Db } from "./db/client.ts";
 import { loadFunctionDefinitions } from "./process.ts";
-import { buildAiProfile } from "./aiProfile.ts";
+import { buildAiProfile, cardsInHand } from "./aiProfile.ts";
 import { buildProfile } from "./profile.ts";
 import { eventStream, startingPoint } from "./sse.ts";
 import { validSignature } from "./github/signature.ts";
@@ -75,6 +89,7 @@ import {
   appendEvents,
   boardLog,
   cardLog,
+  criticGates,
   cycleLog,
   getCard,
   getTeammate,
@@ -88,6 +103,7 @@ import {
   type StoreErrorCode,
 } from "./store.ts";
 import type { TeammateProvider } from "./teammates/provider.ts";
+import { checkEligibility, SESSION_MODES } from "./teammates/eligibility.ts";
 import { runTeammate } from "./teammates/runner.ts";
 import { stubProvider } from "./teammates/stubProvider.ts";
 
@@ -113,6 +129,9 @@ export interface AppDeps {
   /** GitHub login (lower case) to teammate id (GITHUB_LOGINS); a webhook from an unmapped account records nothing. */
   githubLogins?: ReadonlyMap<string, string>;
 }
+
+/** The states a card is being worked in, where `POST /cards/:id/reports` accepts a report. */
+const REPORTABLE: readonly CardStatus[] = ["in_progress", "needs_input", "review"];
 
 /** How many of the latest events `GET /board` returns as its log. */
 const BOARD_LOG_LIMIT = 50;
@@ -261,7 +280,7 @@ export function createApp(deps: AppDeps) {
     .post("/cards/:id/pick", async (c) => {
       const card = await cardOr404(c.req.param("id"));
       const req = await body(c, pickRequest);
-      await teammateOr422(req.actor, "actor");
+      const actor = await teammateOr422(req.actor, "actor");
       const owner = await teammateOr422(card.owner, "owner");
       if (owner.kind !== "human") {
         throw new ApiProblem(
@@ -269,7 +288,8 @@ export function createApp(deps: AppDeps) {
           `owner ${owner.id} is an AI teammate and has no process profile, so ${card.id} cannot be picked`,
         );
       }
-      const definition = definitions().get(card.function_id);
+      const defs = definitions();
+      const definition = defs.get(card.function_id);
       if (!definition) {
         throw new ApiProblem("rule_violation", `no function '${card.function_id}' in process/functions, so ${card.id} cannot be picked`);
       }
@@ -284,9 +304,16 @@ export function createApp(deps: AppDeps) {
       if (card.status.state !== "ready") {
         throw new ApiProblem("conflict", `${card.id} is ${card.status.state}; only a ready card can be picked`);
       }
-      const blockers = unfinishedDependencies(card, await listCards(db));
+      const cards = await listCards(db);
+      const blockers = unfinishedDependencies(card, cards);
       if (blockers.length > 0) {
         throw new ApiProblem("conflict", `${card.id} depends on ${blockers.join(", ")}, which is not done`);
+      }
+      // The AI teammate picks only where the owner's mode gives it a part, by
+      // the same rules as its runner, in the modes it works in from an agent session.
+      if (actor.kind === "ai") {
+        const verdict = checkEligibility(card, await cardLog(db, card.id), defs, await listTeammates(db), cards, SESSION_MODES);
+        if (!verdict.eligible) throw new ApiProblem("rule_violation", `${actor.id} may not pick ${verdict.reason}`);
       }
       return c.json(
         await write(card.id, [
@@ -338,6 +365,23 @@ export function createApp(deps: AppDeps) {
         events.push({ ...base(card.id, req.actor), type: "status_changed", from: "needs_input", to: { state: "in_progress" } });
       }
       return c.json(await write(card.id, events));
+    })
+
+    .post("/cards/:id/reports", async (c) => {
+      const card = await cardOr404(c.req.param("id"));
+      const req = await body(c, reportRequest);
+      const actor = await teammateOr422(req.actor, "actor");
+      if (!REPORTABLE.includes(card.status.state)) {
+        throw new ApiProblem(
+          "conflict",
+          `${card.id} is ${card.status.state}; a report is posted on a card in ${REPORTABLE.join(", ")}`,
+        );
+      }
+      // The AI teammate reports only on a card it holds: it made the card's last pick, as its profile works out.
+      if (actor.kind === "ai" && cardsInHand(actor.id, [card], await cardLog(db, card.id)).length === 0) {
+        throw new ApiProblem("forbidden", `${actor.id} did not pick ${card.id} last, so it may not report on it`);
+      }
+      return c.json(await write(card.id, [{ ...base(card.id, req.actor), type: "report_posted", text: req.text }]));
     })
 
     .post("/cards/:id/status", async (c) => {
@@ -457,6 +501,36 @@ export function createApp(deps: AppDeps) {
       return c.json(response);
     })
 
+    .get("/functions/critic-gates", async (c) => {
+      const response: CriticGatesResponse = { critic_gates: await criticGates(db) };
+      return c.json(response);
+    })
+
+    .post("/functions/:id/critic-gate", async (c) => {
+      const functionId = c.req.param("id");
+      if (!functionIds.has(functionId)) throw new ApiProblem("not_found", `no function '${functionId}' in process/functions`);
+      const req = await body(c, setCriticGateRequest);
+      const actor = await teammateOr422(req.actor, "actor");
+      if (actor.kind !== "human") throw new ApiProblem("forbidden", `a function's critic gate is set by a person, not ${actor.id}`);
+      // Asking for the setting the function already has changes nothing, so it records nothing.
+      // Otherwise `was_required` is what the caller saw; the store refuses it with 409 if the setting has moved on.
+      if (criticRequired(await criticGates(db), functionId) !== req.required) {
+        await appendEvents(db, [
+          {
+            id: newId(),
+            type: "critic_gate_changed",
+            actor: actor.id,
+            at: now().toISOString(),
+            function_id: functionId,
+            required: req.required,
+            was_required: req.was_required,
+          },
+        ]);
+      }
+      const response: CriticGatesResponse = { critic_gates: await criticGates(db) };
+      return c.json(response);
+    })
+
     .post("/teammates/:id/run", async (c) => {
       const id = c.req.param("id");
       const self = await getTeammate(db, id);
@@ -495,7 +569,7 @@ export function createApp(deps: AppDeps) {
       }
       try {
         const response: WebhookResponse = await handleDelivery(
-          { db, logins: deps.githubLogins ?? new Map<string, string>(), now },
+          { db, logins: deps.githubLogins ?? new Map<string, string>(), definitions: definitions(), now },
           { event, id: deliveryId, payload },
         );
         return c.json(response);

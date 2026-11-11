@@ -35,32 +35,122 @@ Each layer of the check already has a tool here, though not all of it reports an
 
 The structural check is `pnpm check`: lint, typecheck, tests and the process validator. It runs in the Stop hook in a local Claude Code session, and since 2026-11-11 also on GitHub, in the workflow `check` (`.github/workflows/check.yml`) on every pull request and every push to `main`. A completed run on a pull request is what reaches the card as `check_ran`.
 
-The AI critic is a review by an agent that has not seen the code being written: the `design-reviewer` subagent for screens, a code review for the rest. Its findings are posted on the pull request as comments, and it never approves.
+The AI critic is a review by an agent that has not seen the code being written: the `design-reviewer` subagent for screens, a code review for the rest. Its findings are posted on the pull request as a review by the App, and it never approves. Since 2026-11-11 that review reaches the card as `check_ran` with `check: "consistency"` on the pull request: an approving review is a pass, a review that requests changes is a fail, and a review that only comments records nothing, since GitHub sends one for every inline comment and reply. The check records the commit reviewed, and a pass counts only for the commit that is merged. Whether the critic must pass before a person's approval counts is a per-function setting, off unless someone turns it on (`POST /api/functions/:id/critic-gate`).
 
-The human check is Mikael's approval of the pull request. With `main` protected, a change cannot land without it, so the rule that a person decides is enforced by GitHub rather than by convention.
+The human check is Mikael's approval of the pull request. `main` is protected so that a change needs a pull request and a passing `check`, but GitHub cannot require his approval: it refuses self-approval, so a required approval would lock him out of his own changes. The workbench holds that gate instead, moving a card to done on merge only after a person's approval (decided 2026-11-11; see `docs/decisions.md`). Once every pull request is opened by the AI or a second person joins, GitHub is to require one approval as well.
 
 ## How the workbench and GitHub talk
 
 There are three directions, and each has its own mechanism.
 
-**From the workbench to GitHub**, for example to start the AI on a card, the workbench calls the GitHub API as a GitHub App installed on the repository. An App is chosen over a personal token because it acts as itself rather than as Mikael, its permissions are limited to the one repository and what the loop needs, and it can deliver webhooks.
+**From the workbench to GitHub**, the AI acts as the GitHub App `workbench-ai-muxare`, installed on the repository. As of 2026-11-11 the API itself makes no calls to GitHub: a Claude Code session mints an installation token with `pnpm --filter @workbench/api github:token muxare/workbench` and pushes the branch and opens the pull request with it, as `workbench-ai-muxare[bot]`. An App is chosen over a personal token because it acts as itself rather than as Mikael, its permissions are limited to the one repository and what the loop needs, and it can deliver webhooks.
 
 **From GitHub to the workbench**, GitHub sends webhooks to `POST /api/github/webhook` in `apps/api` (built on 2026-11-11), which turns them into card events. A card is linked to its work by a naming convention: the branch is `wb/<card id>-<short title>`, and the pull request body says `Workbench: #<card id>`; the body wins when both name a card, and a CI run, whose payload has no body, is matched to the card a `review_requested` event already linked to its pull request, and only then by its branch. The endpoint checks each delivery's signature against `GITHUB_WEBHOOK_SECRET`, and the actor of each event is the teammate the GitHub account maps to in the team file's `github_logins`; a delivery from an account that is not mapped records nothing. The mapping is:
 
 | GitHub event | Card event |
 | --- | --- |
 | A branch named for the card is pushed | `workspace_linked` the first time the card sees the branch, and `work_pushed` for every push that carries commits, the first included; a push with no commits records nothing more |
-| A pull request for the card is opened (not as a draft), marked ready, or has a reviewer requested again | `review_requested`, and a card in progress moves to review |
+| A pull request for the card is opened (not as a draft), marked ready, or has a reviewer requested again | `review_requested`, and a card in progress moves to review if the sender may move it: the card's owner always, the AI only where the protocol of the card's mode (the mode it was picked in, or else the owner's mode for its function) has the AI write (`delegate` in every function file today); otherwise the answer says why the card stayed |
 | A completed run of the workflow `check` on the pull request (`workflow_run`) | `check_ran` with `check: "structural"`, passed on `success` and failed on `failure`, `timed_out`, `startup_failure` or `action_required`; every other conclusion, and runs on `main`, are skipped |
 | A person approves the pull request | `approved` |
-| A person requests changes | `changes_requested`, and a card in review moves back to in progress |
-| The pull request is merged | `status_changed` from review to `done`, allowed only when the card is in review and the latest verdict on that pull request is an `approved` by a person; otherwise nothing is recorded and the answer says why |
+| A person requests changes | `changes_requested`, and a card in review moves back to in progress if the reviewer may move it, by the same rule as the move to review |
+| The AI teammate reviews the pull request (the AI critic) | `check_ran` with `check: "consistency"` with the pull request's number and the commit reviewed: passed for a review that approves, failed for one that requests changes; a review that only comments records nothing, from the AI or a person. A failed review also records `changes_requested` and moves the card back as a person's would, if the AI may move it; an AI's review is never recorded as `approved` |
+| The pull request is merged | `status_changed` from review to `done`, allowed only when the card is in review and the latest verdict on that pull request is an `approved` by a person on the merged head commit, and, where the card's function requires the AI critic, its latest review of that pull request passed on that commit before that approval; otherwise nothing is recorded and the answer says why |
 
 Everything else answers 200 and records nothing. The reasons for each choice are in `docs/decisions.md`.
 
 While the API runs on Mikael's machine, GitHub cannot reach it directly. During development, webhooks are forwarded with the GitHub CLI extension `cli/gh-webhook` (`gh webhook forward`), which needs to be installed first. A hosted API comes later, when the board must run without Mikael's machine.
 
 **Between the agent doing the work and the workbench**, an MCP server wraps the existing REST API. The API stays the one place where rules are enforced, and the MCP server only gives agents a way to use it: list and read cards with their function definition, pick a card, ask a person a question on the card and wait for the answer, post a report, and link a branch. It is what lets the AI in a Claude Code session stop and ask instead of guessing. It also lets anyone working in Claude Code pick a card from the terminal.
+
+The server was built on 2026-11-11 in `apps/mcp` and is registered for Claude Code in `.mcp.json`; `apps/mcp/README.md` says how to use it. It runs over stdio, talks to the API over HTTP and acts as the board's AI teammate. Two things work differently from the sentence above. Picking a card as the AI now checks the same rules as the AI teammate's runner, in the API itself: the owner's mode must give the AI a part (`assist` or `delegate`, never `manual`), a person must have moved the card to ready where the protocol says a person opens, and every card it depends on must be done. And linking a branch records nothing: the tool names the branch and the pull request body line and says whether the board has seen the branch, while the link itself is still recorded by the webhook on the first push, because `workspace_linked` says a branch exists on GitHub and only GitHub can say that. Reports are posted through a new route, `POST /api/cards/:id/reports`, which appends `report_posted`. The reasons are in `docs/decisions.md`.
+
+## The loop in two diagrams
+
+The first diagram shows the pieces as they ran on 2026-11-11 and how they connect. Everything on the left runs on Mikael's machine; everything on the right is GitHub. The two directions use different mechanisms on purpose: the AI reaches GitHub as the App `workbench-ai-muxare`, with an installation token that a Claude Code session mints from the App's private key, so that what it pushes and opens is not Mikael's and he can approve it; GitHub reaches the workbench only through repository webhooks, which `gh webhook forward` carries to the API because the API is not reachable from the internet. There are two gates on a pull request, and they sit on different sides: GitHub refuses a merge to `main` without a pull request and a passing `check`, while the workbench refuses to move a card to done unless the latest verdict on its pull request is a person's approval (and, where the card's function requires it, the AI critic passed before that approval). GitHub cannot hold the second gate, because it requires no approvals while Mikael cannot approve his own pull requests. The dotted line from `main` back to the API and the board is the unusual part of this project: the app being developed is this same repository, so a merged pull request changes the workbench that recorded it.
+
+```mermaid
+flowchart LR
+  subgraph machine["Mikael's machine"]
+    claude["Claude Code session"]
+    mcp["MCP server, apps/mcp, stdio"]
+    tokencli["github:token CLI"]
+    key[("App private key, outside the repo")]
+    api["workbench API, team:serve teams/workbench, port 3000"]
+    db[("teams/workbench/board.db")]
+    web["web board, apps/web, Vite port 5173"]
+    fwd["gh webhook forward"]
+    mikael(["Mikael"])
+  end
+
+  subgraph github["GitHub: muxare/workbench"]
+    app["GitHub App workbench-ai-muxare"]
+    branch["branch wb/card id-title"]
+    pr["pull request, body says Workbench: #card id"]
+    check["Actions workflow check"]
+    review["review by Mikael"]
+    main["protected main"]
+    hook["temporary repository webhook"]
+  end
+
+  key --> tokencli
+  claude -- "list, pick, ask and wait, report" --> mcp
+  mcp -- "REST and SSE as the AI teammate" --> api
+  claude -- "mints token" --> tokencli
+  tokencli -- "JWT for installation token" --> app
+  claude -- "push and open PR as workbench-ai-muxare[bot]" --> branch
+  branch --> pr
+  pr --> check
+  mikael --> review
+  review --> pr
+  pr -- "merge needs check passing and a PR" --> main
+
+  branch -. push .-> hook
+  pr -. "pull_request" .-> hook
+  review -. "pull_request_review" .-> hook
+  check -. "workflow_run" .-> hook
+  hook --> fwd
+  fwd -- "POST /api/github/webhook" --> api
+  api -- "card events, done only after a person approved" --> db
+  api -- "SSE /api/events" --> web
+  mikael --> web
+
+  main -. "a merged PR changes this same repo" .-> api
+  main -.-> web
+```
+
+The second diagram follows one card from pick to done, as card #3 and pull request #1 went on 2026-11-11. Each webhook delivery and the card events it records are shown together, so the diagram can be read against the table above. Changes requested and a failed check were not exercised in that run, so they are left out; per the table they would move the card back to in progress or record a failed `check_ran`. The move to review at step 6 was made by the AI on a card Mikael owns; the card was picked in `delegate`, where the AI writes, so under the rule of 2026-11-11 that moves follow the card's mode the AI may still make it. Had the card been picked in `assist` or `manual`, the same delivery would record `review_requested` and leave the card in progress for Mikael to move.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor M as Mikael
+  participant B as Board and API
+  participant C as Claude Code
+  participant G as GitHub
+  participant A as check workflow
+
+  M->>B: move card #35;3 to ready and pick it
+  C->>C: github:token muxare/workbench
+  C->>G: push wb/3-... as workbench-ai-muxare[bot]
+  G->>B: push via gh webhook forward
+  Note over B: workspace_linked, work_pushed
+  C->>G: open PR #35;1, body says Workbench: #35;3
+  G->>B: pull_request opened
+  Note over B: review_requested, in progress to review
+  G->>A: run pnpm check on the PR
+  A-->>G: success
+  G->>B: workflow_run completed
+  Note over B: check_ran structural, passed
+  M->>G: approve PR #35;1
+  G->>B: pull_request_review approved
+  Note over B: approved, by a person
+  M->>G: merge PR #35;1 into main
+  Note over G: GitHub gate: PR plus passing check, 0 approvals
+  G->>B: pull_request closed, merged
+  Note over B: workbench gate: latest verdict is a person's approval, so review to done
+  B-->>M: board updates live over SSE
+```
 
 ## Stages
 

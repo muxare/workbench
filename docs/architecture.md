@@ -15,6 +15,7 @@ Build toward a working product. Demo it at ConCon on 2026-11-18 at whatever stag
 | Frontend | React + Vite, in `apps/web` |
 | Backend | Node + Hono, in `apps/api` |
 | Shared | zod schemas and types, in `packages/shared` |
+| Agent access | An MCP server over stdio in `apps/mcp`, a client of the HTTP API |
 | Storage | SQLite through Drizzle now, Postgres later |
 | Live updates | Server-sent events from the API |
 | AI | Claude Agent SDK or Anthropic SDK behind a provider interface, so the model can change |
@@ -27,6 +28,7 @@ The process model in `process/` stays the source of truth. The app reads the fun
 apps/
   web/          # board, card detail, teammate profile
   api/          # HTTP API, event store, SSE stream, AI teammate runner
+  mcp/          # MCP server for agent sessions, over the HTTP API
 packages/
   shared/       # zod schemas for cards, events, teammates, function files
 process/        # the process model (unchanged)
@@ -41,7 +43,7 @@ checks/         # Python validator, until ported to packages/shared
 - **Card**: id, title, function (from `process/functions/`), owner, status, milestone, links to other cards.
 - **Status**: `backlog`, `ready`, `in_progress`, `needs_input`, `review`, `done`. `needs_input` carries `waiting_on` (a teammate, human or AI) and the open question.
 - **Question**: asked by, asked of, card, text, why it blocks, answer, decided by. Answers go into the card's decision log; tacit knowledge goes into `writes_back` proposals.
-- **Event**: append-only, with a subject that is a card, a teammate or the team. Card events (`card_id`): picked, asked, answered, check_ran, status_changed, report_posted, and from the development loop workspace_linked, work_pushed, review_requested, approved and changes_requested, recorded from GitHub webhooks (decided 2026-11-11). Teammate events (`teammate_id`): mode_changed, roles_changed. Team events (neither id): log_filter_changed. A card's current status is derived from its `status_changed` events rather than stored, as a person's process profile is from their `mode_changed` events.
+- **Event**: append-only, with a subject that is a card, a teammate or the team. Card events (`card_id`): picked, asked, answered, check_ran, status_changed, report_posted, and from the development loop workspace_linked, work_pushed, review_requested, approved and changes_requested, recorded from GitHub webhooks (decided 2026-11-11). Teammate events (`teammate_id`): mode_changed, roles_changed. Team events (neither id): log_filter_changed, and critic_gate_changed, which sets per function whether the AI critic must pass before a person's approval leads to done (decided 2026-11-11). A card's current status is derived from its `status_changed` events rather than stored, as a person's process profile is from their `mode_changed` events.
 - **Cycle**: a named time window on the board, such as a sprint. The cycle log is the events that fall inside it.
 
 ## Logs are views of one event stream

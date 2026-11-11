@@ -5,10 +5,12 @@ import {
   cardEvent,
   cardEventType,
   currentCycle,
+  criticRequired,
   cycle,
   decidedByHuman,
   inCycle,
   defaultLogFilters,
+  deriveCriticGates,
   deriveLogFilters,
   deriveProfile,
   deriveRoles,
@@ -30,6 +32,7 @@ import {
   teammateRole,
   unfinishedDependencies,
   type Card,
+  type CriticGateChangedEvent,
   type LogFilterChangedEvent,
   type RolesChangedEvent,
   type StreamEvent,
@@ -330,6 +333,37 @@ describe("unfinishedDependencies", () => {
   it("is empty when every dependency is done", () => {
     const cards = [make("invented-1", "done"), make("invented-3", "ready", ["invented-1"])];
     expect(unfinishedDependencies(cards[1]!, cards)).toEqual([]);
+  });
+});
+
+describe("critic gate events", () => {
+  const change: CriticGateChangedEvent = {
+    id: "invented-g1",
+    type: "critic_gate_changed",
+    actor: "invented-po",
+    at,
+    function_id: "implement_services",
+    required: true,
+    was_required: false,
+  };
+
+  it("are team events, with neither a card nor a teammate", () => {
+    expect(streamEvent.parse(change)).toEqual(change);
+    expect(eventSubject(change)).toEqual({ kind: "team" });
+    expect(streamEvent.safeParse({ ...change, function_id: "Not Snake" }).success).toBe(false);
+  });
+
+  it("give each function's gate: the latest change wins, and a function nobody set has it off", () => {
+    expect(deriveCriticGates([])).toEqual({});
+    const gates = deriveCriticGates([
+      change,
+      { ...change, id: "invented-g2", function_id: "fix_bug" },
+      { ...change, id: "invented-g3", required: false, was_required: true },
+    ]);
+    expect(gates).toEqual({ implement_services: false, fix_bug: true });
+    expect(criticRequired(gates, "fix_bug")).toBe(true);
+    expect(criticRequired(gates, "implement_services")).toBe(false);
+    expect(criticRequired(gates, "write_issues")).toBe(false);
   });
 });
 

@@ -187,6 +187,7 @@ const teammateEventBase = { id: eventId, teammate_id: teammateId, actor: teammat
 
 const url = z.url();
 const pullRequestNumber = z.int().positive();
+const commitSha = z.string().min(1);
 
 /**
  * An event whose subject is a card, so it carries `card_id`. The card log is
@@ -199,7 +200,9 @@ const pullRequestNumber = z.int().positive();
  * for the card exists, `work_pushed` that commits reached it,
  * `review_requested` that a pull request for the card is open for review, and
  * `approved` and `changes_requested` a person's review of it. A card reaches
- * `done` from a merge only after an `approved` by a person.
+ * `done` from a merge only after an `approved` by a person. The AI critic's
+ * review of a pull request is a `check_ran` with `check: "consistency"` and
+ * the pull request's number.
  */
 export const cardEvent = z.discriminatedUnion("type", [
   z.object({ ...cardEventBase, type: z.literal("picked"), mode }),
@@ -220,6 +223,14 @@ export const cardEvent = z.discriminatedUnion("type", [
     summary: z.string().min(1),
     /** Where the check's own record is, such as a CI run; absent for a check with no page. */
     url: url.optional(),
+    /**
+     * The pull request the check ran on, for a check reported from the
+     * card's workspace; absent for a check that ran on no pull request. A
+     * merge reads the AI critic's verdict on its own pull request by it.
+     */
+    pull_request: pullRequestNumber.optional(),
+    /** The commit the check ran on, when known; a merge counts the AI critic's pass only for the merged head. */
+    commit_sha: commitSha.optional(),
   }),
   z.object({ ...cardEventBase, type: z.literal("status_changed"), from: cardStatus, to: status }),
   z.object({ ...cardEventBase, type: z.literal("report_posted"), text: z.string().min(1) }),
@@ -249,7 +260,14 @@ export const cardEvent = z.discriminatedUnion("type", [
     title: z.string().min(1),
     url,
   }),
-  z.object({ ...cardEventBase, type: z.literal("approved"), pull_request: pullRequestNumber, url }),
+  z.object({
+    ...cardEventBase,
+    type: z.literal("approved"),
+    pull_request: pullRequestNumber,
+    url,
+    /** The commit the person approved; a merge counts the approval only for the merged head. Absent on events from before 2026-11-11. */
+    commit_sha: commitSha.optional(),
+  }),
   z.object({
     ...cardEventBase,
     type: z.literal("changes_requested"),
@@ -302,6 +320,25 @@ export type LogName = z.infer<typeof logName>;
 /** Every card event type, in schema order, read from `cardEvent`. */
 export const cardEventType = z.enum(cardEvent.options.map((o) => o.shape.type.value));
 
+const teamEventBase = { id: eventId, actor: teammateId, at: timestamp };
+
+/**
+ * `critic_gate_changed` records a person setting, for one function, whether
+ * the AI critic must pass on a pull request before a person's approval of it
+ * lets a merge move the card to done. `required` is the setting from now on
+ * and `was_required` the setting before; a function nobody has set has the
+ * gate off. A person's approval is needed either way. The current settings
+ * are derived from these events (`deriveCriticGates`).
+ */
+export const criticGateChanged = z.object({
+  ...teamEventBase,
+  type: z.literal("critic_gate_changed"),
+  function_id: functionId,
+  required: z.boolean(),
+  was_required: z.boolean(),
+});
+export type CriticGateChangedEvent = z.infer<typeof criticGateChanged>;
+
 /**
  * Every event type in the stream, in schema order: the card and teammate
  * event types read from their schemas, then the team event types. The team
@@ -312,6 +349,7 @@ export const streamEventType = z.enum([
   ...cardEventType.options,
   ...teammateEvent.options.map((o) => o.shape.type.value),
   "log_filter_changed" as const,
+  criticGateChanged.shape.type.value,
 ]);
 
 /**
@@ -323,14 +361,13 @@ export const hiddenEventTypes = z
   .array(streamEventType)
   .refine((types) => new Set(types).size === types.length, { message: "an event type is listed twice" });
 
-const teamEventBase = { id: eventId, actor: teammateId, at: timestamp };
-
 /**
  * An event whose subject is the whole team, so it carries neither `card_id`
  * nor `teammate_id`. `log_filter_changed` records a person setting which event
  * types one log hides for the whole team: `hidden` is the whole set it hides
  * from now on, and `was_hidden` the set it hid before. The current filters
- * are derived from these events (`deriveLogFilters`).
+ * are derived from these events (`deriveLogFilters`). `critic_gate_changed`
+ * is described above (`criticGateChanged`).
  */
 export const teamEvent = z.discriminatedUnion("type", [
   z.object({
@@ -340,6 +377,7 @@ export const teamEvent = z.discriminatedUnion("type", [
     hidden: hiddenEventTypes,
     was_hidden: hiddenEventTypes,
   }),
+  criticGateChanged,
 ]);
 export type TeamEvent = z.infer<typeof teamEvent>;
 export type LogFilterChangedEvent = Extract<TeamEvent, { type: "log_filter_changed" }>;
@@ -418,6 +456,30 @@ export function deriveLogFilters(events: readonly StreamEvent[]): LogFilters {
   const filters = defaultLogFilters();
   for (const e of events) if (e.type === "log_filter_changed") filters[e.log] = [...e.hidden];
   return filters;
+}
+
+/**
+ * Whether the AI critic must pass before a person's approval leads to done,
+ * for each function someone has set it for; a function not listed has the
+ * gate off.
+ */
+export const criticGates = z.record(functionId, z.boolean());
+export type CriticGates = z.infer<typeof criticGates>;
+
+/**
+ * The team's critic gates from the stream: for each function, the `required`
+ * of the latest `critic_gate_changed` event about it. `events` must be in
+ * stream order.
+ */
+export function deriveCriticGates(events: readonly StreamEvent[]): CriticGates {
+  const gates: CriticGates = {};
+  for (const e of events) if (e.type === "critic_gate_changed") gates[e.function_id] = e.required;
+  return gates;
+}
+
+/** Whether the AI critic must pass before a person's approval of a card of `functionId` leads to done. */
+export function criticRequired(gates: CriticGates, functionId: string): boolean {
+  return gates[functionId] ?? false;
 }
 
 /** The types in `types`, once each, in schema order, so equal sets compare equal. */

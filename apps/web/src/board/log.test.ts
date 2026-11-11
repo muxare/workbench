@@ -76,6 +76,16 @@ describe("describeEvent", () => {
     );
   });
 
+  it("describes a critic gate change, which is about the team", () => {
+    const change = { id: "g", type: "critic_gate_changed", actor: "t-po", at: "2026-11-06T09:56:00Z", function_id: "fix_bug" } as const;
+    expect(describeEvent({ ...change, required: true, was_required: false }, board)).toBe(
+      "PO changed the AI critic for fix_bug · now must pass before a person approves",
+    );
+    expect(describeEvent({ ...change, required: false, was_required: true }, board)).toBe(
+      "PO changed the AI critic for fix_bug · now is optional before a person approves",
+    );
+  });
+
   it("lists a mode change in the log among card events", () => {
     const log = [...board.log, { id: "m", type: "mode_changed", teammate_id: "t-be", actor: "t-be", at: "2026-11-06T09:55:00Z", function_id: "define_api_contract", from: "delegate", to: "assist" } as const];
     const withChange = testBoard({ log, cycle: { cycle: CYCLE, ended: false, log } });

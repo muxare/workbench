@@ -10,6 +10,7 @@ import {
   cardEvent,
   cardLink,
   cardStatus,
+  criticGates,
   cycle,
   functionId,
   hiddenEventTypes,
@@ -80,6 +81,14 @@ export const answerRequest = z.strictObject({ actor: teammateId, answer: z.strin
 export type AnswerRequest = z.infer<typeof answerRequest>;
 
 /**
+ * `POST /cards/:id/reports`: post a report on a card someone is working on
+ * (in progress, waiting for input or in review), such as what the AI did in
+ * an agent session. It appends one `report_posted` event and moves nothing.
+ */
+export const reportRequest = z.strictObject({ actor: teammateId, text: z.string().min(1) });
+export type ReportRequest = z.infer<typeof reportRequest>;
+
+/**
  * `POST /cards/:id/status`: one of the `manualMoves`. `from` must be the
  * card's current state, so two people moving the same card cannot both win.
  */
@@ -143,6 +152,23 @@ export type SetLogFilterRequest = z.infer<typeof setLogFilterRequest>;
 
 export const logFiltersResponse = z.object({ log_filters: logFilters });
 export type LogFiltersResponse = z.infer<typeof logFiltersResponse>;
+
+/**
+ * `POST /functions/:id/critic-gate`: a person sets whether the AI critic must
+ * pass on a pull request before a person's approval of it lets a merge move a
+ * card of that function to done. A person's approval is needed either way.
+ * `was_required` is the setting the person's view showed; if the setting is
+ * something else by now, the request is refused with 409. The actor must be a
+ * person. A change appends one `critic_gate_changed` event; asking for the
+ * setting the function already has appends nothing. The answer, also from
+ * `GET /functions/critic-gates`, is every function's gate that someone has
+ * set; a function not listed has the gate off.
+ */
+export const setCriticGateRequest = z.strictObject({ actor: teammateId, required: z.boolean(), was_required: z.boolean() });
+export type SetCriticGateRequest = z.infer<typeof setCriticGateRequest>;
+
+export const criticGatesResponse = z.object({ critic_gates: criticGates });
+export type CriticGatesResponse = z.infer<typeof criticGatesResponse>;
 
 /**
  * `GET /cards/:id`. `function` is the front matter of the card's function as
@@ -328,7 +354,9 @@ export type ApiError = z.infer<typeof apiError>;
  * What `POST /api/github/webhook` did with one delivery. Every outcome but a
  * bad signature or a malformed payload is answered 200, so GitHub does not
  * report or retry a delivery the board chose not to record:
- * - `recorded`: `events` were appended to the card `card_id`.
+ * - `recorded`: `events` were appended to the card `card_id`. A `reason`
+ *   here says why the card did not move although the delivery would move
+ *   it, because its sender may not under the owner's mode (`mayMoveCard`).
  * - `ignored`: nothing was recorded, because the event is not one the board
  *   maps, or names no card on the board, or `reason` says otherwise.
  * - `refused`: the delivery names a card, but recording it would break a

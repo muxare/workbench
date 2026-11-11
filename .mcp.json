@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "workbench": {
+      "type": "stdio",
+      "command": "sh",
+      "args": [
+        "-c",
+        "{ [ -n \"$CLAUDE_PROJECT_DIR\" ] && cd \"$CLAUDE_PROJECT_DIR\"; } || cd \"$(git rev-parse --show-toplevel)\" || exit 1; exec node apps/mcp/src/main.ts"
+      ],
+      "env": {
+        "WORKBENCH_API_URL": "${WORKBENCH_API_URL:-http://localhost:3000}"
+      }
+    }
+  }
+}

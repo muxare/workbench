@@ -10,7 +10,7 @@ import { loadFunctionIds } from "../process.ts";
 import { addCard, addTeammate, appendEvents, cardLog, cardStatus } from "../store.ts";
 import { formatGithubLogins, parseGithubLogins } from "./logins.ts";
 import { signBody, validSignature } from "./signature.ts";
-import { cardIdFromBody, cardIdFromBranch, eventIdFor } from "./webhook.ts";
+import { eventIdFor } from "./webhook.ts";
 
 const SECRET = "invented-webhook-secret";
 const NOW = "2026-11-11T12:00:00.000Z";
@@ -55,6 +55,24 @@ async function moveCard2(...states: ("ready" | "in_progress" | "review" | "done"
   }
   await appendEvents(db, events);
 }
+
+/** Mikael's mode for implement_services, the function of cards 1 and 2; its default is delegate. */
+async function setMode(to: "manual" | "assist" | "delegate") {
+  await appendEvents(db, [
+    { id: `invented-mode-${to}`, type: "mode_changed", teammate_id: "mikael", function_id: "implement_services", actor: "mikael", at: "2026-11-11T08:30:00Z", from: null, to },
+  ]);
+}
+
+/** Require the AI critic to pass before a person's approval leads to done, for implement_services. */
+async function requireCritic() {
+  await appendEvents(db, [
+    { id: "invented-gate", type: "critic_gate_changed", function_id: "implement_services", actor: "mikael", at: "2026-11-11T08:30:00Z", required: true, was_required: false },
+  ]);
+}
+
+/** A review of pull request #3 submitted by the AI teammate, the AI critic. */
+const criticReview = (state: "approved" | "commented" | "changes_requested") =>
+  tweak(tweak(fixture("pull_request_review.approved"), "review.user.login", "workbench-agent[bot]"), "review.state", state);
 
 interface DeliverOptions {
   delivery?: string;
@@ -342,6 +360,7 @@ describe("workflow_run of check", () => {
         passed: true,
         summary: "The check workflow, run 2, ended success on pull request #3.",
         url: "https://github.com/muxare/workbench/actions/runs/43020000001",
+        pull_request: 3,
       },
     ]);
   });
@@ -396,6 +415,7 @@ describe("pull_request_review", () => {
         at: NOW,
         pull_request: 3,
         url: "https://github.com/muxare/workbench/pull/3#pullrequestreview-900000020",
+        commit_sha: "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
       },
     ]);
   });
@@ -410,9 +430,124 @@ describe("pull_request_review", () => {
     expect((await cardStatus(db, "2")).state).toBe("in_progress");
   });
 
-  it("ignores a comment review and other review actions", async () => {
+  it("ignores a comment review, from a person or the AI critic, and other review actions", async () => {
     await ignored("pull_request_review", tweak(fixture("pull_request_review.approved"), "review.state", "commented"), /commented review is not mapped/);
+    await ignored("pull_request_review", criticReview("commented"), /commented review is not mapped/);
     await ignored("pull_request_review", tweak(fixture("pull_request_review.approved"), "action", "dismissed"), /dismissed is not mapped/);
+  });
+
+  it("records the AI critic's approval as a passed consistency check on the pull request and commit, never as an approval", async () => {
+    const body = await recorded("pull_request_review", criticReview("approved"));
+    expect(body.events).toEqual([
+      {
+        id: expect.any(String),
+        type: "check_ran",
+        card_id: "2",
+        actor: "ai",
+        at: NOW,
+        check: "consistency",
+        passed: true,
+        summary: "The AI critic passed pull request #3.",
+        url: "https://github.com/muxare/workbench/pull/3#pullrequestreview-900000020",
+        pull_request: 3,
+        commit_sha: "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+      },
+    ]);
+    expect(types(await cardLog(db, "2"))).not.toContain("approved");
+  });
+
+  it("records the AI critic's changes request as a failed consistency check and a changes request", async () => {
+    const body = await recorded("pull_request_review", criticReview("changes_requested"));
+    expect(body.events).toMatchObject([
+      { type: "check_ran", actor: "ai", check: "consistency", passed: false, pull_request: 3, commit_sha: "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d" },
+      { type: "changes_requested", actor: "ai", pull_request: 3 },
+    ]);
+  });
+});
+
+describe("who moves the card follows the owner's mode", () => {
+  it("does not let the AI move a card to review when the owner works its function in assist or manual", async () => {
+    for (const m of ["assist", "manual"] as const) {
+      db = await openDb(":memory:");
+      await addTeammate(db, { kind: "human", id: "mikael", name: "Mikael (invented test team)", roles: ["po", "be"] }, "2026-11-11T08:00:00Z");
+      await addTeammate(db, { kind: "ai", id: "ai", name: "AI teammate" });
+      await addCard(db, { id: "2", title: "Invented card 2", function_id: "implement_services", owner: "mikael", links: [] }, loadFunctionIds());
+      app = createApp({ db, functionIds: loadFunctionIds(), now: () => new Date(NOW), githubWebhookSecret: SECRET, githubLogins: LOGINS });
+      await setMode(m);
+      await moveCard2("ready", "in_progress");
+      const body = await recorded("pull_request", fixture("pull_request.opened"));
+      expect(types(body.events)).toEqual(["review_requested"]);
+      expect(body.reason).toMatch(new RegExp(`card 2 stays in_progress: mikael works implement_services in ${m}, where human writes, so only mikael may move the card, not ai`));
+      expect((await cardStatus(db, "2")).state).toBe("in_progress");
+    }
+  });
+
+  it("lets the AI move a card to review in delegate, and says nothing about staying", async () => {
+    await setMode("delegate");
+    await moveCard2("ready", "in_progress");
+    const body = await recorded("pull_request", fixture("pull_request.opened"));
+    expect(types(body.events)).toEqual(["review_requested", "status_changed"]);
+    expect(body.reason).toBeUndefined();
+  });
+
+  it("lets the owner move their card to review in assist", async () => {
+    await setMode("assist");
+    await moveCard2("ready", "in_progress");
+    const body = await recorded("pull_request", tweak(fixture("pull_request.opened"), "sender.login", "muxare"));
+    expect(body.events).toMatchObject([{ type: "review_requested", actor: "mikael" }, { type: "status_changed", actor: "mikael", to: { state: "review" } }]);
+  });
+
+  it("does not let another person move the owner's card, even in delegate", async () => {
+    await addTeammate(db, { kind: "human", id: "invented-other", name: "Invented other person", roles: ["be"] }, "2026-11-11T08:00:00Z");
+    app = createApp({
+      db,
+      functionIds: loadFunctionIds(),
+      now: () => new Date(NOW),
+      githubWebhookSecret: SECRET,
+      githubLogins: parseGithubLogins("muxare=mikael,workbench-agent[bot]=ai,invented-other-login=invented-other"),
+    });
+    await moveCard2("ready", "in_progress");
+    const body = await recorded("pull_request", tweak(fixture("pull_request.opened"), "sender.login", "invented-other-login"));
+    expect(types(body.events)).toEqual(["review_requested"]);
+    expect(body.reason).toMatch(/only mikael or the AI may move the card, not invented-other/);
+  });
+
+  it("sends the card back on the AI critic's changes request only where the AI may move it", async () => {
+    await setMode("assist");
+    await moveCard2("ready", "in_progress", "review");
+    const stays = await recorded("pull_request_review", criticReview("changes_requested"));
+    expect(types(stays.events)).toEqual(["check_ran", "changes_requested"]);
+    expect(stays.reason).toMatch(/card 2 stays review: mikael works implement_services in assist/);
+    expect((await cardStatus(db, "2")).state).toBe("review");
+    // The owner's own changes request moves it back in any mode.
+    const moves = await recorded("pull_request_review", fixture("pull_request_review.changes_requested"));
+    expect(types(moves.events)).toEqual(["changes_requested", "status_changed"]);
+    expect((await cardStatus(db, "2")).state).toBe("in_progress");
+  });
+
+  it("follows the mode the card was picked in, not a profile change made after the pick", async () => {
+    const pick = (mode: "assist" | "delegate") => ({ id: `invented-pick-${mode}`, type: "picked" as const, card_id: "2", actor: "mikael", at: "2026-11-11T09:00:00Z", mode });
+    // Picked in delegate, then Mikael switches implement_services to assist: the AI may still move it.
+    await moveCard2("ready", "in_progress");
+    await appendEvents(db, [pick("delegate")]);
+    await setMode("assist");
+    expect(types((await recorded("pull_request", fixture("pull_request.opened"))).events)).toEqual(["review_requested", "status_changed"]);
+    // Card 1, picked in assist while the profile still says delegate: the AI may not move it.
+    await appendEvents(db, [
+      { id: "invented-1-ready", type: "status_changed", card_id: "1", actor: "mikael", at: "2026-11-11T09:00:00Z", from: "backlog", to: { state: "ready" } },
+      { id: "invented-1-pick", type: "picked", card_id: "1", actor: "mikael", at: "2026-11-11T09:00:00Z", mode: "assist" },
+      { id: "invented-1-start", type: "status_changed", card_id: "1", actor: "mikael", at: "2026-11-11T09:00:00Z", from: "ready", to: { state: "in_progress" } },
+      { id: "invented-mode-back", type: "mode_changed", teammate_id: "mikael", function_id: "implement_services", actor: "mikael", at: "2026-11-11T09:30:00Z", from: "assist", to: "delegate" },
+    ]);
+    const body = await recorded("pull_request", tweak(fixture("pull_request.opened"), "pull_request.body", "Workbench: #1"));
+    expect(types(body.events)).toEqual(["review_requested"]);
+    expect(body.reason).toMatch(/card 1 stays in_progress: the card was picked in assist, where human writes/);
+  });
+
+  it("sends the card back on the AI critic's changes request in delegate", async () => {
+    await moveCard2("ready", "in_progress", "review");
+    const body = await recorded("pull_request_review", criticReview("changes_requested"));
+    expect(body.events).toMatchObject([{ type: "check_ran" }, { type: "changes_requested" }, { type: "status_changed", actor: "ai", to: { state: "in_progress" } }]);
   });
 });
 
@@ -489,33 +624,105 @@ describe("pull_request merged", () => {
     await refused(/nobody approved it/);
   });
 
-  it("refuses a merge approved by the AI teammate, who is not a person", async () => {
+  it("refuses a merge the AI teammate approved, since its approval is only the critic passing", async () => {
     await moveCard2("ready", "in_progress", "review");
-    await recorded("pull_request_review", tweak(fixture("pull_request_review.approved"), "review.user.login", "workbench-agent[bot]"));
+    await recorded("pull_request_review", criticReview("approved"));
+    await refused(/nobody approved it/);
+  });
+
+  it("refuses a merge whose recorded approval is by the AI teammate, who is not a person", async () => {
+    await moveCard2("ready", "in_progress", "review");
+    await appendEvents(db, [
+      { id: "invented-ai-approval", type: "approved", card_id: "2", actor: "ai", at: NOW, pull_request: 3, url: "https://github.com/muxare/workbench/pull/3" },
+    ]);
     await refused(/approved by ai, who is not a person/);
+  });
+
+  it("does not need the AI critic when the card's function leaves it optional", async () => {
+    // In assist the critic's changes request does not move the card back, so the card is still in review.
+    await setMode("assist");
+    await moveCard2("ready", "in_progress", "review");
+    await recorded("pull_request_review", criticReview("changes_requested"));
+    await recorded("pull_request_review", fixture("pull_request_review.approved"));
+    expect((await recorded("pull_request", fixture("pull_request.closed.merged"))).events).toMatchObject([{ to: { state: "done" } }]);
+  });
+
+  describe("when the card's function requires the AI critic", () => {
+    beforeEach(async () => {
+      await requireCritic();
+      await moveCard2("ready", "in_progress", "review");
+    });
+
+    it("refuses a merge the critic has not reviewed, even after a person's approval", async () => {
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      await refused(/implement_services requires the AI critic to pass before a person approves, and it has not reviewed the pull request/);
+    });
+
+    it("refuses a merge whose latest critic review failed", async () => {
+      await setMode("assist");
+      await recorded("pull_request_review", criticReview("approved"));
+      await recorded("pull_request_review", criticReview("changes_requested"));
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      await refused(/its latest review failed/);
+    });
+
+    it("refuses a merge whose critic passed only after the person approved", async () => {
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      await recorded("pull_request_review", criticReview("approved"));
+      await refused(/it passed only after the approval/);
+    });
+
+    it("refuses a merge whose critic passed on another pull request", async () => {
+      await recorded("pull_request_review", tweak(criticReview("approved"), "pull_request.number", 9));
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      await refused(/it has not reviewed the pull request/);
+    });
+
+    it("moves the card to done when the critic passed and then a person approved", async () => {
+      await recorded("pull_request_review", criticReview("approved"));
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      const body = await recorded("pull_request", fixture("pull_request.closed.merged"));
+      expect(body.events).toMatchObject([{ type: "status_changed", actor: "mikael", from: "review", to: { state: "done" } }]);
+    });
+
+    it("still needs a person's approval after the critic passed", async () => {
+      await recorded("pull_request_review", criticReview("approved"));
+      await refused(/nobody approved it/);
+    });
+
+    it("does not count the AI's comment after a failed critic review as a pass", async () => {
+      await setMode("assist");
+      await recorded("pull_request_review", criticReview("changes_requested"));
+      await ignored("pull_request_review", criticReview("commented"), /commented review is not mapped/);
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      await refused(/its latest review failed/);
+    });
+
+    it("refuses a merge whose critic passed on an earlier commit than the merged head", async () => {
+      await recorded("pull_request_review", tweak(criticReview("approved"), "review.commit_id", "5a1c0e7d3b9f24a6c8e1d0f3b7a2c4e6d8f0a1b2"));
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      await refused(/its pass is for 5a1c0e7d3b9f24a6c8e1d0f3b7a2c4e6d8f0a1b2, not the merged head 9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d/);
+    });
+  });
+
+  it("refuses a merge whose approval is for an earlier commit than the merged head", async () => {
+    await moveCard2("ready", "in_progress", "review");
+    await recorded("pull_request_review", tweak(fixture("pull_request_review.approved"), "review.commit_id", "5a1c0e7d3b9f24a6c8e1d0f3b7a2c4e6d8f0a1b2"));
+    await refused(/the approval is for 5a1c0e7d3b9f24a6c8e1d0f3b7a2c4e6d8f0a1b2, not the merged head 9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d/);
+  });
+
+  it("refuses a merge whose approval names no commit, as approvals recorded before commits were kept do", async () => {
+    await moveCard2("ready", "in_progress", "review");
+    await appendEvents(db, [
+      { id: "invented-old-approval", type: "approved", card_id: "2", actor: "mikael", at: NOW, pull_request: 3, url: "https://github.com/muxare/workbench/pull/3" },
+    ]);
+    await refused(/the approval is for an unknown commit/);
   });
 
   it("ignores a pull request closed without merging, and a merge of a card already done", async () => {
     await ignored("pull_request", tweak(fixture("pull_request.closed.merged"), "pull_request.merged", false), /closed without merging/);
     await moveCard2("ready", "in_progress", "review", "done");
     await ignored("pull_request", fixture("pull_request.closed.merged"), /already done/);
-  });
-});
-
-describe("card names", () => {
-  it("reads the card from a branch named wb/<card id>-<short title>", () => {
-    expect(cardIdFromBranch("wb/2-github-webhooks")).toBe("2");
-    expect(cardIdFromBranch("wb/12-x")).toBe("12");
-    expect(cardIdFromBranch("wb/2")).toBeUndefined();
-    expect(cardIdFromBranch("wb/two-x")).toBeUndefined();
-    expect(cardIdFromBranch("feature/wb/2-x")).toBeUndefined();
-  });
-
-  it("reads the card from a body line Workbench: #<card id>", () => {
-    expect(cardIdFromBody("Text.\n\nWorkbench: #2")).toBe("2");
-    expect(cardIdFromBody("Workbench:#14 and more")).toBe("14");
-    expect(cardIdFromBody("Fixes #2")).toBeUndefined();
-    expect(cardIdFromBody(null)).toBeUndefined();
   });
 });
 
