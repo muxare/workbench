@@ -1,6 +1,6 @@
 // INVENTED test data for the board view-model tests. None of it describes a
 // real client, project or person.
-import { defaultLogFilters, type BoardResponse, type Card, type CardEvent } from "@workbench/shared";
+import { defaultLogFilters, type BoardResponse, type Card, type CardEvent, type ChainFunction } from "@workbench/shared";
 
 export const PO = "t-po";
 export const UX = "t-ux";
@@ -11,6 +11,20 @@ const at = (minute: number) => `2026-11-06T09:${String(minute).padStart(2, "0")}
 
 /** The invented cycle the test board is in; its window holds every event of the test log. */
 export const CYCLE = { id: "cy-14", name: "Invented sprint 14", starts_at: "2026-11-02T08:00:00Z", ends_at: "2026-11-16T08:00:00Z" };
+
+/**
+ * The functions the test board knows, in the shape `GET /board` sends: a
+ * hand-written subset whose roles and defaults follow process/functions at
+ * the time of writing. The board tests never read process/ themselves.
+ */
+export const TEST_FUNCTIONS: ChainFunction[] = [
+  { name: "define_api_contract", role: "be", modes: { default: "assist" } },
+  { name: "implement_services", role: "be", modes: { default: "delegate" } },
+  { name: "refine_ui_spec", role: "fe", modes: { default: "assist" } },
+  { name: "fix_bug", role: "team", modes: { default: "delegate" } },
+  { name: "write_issues", role: "team", modes: { default: "delegate" } },
+  { name: "frame_problem", role: "ux", modes: { default: "assist" } },
+];
 
 export function card(id: string, over: Partial<Card> = {}): Card {
   return { id, title: `Invented card ${id}`, function_id: "frame_problem", owner: UX, status: { state: "backlog" }, links: [], ...over };
@@ -58,6 +72,7 @@ export function testBoard(over: Partial<BoardResponse> = {}): BoardResponse {
       { kind: "human", id: BE, name: "Pat Example", roles: ["be"], process_profile: { define_api_contract: "assist" } },
       { kind: "ai", id: AI, name: "AI teammate (invented)" },
     ],
+    functions: TEST_FUNCTIONS,
     cards: [
       card("c-138", { status: { state: "done" } }),
       card("c-142", { status: { state: "in_progress" } }),

@@ -4,8 +4,10 @@
 // them and names them in avatars, lines and logs, and their panel lists the
 // others.
 import {
+  chainModeCounts,
   teammateRole,
   type BoardResponse,
+  type ChainFunction,
   type HumanTeammate,
   type Mode,
   type Teammate,
@@ -132,9 +134,16 @@ export function placeTeammates(teammates: readonly Teammate[]): Placement {
   return placement;
 }
 
-/** How many of a person's functions they work in each mode, from their process profile. */
-export function modeCounts(teammate: Teammate): { mode: Mode; count: number }[] {
+/**
+ * How many steps of a person's chain they work in each mode: every function of
+ * their roles and every other function they chose a mode for, each in their
+ * mode or else the function's default. The same rule (`chainModeCounts` in
+ * packages/shared) as the profile's steps, over the functions the board sent,
+ * so a streamed `mode_changed` or `roles_changed` folded into the teammate
+ * changes the counts at once.
+ */
+export function modeCounts(teammate: Teammate, functions: readonly ChainFunction[]): { mode: Mode; count: number }[] {
   if (teammate.kind !== "human") return [];
-  const values = Object.values(teammate.process_profile);
-  return modes.map((m) => ({ mode: m, count: values.filter((v) => v === m).length }));
+  const counts = chainModeCounts(teammate, functions);
+  return modes.map((m) => ({ mode: m, count: counts[m] }));
 }

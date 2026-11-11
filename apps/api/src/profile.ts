@@ -2,8 +2,15 @@
 // work it in. Every field of a step except the person's own choice is read
 // from the function's file in process/functions, so a changed file shows up
 // on the profile without a code change.
-import type { FunctionFrontMatter, HumanTeammate, ProfileStep, TeammateProfileResponse } from "@workbench/shared";
-import { ownerMode, workableMode } from "./teammates/eligibility.ts";
+import {
+  chainOf,
+  ownerMode,
+  type FunctionFrontMatter,
+  type HumanTeammate,
+  type ProfileStep,
+  type TeammateProfileResponse,
+} from "@workbench/shared";
+import { workableMode } from "./teammates/eligibility.ts";
 
 function step(person: HumanTeammate, definition: FunctionFrontMatter): ProfileStep {
   const mode = ownerMode(person, definition);
@@ -20,21 +27,8 @@ function step(person: HumanTeammate, definition: FunctionFrontMatter): ProfileSt
 }
 
 /**
- * A person's chain: every function whose `role` is one of theirs, in the
- * order of `definitions`, then every other function they have a mode for in
- * their process profile, in the same order. The AI teammate's profile uses the
- * same rule to say who owns a step.
- */
-export function chainOf(person: HumanTeammate, definitions: ReadonlyMap<string, FunctionFrontMatter>): FunctionFrontMatter[] {
-  const all = [...definitions.values()];
-  const roles = new Set<string>(person.roles);
-  const own = all.filter((d) => roles.has(d.role));
-  const chosen = all.filter((d) => !roles.has(d.role) && person.process_profile[d.name] !== undefined);
-  return [...own, ...chosen];
-}
-
-/**
- * The profile of `person`: their chain (`chainOf`), each step with its mode.
+ * The profile of `person`: their chain (`chainOf` in packages/shared, which
+ * the board's mode counts use too), each step with its mode.
  * A profile entry with no function file is listed in `unknown_functions`.
  */
 export function buildProfile(
@@ -43,7 +37,7 @@ export function buildProfile(
 ): TeammateProfileResponse {
   return {
     teammate: person,
-    steps: chainOf(person, definitions).map((d) => step(person, d)),
+    steps: chainOf(person, definitions.values()).map((d) => step(person, d)),
     unknown_functions: Object.keys(person.process_profile).filter((id) => !definitions.has(id)),
   };
 }
