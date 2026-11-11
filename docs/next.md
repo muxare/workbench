@@ -27,6 +27,7 @@ Last updated 2026-11-11 by Claude.
 - Merged to `main` on 2026-11-11 (not pushed), built by two parallel subagents: a human teammate holds a non-empty list of `roles`, derived from `roles_changed` events (migration `0004_teammate_roles_events`, `POST /api/teammates/:id/roles`); the first role is the main one and decides the seat, and the panel lists the others. Design review run with no real mismatches; a person with several roles has not yet been seen in a browser. Also merged: five coding functions in `process/` (`implement_services`, `implement_interactions`, `fix_bug`, `open_pull_request`, `review_pull_request`) with their artifacts; `docs/dev-loop.md` was corrected where it said `process/` holds only the design functions. `pnpm check` passes with 375 tests and the validator with 9 functions. See `docs/decisions.md`.
 - The `design-reviewer` subagent type could be spawned on 2026-11-11.
 - Stage 1 of `docs/dev-loop.md` is built and merged on 2026-11-11 (not pushed): the workbench's own board starts from `teams/workbench/` (`team.json`, `cards.json`) with `pnpm --filter @workbench/api team:start teams/workbench`, then `team:cards` and `team:serve`. The database is `teams/workbench/board.db`, git-ignored and apart from the demo database; it was created in the main checkout on 2026-11-11. It holds Mikael (po, ux, fe, be), the AI teammate, the cycle "Development loop, stages 1 and 2" (2026-11-11 to 2026-11-25) and two cards, both `implement_services`: #1 the CI workflow, #2 the webhook endpoint. The start task itself and the GitHub setup task (no function fits) were left off. `pnpm check` passes with 387 tests.
+- Checked in Chrome on 2026-11-11 by Mikael and Claude: the workbench board renders Mikael once in the PO seat with "Also UX · FE · BE", the two cards, the cycle and its log, Live, and no console errors. That check found one bug, fixed and merged the same day: the panel's mode counts ignored function defaults (it showed 0/0/0 against the profile's 0/4/1). `GET /api/board` now carries `functions` (name, role, default mode) and the panel counts through the shared `chainModeCounts` in `packages/shared/src/chain.ts`, the same rule as the profile; rechecked in Chrome. `pnpm check` passes with 400 tests. The real board still carries the demo's headline, "AI joins the team at the board".
 - Decided with Mikael on 2026-11-09: the workbench is developed and demoed on one invented example project, a housing cooperative's laundry room booking and fault reporting, designed to stress the chain. It does not replace the Phase 2 run on a real project. See `docs/decisions.md`.
 - Decided with Mikael on 2026-11-08: the template lists the protocols' optional `note`, and a card with an unfinished `depends_on` cannot be picked (shared rule in `packages/shared`, used by the AI teammate and the API pick).
 
@@ -46,10 +47,8 @@ Last updated 2026-11-11 by Claude.
 
 ## Next, in the suggested order
 
-1. Run the workbench board (`team:serve` and the web app) in Chrome and check that Mikael's panel with four roles renders as the design review expected; fix what does not.
-
 Stage 2 of `docs/dev-loop.md`:
 
-2. Add a GitHub Actions workflow that runs `pnpm check` on every pull request (card #1).
-3. Build the webhook endpoint in `apps/api` with the mapping in `docs/dev-loop.md`, tested against recorded payloads (card #2; blocked by question 7).
-4. With Mikael on GitHub: protect `main`, install the GitHub App, and forward webhooks to the local API.
+1. Add a GitHub Actions workflow that runs `pnpm check` on every pull request (card #1).
+2. Build the webhook endpoint in `apps/api` with the mapping in `docs/dev-loop.md`, tested against recorded payloads (card #2; blocked by question 7).
+3. With Mikael on GitHub: protect `main`, install the GitHub App, and forward webhooks to the local API.
