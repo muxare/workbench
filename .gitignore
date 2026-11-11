@@ -19,3 +19,6 @@ dist/
 
 # Local SQLite databases (pnpm --filter @workbench/api db:seed)
 apps/api/data/
+
+# A real team's board (pnpm --filter @workbench/api team:start teams/<team>)
+teams/*/board.db*

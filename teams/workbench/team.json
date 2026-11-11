@@ -1,0 +1,14 @@
+{
+  "id": "workbench",
+  "name": "Workbench",
+  "teammates": [
+    { "kind": "human", "id": "mikael", "name": "Mikael Axelsson", "roles": ["po", "ux", "fe", "be"] },
+    { "kind": "ai", "id": "ai", "name": "AI teammate" }
+  ],
+  "cycle": {
+    "id": "dev-loop-1",
+    "name": "Development loop, stages 1 and 2",
+    "starts_at": "2026-11-11T00:00:00Z",
+    "ends_at": "2026-11-25T00:00:00Z"
+  }
+}
