@@ -2,6 +2,10 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-11: New cards get the next number, not a UUID (with Mikael)
+
+`POST /cards` gives a new card a random UUID today. The board shows a card as `#` plus the trailing digits of its id, and `docs/dev-loop.md` names branches `wb/<card id>-…`, so a UUID makes both the label and the branch name unreadable; the two workbench cards were entered through the store with ids 1 and 2 to avoid it. Mikael accepted the recommendation to have `POST /cards` give the next number, and to do it before the webhook endpoint, because the webhook's mapping from branch to card depends on readable ids. This would change if cards had to be created on several boards that merge, where a counter per board could collide.
+
 ## 2026-11-11: The board sends each function's role and default mode, so a panel counts modes as the profile does (by Claude)
 
 - **`GET /api/board` carries `functions`: every function in `process/functions`, in file order, with only its `name`, `role` and `modes.default`.** On the workbench's own board on 2026-11-11, Mikael's panel read "0 I do · 0 assist · 0 AI" while his profile listed five steps, four in assist and one in delegate. The panel counted only the modes a person had set, while the profile counts every step of the person's chain and falls back to the function's default; the invented seed sets every mode explicitly, which hid the difference. The client needs each function's role to know the chain and its default to know the mode, and it must not hardcode either, so the board response carries them, read from the files on each request like the rest of the board. Sending the counts ready-made from the server was rejected because the board folds streamed `mode_changed` and `roles_changed` events into teammates without a refetch, and counts computed on the server would go stale until the next one; with the functions on the board, the counts are recomputed from the teammate as each event lands. Sending the whole front matter was rejected as far more than the panel needs.
