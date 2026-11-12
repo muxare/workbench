@@ -1,17 +1,17 @@
 // A real team's board, started from files checked in under teams/<team>/ rather
 // than from the invented seed. `team.json` names the people (with their roles),
-// the AI teammate and the running cycle; `cards.json` lists the cards to enter.
-// The board's database is teams/<team>/board.db, ignored by git, so it is never
+// the AI teammate, the first cycle and the team's cycle setting; `cards.json`
+// lists the cards to enter. The board's database is teams/<team>/board.db, ignored by git, so it is never
 // confused with the scratch database under apps/api/data that the invented seed
 // fills. Everything goes through the store, as the seed and the HTTP API do:
 // people join through `addTeammate`, cards are added through `addCard`.
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cycle } from "@workbench/shared";
+import { cycle, cycleSetting, nextCycle, type Cycle } from "@workbench/shared";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
-import { addCard, addCycle, addTeammate, cardRecord, getCard, getTeammate, listTeammates, StoreError, teammateRecord } from "../store.ts";
+import { addCard, addCycle, addTeammate, cardRecord, getCard, getCycle, getTeammate, listCycles, listTeammates, StoreError, teammateRecord } from "../store.ts";
 
 /** The repository root; team directories on the command line are relative to it. */
 export const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -20,7 +20,9 @@ export const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
  * A team file. `github_logins` says which teammate each GitHub account is, so
  * the webhook endpoint can name the actor of what happens on GitHub; it is
  * kept here rather than on the teammate, because it is configuration of one
- * workspace, not part of who the person is on the board.
+ * workspace, not part of who the person is on the board. `cycle` is the first
+ * cycle, added by `team:start`; `cycles` is the setting `team:cycle` follows
+ * to add each one after it.
  */
 export const teamFile = z
   .strictObject({
@@ -28,6 +30,7 @@ export const teamFile = z
     name: z.string().min(1),
     teammates: z.array(teammateRecord).min(1),
     cycle,
+    cycles: cycleSetting,
     github_logins: z.record(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]*(\[bot\])?$/, "expected a GitHub login"), z.string().min(1)).optional(),
   })
   .refine((t) => Object.values(t.github_logins ?? {}).every((id) => t.teammates.some((m) => m.id === id)), {
@@ -111,4 +114,22 @@ export async function enterCards(
     added.push(c.id);
   }
   return { added, skipped };
+}
+
+/**
+ * Add the cycle that follows the board's cycles under the team's setting
+ * (`nextCycle`): it starts where the last one ends. `name` is the cycle's
+ * name, needed when the setting has no name pattern. Refuses an id the board
+ * already has, so a hand-added cycle is never overwritten.
+ */
+export async function startNextCycle(db: Db, team: TeamFile, name?: string): Promise<Cycle> {
+  let next: Cycle;
+  try {
+    next = nextCycle(team.cycles, await listCycles(db), name);
+  } catch (e) {
+    throw new StoreError(e instanceof Error ? e.message : String(e), "rule_violation");
+  }
+  if (await getCycle(db, next.id)) throw new StoreError(`the board already has a cycle '${next.id}'`, "conflict");
+  await addCycle(db, next);
+  return next;
 }

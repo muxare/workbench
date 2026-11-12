@@ -159,6 +159,44 @@ export const cycle = z
   });
 export type Cycle = z.infer<typeof cycle>;
 
+/**
+ * A team's cycle setting (team.json's `cycles`): how long a cycle runs and how
+ * the next one is named. In `id` and `name`, `{n}` stands for the cycle's
+ * number on the board, one more than the cycles it already has. `name` is the
+ * fallback when no name is given for the cycle; a team whose cycles are named
+ * for their stage leaves it out, so each name must be given.
+ */
+const numbered = (what: string) =>
+  z.string().min(1).refine((s) => s.includes("{n}"), { message: `the ${what} pattern must contain {n}` });
+export const cycleSetting = z.strictObject({
+  length_days: z.int().min(1).max(365),
+  id: numbered("id"),
+  name: numbered("name").optional(),
+});
+export type CycleSetting = z.infer<typeof cycleSetting>;
+
+/**
+ * The cycle that follows the board's cycles under `setting`: it starts where
+ * the cycle that ends last ends and runs `length_days` days, numbered one more
+ * than the cycles already on the board. `name` wins over the setting's name
+ * pattern; with neither, or with no cycle on the board to follow, it throws.
+ */
+export function nextCycle(setting: CycleSetting, cycles: readonly Cycle[], name?: string): Cycle {
+  const last = cycles.reduce<Cycle | undefined>((best, c) => (best === undefined || Date.parse(c.ends_at) > Date.parse(best.ends_at) ? c : best), undefined);
+  if (!last) throw new Error("the board has no cycle to follow; team:start adds the first one from team.json");
+  const n = String(cycles.length + 1);
+  const chosen = name?.trim() || setting.name?.replaceAll("{n}", n);
+  if (!chosen) throw new Error("the team's cycle setting has no name pattern, so the cycle's name must be given");
+  const start = Date.parse(last.ends_at);
+  const iso = (ms: number) => new Date(ms).toISOString().replace(".000Z", "Z");
+  return cycle.parse({
+    id: setting.id.replaceAll("{n}", n),
+    name: chosen,
+    starts_at: iso(start),
+    ends_at: iso(start + setting.length_days * 86_400_000),
+  });
+}
+
 /** Whether the time `at` falls in the cycle's window, [starts_at, ends_at). */
 export function inCycle(c: Cycle, at: string): boolean {
   const t = Date.parse(at);

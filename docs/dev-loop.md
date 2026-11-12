@@ -89,6 +89,14 @@ The MCP server needs nothing extra: Claude Code starts it from `.mcp.json`, and 
 
 Because the app being developed is this repository, a merged pull request changes the code the running API was started from. After pulling `main`, restart `team:serve` so the board runs the merged rules; the forwarder can keep running, but a delivery it receives while the API is down cannot be handed on, so the restart should fall between pushes.
 
+Cycles are two-week windows named for the stage they cover, and both the length and the naming are a team setting, `cycles` in `teams/workbench/team.json`: `{ "length_days": 14, "id": "dev-loop-{n}" }`, where `{n}` is the cycle's number on the board. `team:start` adds only the first cycle, `cycle` in the same file. Each later one is added on the started board with
+
+```sh
+pnpm --filter @workbench/api team:cycle teams/workbench "Development loop, stage 3"
+```
+
+which starts the new cycle where the board's last cycle ends and gives it `length_days` days, so dev-loop-1 (2026-11-11 to 2026-11-25) is followed by dev-loop-2 from 2026-11-25 to 2026-12-09. The name is the second argument. The workbench's setting has no `name` pattern, because its cycles are named for their stage, so the command refuses to run without one; a team that numbers its cycles can add a pattern such as `"name": "Cycle {n}"` and leave the argument out. The command refuses an id the board already has and writes no event, because a cycle is a window the cycle log is read through, not something that happened. `team:serve` can keep running, since the board reads its cycles from the database on every request.
+
 ## The loop in two diagrams
 
 The first diagram shows the pieces as they ran on 2026-11-11 and how they connect. Everything on the left runs on Mikael's machine; everything on the right is GitHub. The two directions use different mechanisms on purpose: the AI reaches GitHub as the App `workbench-ai-muxare`, with an installation token that a Claude Code session mints from the App's private key, so that what it pushes and opens is not Mikael's and he can approve it; GitHub reaches the workbench only through repository webhooks, which `gh webhook forward` carries to the API because the API is not reachable from the internet. There are two gates on a pull request, and they sit on different sides: GitHub refuses a merge to `main` without a pull request and a passing `check`, while the workbench refuses to move a card to done unless the latest verdict on its pull request is a person's approval (and, where the card's function requires it, the AI critic passed before that approval). GitHub cannot hold the second gate, because it requires no approvals while Mikael cannot approve his own pull requests. The dotted line from `main` back to the API and the board is the unusual part of this project: the app being developed is this same repository, so a merged pull request changes the workbench that recorded it.

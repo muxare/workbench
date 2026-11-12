@@ -7,6 +7,7 @@ import {
   currentCycle,
   criticRequired,
   cycle,
+  cycleSetting,
   decidedByHuman,
   inCycle,
   defaultLogFilters,
@@ -18,6 +19,7 @@ import {
   isCardEvent,
   logEventTypes,
   logFilters,
+  nextCycle,
   normalizeEventTypes,
   question,
   sameEventTypes,
@@ -280,6 +282,39 @@ describe("cycle", () => {
   it("rejects a window that ends before it starts", () => {
     const c = { id: "invented-s14", name: "Invented sprint", starts_at: "2026-11-16T08:00:00Z", ends_at: "2026-11-02T08:00:00Z" };
     expect(cycle.safeParse(c).success).toBe(false);
+  });
+});
+
+describe("cycleSetting and nextCycle", () => {
+  const s1 = { id: "invented-1", name: "Invented stage 1", starts_at: "2026-11-11T00:00:00Z", ends_at: "2026-11-25T00:00:00Z" };
+  const early = { id: "invented-early", name: "Invented early", starts_at: "2026-10-01T00:00:00+02:00", ends_at: "2026-10-15T00:00:00+02:00" };
+
+  it("rejects a pattern without {n}, a zero length and unknown fields", () => {
+    expect(cycleSetting.safeParse({ length_days: 14, id: "invented" }).success).toBe(false);
+    expect(cycleSetting.safeParse({ length_days: 14, id: "invented-{n}", name: "Invented" }).success).toBe(false);
+    expect(cycleSetting.safeParse({ length_days: 0, id: "invented-{n}" }).success).toBe(false);
+    expect(cycleSetting.safeParse({ length_days: 14, id: "invented-{n}", weeks: 2 }).success).toBe(false);
+  });
+
+  it("starts where the cycle that ends last ends, whatever the list order, and numbers it after the cycles there", () => {
+    const setting = cycleSetting.parse({ length_days: 7, id: "invented-{n}", name: "Invented week {n}" });
+    expect(nextCycle(setting, [s1, early])).toEqual({
+      id: "invented-3",
+      name: "Invented week 3",
+      starts_at: "2026-11-25T00:00:00Z",
+      ends_at: "2026-12-02T00:00:00Z",
+    });
+  });
+
+  it("takes a given name over the pattern, and needs one when there is no pattern", () => {
+    const setting = cycleSetting.parse({ length_days: 14, id: "invented-{n}" });
+    expect(nextCycle(setting, [s1], "Invented stage 2").name).toBe("Invented stage 2");
+    expect(() => nextCycle(setting, [s1])).toThrow(/name must be given/);
+    expect(() => nextCycle(setting, [s1], "  ")).toThrow(/name must be given/);
+  });
+
+  it("needs a cycle on the board to follow", () => {
+    expect(() => nextCycle({ length_days: 14, id: "invented-{n}", name: "Invented {n}" }, [])).toThrow(/no cycle to follow/);
   });
 });
 
