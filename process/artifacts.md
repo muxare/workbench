@@ -13,7 +13,8 @@ artifacts:
     owner: stakeholders
     made_by: external
     format: markdown
-    fields: [goal, metric, horizon]
+    fields: [goal, metric, horizon, held_by]
+    note: held_by names the stakeholder who holds the goal, so goals that pull against each other show whose they are (added 2026-11-12).
   - id: domain_rules
     name: Domain rules
     owner: stakeholders
