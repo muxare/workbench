@@ -356,7 +356,8 @@ export type ApiError = z.infer<typeof apiError>;
  * report or retry a delivery the board chose not to record:
  * - `recorded`: `events` were appended to the card `card_id`. A `reason`
  *   here says why the card did not move although the delivery would move
- *   it, because its sender may not under the owner's mode (`mayMoveCard`).
+ *   it, because its sender may not under the card's mode (`mayMoveCard`,
+ *   or `maySendCardBack` for the move back on changes requested).
  * - `ignored`: nothing was recorded, because the event is not one the board
  *   maps, or names no card on the board, or `reason` says otherwise.
  * - `refused`: the delivery names a card, but recording it would break a

@@ -56,8 +56,9 @@ export type MoveFunction = ChainFunction & { protocols: Partial<Record<Mode, { w
 export type MoveVerdict = { allowed: true } | { allowed: false; reason: string };
 
 /**
- * Who may move a card along its work (to review, and back to in progress on
- * changes requested): the one who writes in the protocol of the owner's mode
+ * Who may move a card along its work (to review, and the AI back to in
+ * progress on changes requested; a person's send-back is `maySendCardBack`):
+ * the one who writes in the protocol of the owner's mode
  * for the card's function (docs/decisions.md, 2026-11-11). The owner may
  * always move their own card. The AI may move it only when that protocol's
  * `writes` is `ai` or `both`, which in every function file today is
@@ -87,4 +88,16 @@ export function mayMoveCard(mover: Teammate, owner: Teammate, definition: MoveFu
       writes === "ai" || writes === "both" ? " or the AI" : ""
     } may move the card, not ${mover.id}`,
   };
+}
+
+/**
+ * Who may send a card back from review to in progress on changes requested.
+ * Any person may, whatever the mode and whoever owns the card, because a
+ * reviewer is rarely the owner (docs/decisions.md, 2026-11-12). The AI is
+ * held to `mayMoveCard`, as for every other move. The move to review is not
+ * widened: it stays with `mayMoveCard`.
+ */
+export function maySendCardBack(mover: Teammate, owner: Teammate, definition: MoveFunction, pickedMode?: Mode): MoveVerdict {
+  if (mover.kind === "human") return { allowed: true };
+  return mayMoveCard(mover, owner, definition, pickedMode);
 }

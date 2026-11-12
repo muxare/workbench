@@ -512,6 +512,40 @@ describe("who moves the card follows the owner's mode", () => {
     expect(body.reason).toMatch(/only mikael or the AI may move the card, not invented-other/);
   });
 
+  it("lets another person send the owner's card back on changes requested in every mode, but not move it to review", async () => {
+    for (const m of ["manual", "assist", "delegate"] as const) {
+      db = await openDb(":memory:");
+      await addTeammate(db, { kind: "human", id: "mikael", name: "Mikael (invented test team)", roles: ["po", "be"] }, "2026-11-11T08:00:00Z");
+      await addTeammate(db, { kind: "ai", id: "ai", name: "AI teammate" });
+      await addTeammate(db, { kind: "human", id: "invented-other", name: "Invented other person", roles: ["be"] }, "2026-11-11T08:00:00Z");
+      await addCard(db, { id: "2", title: "Invented card 2", function_id: "implement_services", owner: "mikael", links: [] }, loadFunctionIds());
+      app = createApp({
+        db,
+        functionIds: loadFunctionIds(),
+        now: () => new Date(NOW),
+        githubWebhookSecret: SECRET,
+        githubLogins: parseGithubLogins("muxare=mikael,workbench-agent[bot]=ai,invented-other-login=invented-other"),
+      });
+      await setMode(m);
+      await moveCard2("ready", "in_progress");
+      // The other person's review request records the event but leaves the card in progress.
+      const asked = await recorded("pull_request", tweak(fixture("pull_request.opened"), "sender.login", "invented-other-login"));
+      expect(types(asked.events)).toEqual(["review_requested"]);
+      expect(asked.reason).toMatch(/card 2 stays in_progress: .*not invented-other/);
+      expect((await cardStatus(db, "2")).state).toBe("in_progress");
+      // Mikael moves it to review by hand; the other person's changes request sends it back.
+      await moveCard2("review");
+      const review = tweak(tweak(fixture("pull_request_review.changes_requested"), "review.user.login", "invented-other-login"), "sender.login", "invented-other-login");
+      const back = await recorded("pull_request_review", review);
+      expect(back.events).toMatchObject([
+        { type: "changes_requested", actor: "invented-other" },
+        { type: "status_changed", actor: "invented-other", from: "review", to: { state: "in_progress" } },
+      ]);
+      expect(back.reason).toBeUndefined();
+      expect((await cardStatus(db, "2")).state).toBe("in_progress");
+    }
+  });
+
   it("sends the card back on the AI critic's changes request only where the AI may move it", async () => {
     await setMode("assist");
     await moveCard2("ready", "in_progress", "review");

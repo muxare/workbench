@@ -14,7 +14,7 @@
 //   other conclusion, and runs on `main`, are skipped.
 // - `pull_request_review` submitted by a person as approved: `approved`, with
 //   the commit reviewed; as changes requested: `changes_requested`, and a card
-//   in review moves back to in progress if the reviewer may move it. A
+//   in review moves back to in progress, whoever the person is. A
 //   commented review, which GitHub sends for every inline comment and reply,
 //   records nothing, from anyone.
 // - `pull_request_review` submitted by an AI teammate is the AI critic, which
@@ -27,9 +27,11 @@
 //   requires it (`critic_gate_changed`), the AI critic passed on that commit
 //   before that approval.
 //
-// Who may move a card to review or back follows the mode the card was picked
-// in, or else the owner's mode for the card's function (`mayMoveCard`): the
-// owner always, the AI only where the protocol has the AI write. A delivery whose sender may not move the card
+// Who may move a card to review follows the mode the card was picked in, or
+// else the owner's mode for the card's function (`mayMoveCard`): the owner
+// always, the AI only where the protocol has the AI write. Any person may send
+// a card back on changes requested, whatever the mode; the AI by the same rule
+// as the move to review (`maySendCardBack`). A delivery whose sender may not move the card
 // still records its events, and the answer's `reason` says why the card
 // stayed where it was.
 //
@@ -39,7 +41,7 @@
 // card moved while it was being handled, is refused the same way. Events are
 // stored, not the payloads.
 import type { Card, CardEvent, FunctionFrontMatter, Teammate, WebhookResponse } from "@workbench/shared";
-import { cardEvent, cardIdFromBody, cardIdFromBranch, criticRequired, mayMoveCard } from "@workbench/shared";
+import { cardEvent, cardIdFromBody, cardIdFromBranch, criticRequired, mayMoveCard, maySendCardBack } from "@workbench/shared";
 import type { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { appendEvents, cardLog, criticGates, eventsOfType, getCard, getTeammate, hasEvent, StoreError } from "../store.ts";
@@ -192,9 +194,11 @@ async function teammateFor(ctx: WebhookContext, login: string, cardId: string) {
 }
 
 /**
- * The move `to` that `mover` makes on `card`, if the owner's mode for the
- * card's function lets them, with the plan's events; otherwise the events
- * alone, and the reason the card stays.
+ * The move `to` that `mover` makes on `card`, if the rule for that move lets
+ * them, with the plan's events; otherwise the events alone, and the reason the
+ * card stays. The move to review follows the card's mode (`mayMoveCard`); the
+ * move back to in progress lets any person, and the AI by the same rule
+ * (`maySendCardBack`).
  */
 async function withMove(ctx: WebhookContext, card: Card, mover: Teammate, events: Draft[], from: Card["status"]["state"], to: "review" | "in_progress"): Promise<Plan> {
   const owner = await getTeammate(ctx.db, card.owner);
@@ -207,7 +211,7 @@ async function withMove(ctx: WebhookContext, card: Card, mover: Teammate, events
       ? { allowed: false as const, reason: `its owner ${card.owner} is not a teammate` }
       : definition === undefined
         ? { allowed: false as const, reason: `no function '${card.function_id}' in process/functions` }
-        : mayMoveCard(mover, owner, definition, pickedMode);
+        : (to === "review" ? mayMoveCard : maySendCardBack)(mover, owner, definition, pickedMode);
   if (!verdict.allowed) {
     return { kind: "record", cardId: card.id, events, reason: `card ${card.id} stays ${from}: ${verdict.reason}` };
   }
