@@ -24,6 +24,7 @@ const team: TeamFile = {
     { kind: "ai", id: AI, name: "Invented AI" },
   ],
   cycle: { id: "invented-cycle", name: "Invented cycle", starts_at: "2026-11-11T00:00:00Z", ends_at: "2026-11-25T00:00:00Z" },
+  cycles: { length_days: 14, id: "invented-{n}" },
 };
 
 const cards: CardsFile = {
