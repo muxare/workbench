@@ -194,4 +194,4 @@ Each stage is useful on its own, and each one shows what the next one needs.
 
 ## Not decided here
 
-Where the board runs once it should not depend on Mikael's machine. How Figma frames and documents are linked to cards. Whether GitHub Issues mirror the cards; the board is the source for cards and status either way. Whether opening and reviewing the pull request are steps on the building card or cards of their own.
+Where the board runs once it should not depend on Mikael's machine; `docs/dev-loop-hosted.md` sketches, as a vision rather than a decision, how the loop would look on a hosted workbench with a registered project. How Figma frames and documents are linked to cards. Whether GitHub Issues mirror the cards; the board is the source for cards and status either way.

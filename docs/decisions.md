@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-12: Answers to the open questions in `docs/next.md` (with Mikael)
+
+Mikael answered nine of the ten questions that stood in `docs/next.md` on 2026-11-11. The one left open is which past project the Phase 2 run uses; its timing, after ConCon, was already decided on 2026-11-08.
+
+- **The process gaps are worked on before ConCon as far as time allows, and the demo is cut from `main` a day or two before the talk, on 2026-11-16 or 2026-11-17.** This replaces the freeze at the tag `concon-demo` (`35beb00`, 2026-11-09): `main` must stay demoable, and the tag is moved to the commit the demo is cut from. It also lets the four gaps in `examples/laundry-room/README.md` be closed before the Phase 2 run, which the 2026-11-08 entry had ruled out; a gap whose fix is a new template field still bumps the template version as `AGENTS.md` requires. What would change it: a gap turning out to need Phase 2 evidence to be settled, in which case it waits.
+- **Opening and reviewing a pull request stay on the building card**, and the webhooks move the card through them. A card per step would double the cards for every change.
+- **`bug_report` is `made_by: external`**, because most bugs are reported by a person. `fix_bug` takes it `from: external`; `debug_failure`, once drafted, may also write one.
+- **The AI reviews pull requests as well as people.** Every pull request gets a review from the AI teammate, posted as the App `workbench-ai-muxare`, besides a person's. A person still decides and merges, so `decides: human` holds. On a pull request Mikael wrote, the AI's review is the review by someone who did not write the change, and Mikael merges after it. This replaces the recommendation to merge Mikael's own changes without a review step. It is what the critic gate built on 2026-11-11 needs to be turned on for this repository.
+- **No "one of these inputs is required" template field yet.** `open_pull_request` keeps its structural rule until a second function needs the same thing.
+- **Cycles are two-week windows named for the stage, and the length and naming are a team setting**, not a rule in code. "Development loop, stages 1 and 2" (2026-11-11 to 2026-11-25) stays.
+- **Tooling work such as the CI workflow keeps using `implement_services`** until the board shows that tooling work keeps coming up.
+- **Any person may send a card back on changes requested**, not only the owner, because a reviewer is rarely the owner. Nothing changes while Mikael is alone on the board.
+- **Once one card has gone through the MCP server, the task list moves from `docs/next.md` to the workbench board.** "Where the work stands" and "Waiting for Mikael" stay in `docs/next.md`, because the board has no place for open questions yet.
+
 ## 2026-11-11: An MCP server in `apps/mcp` lets a Claude Code session work from the board (by Claude)
 
 This is stage 3 of `docs/dev-loop.md` and task 2 in `docs/next.md`. The server is a new workspace package, `apps/mcp`, registered for Claude Code in a project `.mcp.json`; `apps/mcp/README.md` says how to use it. It offers seven tools: `list_cards`, `get_card`, `pick_card`, `ask_question`, `wait_for_answer`, `post_report` and `link_branch`.
