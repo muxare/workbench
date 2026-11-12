@@ -23,16 +23,31 @@ export function appJwt(appId: string, privateKeyPem: string, now: Date = new Dat
   return `${header}.${payload}.${base64url(signature)}`;
 }
 
-type Fetch = typeof fetch;
+export type Fetch = typeof fetch;
 
-async function github(fetchFn: Fetch, method: string, path: string, jwt: string): Promise<Record<string, unknown>> {
-  const res = await fetchFn(`${API}${path}`, {
-    method,
-    headers: { accept: "application/vnd.github+json", authorization: `Bearer ${jwt}`, "x-github-api-version": "2022-11-28", "user-agent": "workbench" },
-  });
-  const body = (await res.json()) as Record<string, unknown>;
-  if (!res.ok) throw new Error(`${method} ${path}: ${String(res.status)} ${String(body.message ?? "")}`);
-  return body;
+/**
+ * One call to GitHub's REST API, authorised by `bearer`: the App's JWT or an
+ * installation token. A JSON `body` is sent when given. Throws with the
+ * method, path, status and GitHub's message when GitHub refuses.
+ */
+export async function github(fetchFn: Fetch, method: string, path: string, bearer: string, body?: unknown): Promise<Record<string, unknown>> {
+  const headers: Record<string, string> = {
+    accept: "application/vnd.github+json",
+    authorization: `Bearer ${bearer}`,
+    "x-github-api-version": "2022-11-28",
+    "user-agent": "workbench",
+  };
+  if (body !== undefined) headers["content-type"] = "application/json";
+  const res = await fetchFn(`${API}${path}`, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const answer = (await res.json()) as Record<string, unknown>;
+  if (!res.ok) throw new Error(`${method} ${path}: ${String(res.status)} ${String(answer.message ?? "")}`);
+  return answer;
+}
+
+/** The App's own account on GitHub, `<slug>[bot]`, which its pull requests and reviews are by. */
+export async function appLogin(appId: string, privateKeyPem: string, fetchFn: Fetch = fetch): Promise<string> {
+  const app = await github(fetchFn, "GET", "/app", appJwt(appId, privateKeyPem));
+  return `${String(app.slug)}[bot]`;
 }
 
 /** An installation token for the App on `repo` ("owner/name"); it lasts an hour. */

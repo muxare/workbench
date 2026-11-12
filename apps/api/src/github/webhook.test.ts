@@ -653,6 +653,26 @@ describe("pull_request merged", () => {
       await moveCard2("ready", "in_progress", "review");
     });
 
+    it("counts the App's review, mapped to the AI by this repository's team file, as the critic's pass", async () => {
+      const team = JSON.parse(readFileSync(new URL("../../../../teams/workbench/team.json", import.meta.url), "utf8")) as { github_logins: Record<string, string> };
+      const githubLogins = parseGithubLogins(formatGithubLogins(team.github_logins));
+      app = createApp({ db, functionIds: loadFunctionIds(), now: () => new Date(NOW), githubWebhookSecret: SECRET, githubLogins });
+      const critic = await recorded("pull_request_review", fixture("pull_request_review.app_approved"));
+      expect(critic.events).toMatchObject([
+        {
+          type: "check_ran",
+          actor: "ai",
+          check: "consistency",
+          passed: true,
+          pull_request: 3,
+          commit_sha: "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+          url: "https://github.com/muxare/workbench/pull/3#pullrequestreview-900000040",
+        },
+      ]);
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      expect((await recorded("pull_request", fixture("pull_request.closed.merged"))).events).toMatchObject([{ actor: "mikael", to: { state: "done" } }]);
+    });
+
     it("refuses a merge the critic has not reviewed, even after a person's approval", async () => {
       await recorded("pull_request_review", fixture("pull_request_review.approved"));
       await refused(/implement_services requires the AI critic to pass before a person approves, and it has not reviewed the pull request/);
