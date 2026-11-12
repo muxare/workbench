@@ -65,7 +65,7 @@ This review is the AI critic's, posted as the App. A person still reads the chan
 The verdict follows the findings: `--request-changes` when any finding is blocking, `--approve` otherwise. Post from the repository root:
 
 ```sh
-pnpm --silent --filter @workbench/api github:review <owner/repo> $pr --approve --head <headRefOid> --body-file <file>
+pnpm --silent --filter @workbench/api github:review <owner/repo> $pr (--approve | --request-changes) --head <headRefOid> --body-file <file>
 ```
 
 `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY_PATH` must be set, as for `github:token`; if they are not, stop and say so. The command is not pre-approved on purpose: posting leaves the machine, so the person sees the verdict and the command before it runs.

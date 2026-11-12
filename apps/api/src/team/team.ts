@@ -130,6 +130,12 @@ export async function startNextCycle(db: Db, team: TeamFile, name?: string): Pro
     throw new StoreError(e instanceof Error ? e.message : String(e), "rule_violation");
   }
   if (await getCycle(db, next.id)) throw new StoreError(`the board already has a cycle '${next.id}'`, "conflict");
-  await addCycle(db, next);
+  try {
+    await addCycle(db, next);
+  } catch (e) {
+    // Another run added the same cycle between the check and the insert; the primary key refused it.
+    if (await getCycle(db, next.id)) throw new StoreError(`the board already has a cycle '${next.id}'`, "conflict");
+    throw e;
+  }
   return next;
 }

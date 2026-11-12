@@ -91,7 +91,7 @@ The MCP server needs nothing extra: Claude Code starts it from `.mcp.json`, and 
 
 Because the app being developed is this repository, a merged pull request changes the code the running API was started from. After pulling `main`, restart `team:serve` so the board runs the merged rules; the forwarder can keep running, but a delivery it receives while the API is down cannot be handed on, so the restart should fall between pushes.
 
-Cycles are two-week windows named for the stage they cover, and both the length and the naming are a team setting, `cycles` in `teams/workbench/team.json`: `{ "length_days": 14, "id": "dev-loop-{n}" }`, where `{n}` is the cycle's number on the board. `team:start` adds only the first cycle, `cycle` in the same file. Each later one is added on the started board with
+Cycles are two-week windows named for the stage they cover, and both the length and the naming are a team setting, `cycles` in `teams/workbench/team.json`: `{ "length_days": 14, "id": "dev-loop-{n}" }`, where `{n}` is the cycle's number on the board, counted from the cycles it holds, so the first cycle's id should be the pattern with `{n}` set to 1. `team:start` adds only the first cycle, `cycle` in the same file. Each later one is added on the started board with
 
 ```sh
 pnpm --filter @workbench/api team:cycle teams/workbench "Development loop, stage 3"
