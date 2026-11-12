@@ -28,7 +28,7 @@ The team is Robin (po), Sam (ux), Alex (fe), Pat (be) and the AI teammate; the s
 
 **Writes back.** Two proposals. To `stakeholder_context` (owner ux): Kim's group can block at the annual meeting; the 2019 panel failed there; the board and residents disagree on bans and on the phone line. Sam accepted it on 2026-09-10. To `constraints` (owner team): the 2027-03-01 date is fixed for a demonstration, not for the full service. Robin accepted it on 2026-09-11.
 
-**A run should** ask whose problem the first framing describes and bring the residents' goal in; ask for who can block, not only who signs; fail `criteria_measurable` on a missing baseline and send the draft back rather than let the AI invent a number; and raise the phone-line contradiction as a client question.
+**A run should** ask whose problem the first framing describes and bring the residents' goal in, which since 2026-11-12 the consistency check `every_holder_heard` asks for, reading `held_by` in `business_goals`; ask for who can block, not only who signs; fail `criteria_measurable` on a missing baseline and send the draft back rather than let the AI invent a number; and raise the phone-line contradiction as a client question.
 
 ## Step 2. write_handoff_spec, outside the segment: Sam (ux), by hand, 2026-09-11 to 2026-09-15
 
@@ -62,7 +62,7 @@ This step has no function file yet; `process/artifacts.md` says its outputs are 
 
 **Writes back.** A proposal to `constraints` (owner team): add to `regulation` that no other resident's name or apartment number is shown in any view. Robin accepted it on 2026-09-24, three days after it was written.
 
-**A run should** ask who may see the holder's apartment number instead of only naming its source; record the deviation from the UI spec and raise a design question; and write the constraint as a proposal to `constraints`. Note that `refine_ui_spec` lists `writes_back` only to `design_system` and does not read `constraints`, so a run that follows the function file strictly has no place to put this proposal. See `README.md`, gaps.
+**A run should** ask who may see the holder's apartment number instead of only naming its source; record the deviation from the UI spec and raise a design question; and write the constraint as a proposal to `constraints`. Since 2026-11-12 `refine_ui_spec` reads `constraints` as context and lists it in `writes_back`, so the function file has a place for this proposal; before that it had none (see `README.md`, closed gaps).
 
 ## Step 5. define_api_contract for I-6, booking: Pat (be), delegate, 2026-09-22 to 2026-09-24
 
@@ -72,7 +72,7 @@ This step has no function file yet; `process/artifacts.md` says its outputs are 
 
 **Decided.** Both developers signed off on 2026-09-24, after Robin accepted the privacy proposal. The rule "at most two future bookings" is answered with 409 and a reason. Booking bans are not in the contract, pending the board.
 
-**A run should** offer two or three slot models, since the step is a judgment call in delegate mode; and either read open proposals against `constraints` or warn that one is pending. A run that serves `bookedBy` has made the same mistake the team made.
+**A run should** offer two or three slot models, since the step is a judgment call in delegate mode; and read the open privacy proposal beside `constraints`, as `docs/runs.md` has required since 2026-11-12, so the draft leaves out `bookedBy` or the decision log tells Pat that it contradicts a pending proposal. A run that serves `bookedBy` without a word has made the same mistake the team made.
 
 ## Step 6. refine_ui_spec for I-4 and I-5, faults: Alex (fe), manual, 2026-09-25 to 2026-09-28
 

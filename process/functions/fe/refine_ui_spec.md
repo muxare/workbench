@@ -19,6 +19,8 @@ context:
     from: maintain_design_system
   - artifact: codebase
     from: external
+  - artifact: constraints
+    from: external
 tacit:
   - Which existing components the developer trusts and which they avoid.
   - What the designer meant but did not draw, from earlier conversations.
@@ -59,7 +61,7 @@ protocols:
     asks: ai
     writes: human
     decides: human
-    note: The AI reads the issue, spec and design system and lists missing states, unnamed data and components that do not exist.
+    note: The AI reads the issue, spec, design system and constraints and lists missing states, unnamed data, components that do not exist and anything the spec shows that the constraints forbid.
   delegate:
     opens: human
     asks: both
@@ -72,11 +74,13 @@ decision_log:
 writes_back:
   - artifact: design_system
     what: Components or states the design system lacks, as a proposal for the UX owner to accept or reject.
+  - artifact: constraints
+    what: Rules on privacy, data or devices that the spec runs into and constraints does not hold yet, as a proposal for the team to accept or reject.
 ---
 
 ## Purpose
 
-Frontend work stalls on two things: a state nobody designed, and data nobody said where to get. This step finds both before building starts. What the developer cannot settle alone goes back to design as explicit questions, instead of being guessed in code.
+Frontend work stalls on two things: a state nobody designed, and data nobody said where to get. This step finds both before building starts. What the developer cannot settle alone goes back to design as explicit questions, instead of being guessed in code. A rule the spec runs into that is not a design question, such as who may see whose data, goes to `constraints` as a proposal, because the team owns it, not design.
 
 It is the frontend developer's craft step for understanding the work, so the default is `assist`: the developer works through the spec, the AI makes sure nothing is missed.
 
