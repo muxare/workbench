@@ -12,5 +12,5 @@
     "ends_at": "2026-11-25T00:00:00Z"
   },
   "cycles": { "length_days": 14, "id": "dev-loop-{n}" },
-  "github_logins": { "muxare": "mikael", "workbench-ai-muxare[bot]": "ai" }
+  "github_logins": { "muxare": "mikael", "workbench-ai-muxare[bot]": "ai", "github-actions[bot]": "ai" }
 }

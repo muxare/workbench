@@ -707,6 +707,43 @@ describe("pull_request merged", () => {
       expect((await recorded("pull_request", fixture("pull_request.closed.merged"))).events).toMatchObject([{ actor: "mikael", to: { state: "done" } }]);
     });
 
+    it("counts the ai-review workflow's review as github-actions[bot], mapped to the AI by this repository's team file, as the critic", async () => {
+      const team = JSON.parse(readFileSync(new URL("../../../../teams/workbench/team.json", import.meta.url), "utf8")) as { github_logins: Record<string, string> };
+      const githubLogins = parseGithubLogins(formatGithubLogins(team.github_logins));
+      app = createApp({ db, functionIds: loadFunctionIds(), now: () => new Date(NOW), githubWebhookSecret: SECRET, githubLogins });
+      const actions = fixture("pull_request_review.actions_approved");
+      expect(actions).toMatchObject({ review: { user: { login: "github-actions[bot]", type: "Bot" } }, sender: { type: "Bot" } });
+
+      // A failed review first: a failed consistency check on the commit, and the card goes back as a person's changes request would.
+      const failed = await recorded("pull_request_review", tweak(tweak(actions, "review.state", "changes_requested"), "review.id", 900000049));
+      expect(failed.events).toMatchObject([
+        { type: "check_ran", actor: "ai", check: "consistency", passed: false, pull_request: 3, commit_sha: "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d" },
+        { type: "changes_requested", actor: "ai", pull_request: 3 },
+        { type: "status_changed", actor: "ai", from: "review", to: { state: "in_progress" } },
+      ]);
+      await moveCard2("review");
+
+      const passed = await recorded("pull_request_review", actions);
+      expect(passed.events).toEqual([
+        {
+          id: expect.any(String),
+          type: "check_ran",
+          card_id: "2",
+          actor: "ai",
+          at: NOW,
+          check: "consistency",
+          passed: true,
+          summary: "The AI critic passed pull request #3.",
+          url: "https://github.com/muxare/workbench/pull/3#pullrequestreview-900000050",
+          pull_request: 3,
+          commit_sha: "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+        },
+      ]);
+      expect(types(await cardLog(db, "2"))).not.toContain("approved");
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      expect((await recorded("pull_request", fixture("pull_request.closed.merged"))).events).toMatchObject([{ actor: "mikael", to: { state: "done" } }]);
+    });
+
     it("refuses a merge the critic has not reviewed, even after a person's approval", async () => {
       await recorded("pull_request_review", fixture("pull_request_review.approved"));
       await refused(/implement_services requires the AI critic to pass before a person approves, and it has not reviewed the pull request/);
