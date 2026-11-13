@@ -763,6 +763,21 @@ describe("pull_request merged", () => {
       await refused(/it passed only after the approval/);
     });
 
+    it("still moves the card to done when the critic passes again on the same head after the approval", async () => {
+      await recorded("pull_request_review", criticReview("approved"));
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      await recorded("pull_request_review", tweak(criticReview("approved"), "review.id", 900000077));
+      const body = await recorded("pull_request", fixture("pull_request.closed.merged"));
+      expect(body.events).toMatchObject([{ actor: "mikael", to: { state: "done" } }]);
+    });
+
+    it("refuses a merge whose critic failed after the person approved", async () => {
+      await recorded("pull_request_review", criticReview("approved"));
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      await recorded("pull_request_review", tweak(criticReview("changes_requested"), "review.id", 900000078));
+      await refused(/./);
+    });
+
     it("refuses a merge whose critic passed on another pull request", async () => {
       await recorded("pull_request_review", tweak(criticReview("approved"), "pull_request.number", 9));
       await recorded("pull_request_review", fixture("pull_request_review.approved"));

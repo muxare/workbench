@@ -22,8 +22,13 @@
 # request still posts.
 name: ai-review
 
+# pull_request_target, not pull_request: the workflow file and the post job's
+# code then come from the base branch, so a pull request cannot rewrite how it
+# is reviewed or post a pass of its own through this workflow. The head is only
+# checked out for reading by a model with Read, Glob and Grep; no step runs
+# code from it, and that must stay so, because this event has the secrets.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions: {}
@@ -171,8 +176,7 @@ jobs:
       pull-requests: write
     steps:
       # The base commit's code posts the review, so the pull request under review
-      # does not run with the write token. (The workflow file itself still comes
-      # from the pull request; see docs/dev-loop.md.)
+      # does not run with the write token.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.base.sha }}

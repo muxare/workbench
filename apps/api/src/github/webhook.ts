@@ -319,7 +319,18 @@ async function planMerge(ctx: WebhookContext, p: PullRequestPayload, card: Card)
     if (critic?.type !== "check_ran") return refuse(`${gate}, and it has not reviewed the pull request`);
     if (!critic.passed) return refuse(`${gate}, and its latest review failed`);
     if (critic.commit_sha !== head) return refuse(`${gate}, and its pass is for ${critic.commit_sha ?? "an unknown commit"}, not the merged head ${head}`);
-    if (log.indexOf(critic) > log.indexOf(latest)) return refuse(`${gate}, and it passed only after the approval`);
+    // A repeated pass on the same head after the approval (a re-run, a reopen) does not undo the earlier pass.
+    const approvedAt = log.indexOf(latest);
+    const passedBefore = log.some(
+      (e, i) =>
+        i < approvedAt &&
+        e.type === "check_ran" &&
+        e.check === "consistency" &&
+        e.pull_request === pr.number &&
+        e.passed &&
+        e.commit_sha === head,
+    );
+    if (!passedBefore) return refuse(`${gate}, and it passed only after the approval`);
   }
   const who = await teammateFor(ctx, pr.merged_by?.login ?? p.sender.login, cardId);
   if (!who.teammate) return who.plan;
