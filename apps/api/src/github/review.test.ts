@@ -3,7 +3,7 @@
 // shas are invented.
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { postReview, ReviewRefused, type ReviewRequest } from "./review.ts";
+import { GITHUB_ACTIONS_LOGIN, postReview, postReviewAs, reviewFromVerdict, ReviewRefused, type ReviewRequest } from "./review.ts";
 
 const PEM = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs1", format: "pem" }).toString();
 const CREDS = { appId: "4242", privateKeyPem: PEM };
@@ -96,7 +96,7 @@ describe("postReview", () => {
 
   it("refuses a pull request the App opened itself, which GitHub would not let it approve", async () => {
     const gh = fakeGithub({ author: "workbench-ai-invented[bot]" });
-    await expect(postReview(CREDS, request(), gh.fetchFn)).rejects.toThrow(/opened by workbench-ai-invented\[bot\], the App itself/);
+    await expect(postReview(CREDS, request(), gh.fetchFn)).rejects.toThrow(/opened by workbench-ai-invented\[bot\], the reviewing account itself/);
     expect(gh.posts()).toEqual([]);
   });
 
@@ -118,5 +118,61 @@ describe("postReview", () => {
     const failing = (async (url: string, init?: RequestInit) =>
       url.endsWith("/reviews") ? new Response(JSON.stringify({ message: "Unprocessable Entity" }), { status: 422 }) : gh.fetchFn(url, init)) as typeof fetch;
     await expect(postReview(CREDS, request(), failing)).rejects.toThrow("POST /repos/muxare/workbench/pulls/12/reviews: 422 Unprocessable Entity");
+  });
+});
+
+describe("postReviewAs, as the ai-review workflow posts with GITHUB_TOKEN", () => {
+  const ACTIONS = { token: "ghs_invented_actions", login: GITHUB_ACTIONS_LOGIN };
+
+  it("posts on the head commit with the given token and mints nothing", async () => {
+    const gh = fakeGithub();
+    const review = await postReviewAs(ACTIONS, request(), gh.fetchFn);
+    expect(review.state).toBe("APPROVED");
+    expect(gh.calls.map((c) => `${c.method} ${c.url.slice(API.length)}`)).toEqual(["GET /repos/muxare/workbench/pulls/12", "POST /repos/muxare/workbench/pulls/12/reviews"]);
+    expect(gh.calls.every((c) => c.authorization === "Bearer ghs_invented_actions")).toBe(true);
+    expect(gh.posts()[0]?.body).toEqual({ commit_id: HEAD, body: request().body, event: "APPROVE" });
+  });
+
+  it("reviews a pull request the App opened, which the App itself cannot", async () => {
+    const gh = fakeGithub({ author: "workbench-ai-muxare[bot]" });
+    await expect(postReviewAs(ACTIONS, request(), gh.fetchFn)).resolves.toMatchObject({ commit: HEAD });
+  });
+
+  it("refuses a pull request opened by github-actions[bot] itself, and a moved head", async () => {
+    await expect(postReviewAs(ACTIONS, request(), fakeGithub({ author: "github-actions[bot]" }).fetchFn)).rejects.toThrow(/opened by github-actions\[bot\], the reviewing account itself/);
+    const moved = fakeGithub({ head: OTHER });
+    await expect(postReviewAs(ACTIONS, request(), moved.fetchFn)).rejects.toThrow(/moved from/);
+    expect(moved.posts()).toEqual([]);
+  });
+
+  it("refuses a body longer than GitHub accepts before calling GitHub", async () => {
+    const gh = fakeGithub();
+    await expect(postReviewAs(ACTIONS, request({ body: "x".repeat(65537) }), gh.fetchFn)).rejects.toThrow(/more than the 65536/);
+    expect(gh.calls).toEqual([]);
+  });
+});
+
+describe("reviewFromVerdict", () => {
+  const pass = `**AI critic: passes** on ${HEAD}.\n\nNo findings (invented).`;
+  const fail = `**AI critic: requests changes** on ${HEAD}.\n\n### Findings\n1. **Blocking.** \`a.ts:1\`: invented.`;
+
+  it("turns a verdict whose body names the same verdict and head into a review", () => {
+    expect(reviewFromVerdict({ verdict: "approve", body: pass }, HEAD)).toEqual({ event: "APPROVE", body: pass });
+    expect(reviewFromVerdict({ verdict: "request_changes", body: fail }, HEAD)).toEqual({ event: "REQUEST_CHANGES", body: fail });
+  });
+
+  it("refuses anything else", () => {
+    for (const [value, reason] of [
+      [null, /not a JSON object/],
+      [["approve"], /not a JSON object/],
+      [{ verdict: "approve", body: pass, event: "APPROVE" }, /fields other than verdict and body: event/],
+      [{ verdict: "comment", body: pass }, /'comment' is not a verdict/],
+      [{ verdict: "approve", body: 1 }, /body is not a string/],
+      [{ verdict: "approve", body: fail }, /does not match the verdict approve/],
+      [{ verdict: "request_changes", body: pass }, /does not match the verdict request_changes/],
+      [{ verdict: "approve", body: pass.replace(HEAD, OTHER) }, /on the head commit/],
+    ] as const) {
+      expect(() => reviewFromVerdict(value, HEAD)).toThrow(reason);
+    }
   });
 });
