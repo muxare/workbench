@@ -12,6 +12,7 @@ import {
   cardStatus,
   criticGates,
   cycle,
+  externalSource,
   functionId,
   hiddenEventTypes,
   humanTeammate,
@@ -63,10 +64,18 @@ export type CreateCardRequest = z.input<typeof createCardRequest>;
 export const pickRequest = z.strictObject({ actor: teammateId, mode: mode.optional() });
 export type PickRequest = z.infer<typeof pickRequest>;
 
-/** `POST /cards/:id/questions`: ask on an `in_progress` card, which then waits on `asked_of`. */
+/**
+ * `POST /cards/:id/questions`: ask on an `in_progress` card, which then waits
+ * on `asked_of`. With `external`, the question is for someone outside the
+ * team: `external.artifact` must be an artifact whose `made_by` is
+ * `external` in process/artifacts.md, `asked_of` must be a person, who
+ * relays the question and records the answer, and the card waits on the
+ * external source, relayed by `asked_of`.
+ */
 export const askRequest = z.strictObject({
   actor: teammateId,
   asked_of: teammateId,
+  external: externalSource.optional(),
   text: z.string().min(1),
   why_it_blocks: z.string().min(1),
 });
@@ -74,8 +83,9 @@ export type AskRequest = z.infer<typeof askRequest>;
 
 /**
  * `POST /cards/:id/questions/:questionId/answer`: answer an open question.
- * The actor decides, so it must be a human. A card waiting on this question
- * goes back to `in_progress`.
+ * The actor decides, so it must be a human; any person may record the
+ * answer, also to a question relayed outside the team. A card waiting on this
+ * question goes back to `in_progress`.
  */
 export const answerRequest = z.strictObject({ actor: teammateId, answer: z.string().min(1) });
 export type AnswerRequest = z.infer<typeof answerRequest>;

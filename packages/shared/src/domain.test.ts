@@ -4,6 +4,7 @@ import {
   card,
   cardEvent,
   cardEventType,
+  waitingOnTeammate,
   currentCycle,
   criticRequired,
   cycle,
@@ -109,6 +110,25 @@ describe("status", () => {
 
   it("rejects needs_input without waiting_on", () => {
     expect(status.safeParse({ state: "needs_input", question_id: "invented-q1" }).success).toBe(false);
+  });
+
+  const relayed = { artifact: "domain_rules", source: "Invented: caretaker's fault records", relayed_by: "invented-po" };
+
+  it("accepts waiting on an external source relayed by a teammate", () => {
+    expect(status.safeParse({ state: "needs_input", waiting_on: relayed, question_id: "invented-q1" }).success).toBe(true);
+    expect(waitingOnTeammate(relayed)).toBe("invented-po");
+    expect(waitingOnTeammate("invented-be")).toBe("invented-be");
+  });
+
+  it("rejects an external wait without a relayer, a source or a snake_case artifact, or with a stray field", () => {
+    for (const waiting_on of [
+      { artifact: relayed.artifact, source: relayed.source },
+      { ...relayed, source: "" },
+      { ...relayed, artifact: "Domain rules" },
+      { ...relayed, extra: "x" },
+    ]) {
+      expect(status.safeParse({ state: "needs_input", waiting_on, question_id: "invented-q1" }).success).toBe(false);
+    }
   });
 
   it.each(["backlog", "ready", "in_progress", "review", "done"])("rejects waiting_on on %s", (state) => {

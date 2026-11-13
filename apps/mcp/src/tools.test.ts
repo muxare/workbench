@@ -151,6 +151,18 @@ describe("ask_question and wait_for_answer", () => {
     expect(card).toMatchObject({ status: { state: "needs_input", waiting_on: PERSON, question_id: question.id } });
   });
 
+  it("asks outside the team through the owner, and the card waits on the external source", async () => {
+    await tools.pick_card({ card_id: "1" });
+    const external = { artifact: "domain_rules", source: "Invented: the board's booking rules" };
+    const out = json(await tools.ask_question({ ...ask, external, wait_seconds: 0 }));
+    expect(out.question).toMatchObject({ asked_of: PERSON, external, answer: null });
+    expect(out.next).toMatch(/waits on domain_rules \(Invented: the board's booking rules\), relayed by invented-person/);
+    const card = json(await tools.get_card({ card_id: "1" })).card;
+    expect(card).toMatchObject({ status: { state: "needs_input", waiting_on: { ...external, relayed_by: PERSON } } });
+    const refused = await tools.ask_question({ card_id: "2", text: "x", why_it_blocks: "y", external: { artifact: "codebase_x", source: "z" }, wait_seconds: 0 });
+    expect(refused.isError).toBe(true);
+  });
+
   it("returns the answer when the person answers while it waits", async () => {
     await tools.pick_card({ card_id: "1" });
     const pending = tools.ask_question({ ...ask, wait_seconds: 10 });

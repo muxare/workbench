@@ -79,13 +79,44 @@ export const cardStatus = z.enum(["backlog", "ready", "in_progress", "needs_inpu
 export type CardStatus = z.infer<typeof cardStatus>;
 
 /**
- * A card's status. `needs_input` must say who the card waits on and which
- * question is open; every other state must not (the objects are strict, so a
- * stray `waiting_on` is rejected rather than silently dropped).
+ * An artifact's `id` from process/artifacts.md. Checked only for shape
+ * (snake_case); which artifacts exist, and which are made outside the team, is
+ * read from process/ at runtime.
+ */
+export const artifactId = z.string().regex(/^[a-z][a-z0-9_]*$/, "expected a snake_case artifact id");
+
+/**
+ * Something outside the team a question is for: an external artifact (one
+ * whose `made_by` is `external` in process/artifacts.md) and, in free text,
+ * where in it the answer comes from, such as `domain_rules` and "caretaker's
+ * fault records". Nobody outside the team has an account, so a teammate
+ * relays the question and records the answer.
+ */
+export const externalSource = z.strictObject({ artifact: artifactId, source: z.string().min(1) });
+export type ExternalSource = z.infer<typeof externalSource>;
+
+/**
+ * Who or what a card in `needs_input` waits on: a teammate, or an external
+ * source with the person who relays the question to it (`relayed_by`). A
+ * card that waited before external sources existed stored a teammate id,
+ * which still reads as one.
+ */
+export const waitingOn = z.union([teammateId, z.strictObject({ ...externalSource.shape, relayed_by: teammateId })]);
+export type WaitingOn = z.infer<typeof waitingOn>;
+
+/** The teammate who acts on a card's wait: the one waited on, or the one who relays to the external source. */
+export function waitingOnTeammate(w: WaitingOn): string {
+  return typeof w === "string" ? w : w.relayed_by;
+}
+
+/**
+ * A card's status. `needs_input` must say who or what the card waits on and
+ * which question is open; every other state must not (the objects are strict,
+ * so a stray `waiting_on` is rejected rather than silently dropped).
  */
 export const status = z.discriminatedUnion("state", [
   z.strictObject({ state: cardStatus.exclude(["needs_input"]) }),
-  z.strictObject({ state: z.literal("needs_input"), waiting_on: teammateId, question_id: questionId }),
+  z.strictObject({ state: z.literal("needs_input"), waiting_on: waitingOn, question_id: questionId }),
 ]);
 export type Status = z.infer<typeof status>;
 
@@ -120,7 +151,8 @@ export function unfinishedDependencies(card: Card, cards: readonly Card[]): stri
  * A question asked on a card. `answer` and `decided_by` are set together.
  * In every protocol `decides` is human, so `decided_by` must be a human
  * teammate; the schema cannot see the teammate list, so check that with
- * `decidedByHuman`.
+ * `decidedByHuman`. A question for someone outside the team names the
+ * `external` source it is for, and `asked_of` is the person who relays it.
  */
 export const question = z
   .object({
@@ -128,6 +160,7 @@ export const question = z
     card_id: cardId,
     asked_by: teammateId,
     asked_of: teammateId,
+    external: externalSource.optional(),
     text: z.string().min(1),
     why_it_blocks: z.string().min(1),
     answer: z.string().min(1).optional(),
@@ -248,7 +281,9 @@ export const cardEvent = z.discriminatedUnion("type", [
     ...cardEventBase,
     type: z.literal("asked"),
     question_id: questionId,
+    /** The teammate asked; with `external`, the person who relays the question outside the team. */
     asked_of: teammateId,
+    external: externalSource.optional(),
     text: z.string().min(1),
     why_it_blocks: z.string().min(1),
   }),

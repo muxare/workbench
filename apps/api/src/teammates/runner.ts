@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import type { Card, CardEvent, FunctionFrontMatter } from "@workbench/shared";
 import type { Db } from "../db/client.ts";
-import { loadFunctionDefinitions } from "../process.ts";
+import { loadExternalArtifacts, loadFunctionDefinitions } from "../process.ts";
 import { appendEvents, cardLog, listCards, listTeammates } from "../store.ts";
 import { checkEligibility, type Eligibility } from "./eligibility.ts";
 import type { TeammateProvider, WorkStep } from "./provider.ts";
@@ -25,6 +25,8 @@ export interface RunOptions {
   cardId?: string;
   /** Function definitions keyed by name. Defaults to process/functions. */
   definitions?: ReadonlyMap<string, FunctionFrontMatter>;
+  /** The artifacts made outside the team, which a question may be for. Defaults to process/artifacts.md. */
+  externalArtifacts?: ReadonlySet<string>;
   now?: () => Date;
   newId?: () => string;
 }
@@ -86,6 +88,12 @@ export async function runTeammate(db: Db, options: RunOptions): Promise<Teammate
       `${options.provider.name} asked ${step.question.asked_of}, but in ${definition.name}/${mode} decides is human`,
     );
   }
+  const external = step.question.external;
+  if (external && !(options.externalArtifacts ?? loadExternalArtifacts()).has(external.artifact)) {
+    throw new TeammateRefusal(
+      `${options.provider.name} asked about '${external.artifact}', which is not an artifact made outside the team in process/artifacts.md`,
+    );
+  }
 
   const at = () => now().toISOString();
   const base = () => ({ id: newId(), card_id: card.id, actor: self.id, at: at() });
@@ -99,6 +107,7 @@ export async function runTeammate(db: Db, options: RunOptions): Promise<Teammate
       type: "asked",
       question_id: questionId,
       asked_of: askedOf.id,
+      ...(external ? { external } : {}),
       text: step.question.text,
       why_it_blocks: step.question.why_it_blocks,
     },
@@ -106,7 +115,11 @@ export async function runTeammate(db: Db, options: RunOptions): Promise<Teammate
       ...base(),
       type: "status_changed",
       from: "in_progress",
-      to: { state: "needs_input", waiting_on: askedOf.id, question_id: questionId },
+      to: {
+        state: "needs_input",
+        waiting_on: external ? { ...external, relayed_by: askedOf.id } : askedOf.id,
+        question_id: questionId,
+      },
     },
   ];
   await appendEvents(db, events);

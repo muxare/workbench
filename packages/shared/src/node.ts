@@ -2,7 +2,8 @@
 // index.ts so apps/web never pulls in node:fs.
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { FunctionFileError, parseFunctionFile, type FunctionFile } from "./functionFile.ts";
+import { parse as parseYaml } from "yaml";
+import { FunctionFileError, parseFunctionFile, splitFrontMatter, type FunctionFile } from "./functionFile.ts";
 import { validateProcess, type ProcessFunctionFile, type ValidationReport } from "./functionValidator.ts";
 
 export interface LoadedFunctionFile extends FunctionFile {
@@ -63,6 +64,26 @@ export function validateProcessDir(root: string): ValidationReport {
     artifactsText: readFileSync(path.join(processDir, "artifacts.md"), "utf8"),
     functionFiles,
   });
+}
+
+/**
+ * The ids of the artifacts in an artifacts file (process/artifacts.md) whose
+ * `made_by` is `external`: what a card may wait on outside the team. Throws
+ * when the file has no readable front matter; entries without an id are
+ * skipped, since the process validator reports them.
+ */
+export function loadExternalArtifactIds(artifactsFile: string): Set<string> {
+  const { yaml } = splitFrontMatter(readFileSync(artifactsFile, "utf8"));
+  const parsed: unknown = parseYaml(yaml);
+  const entries = typeof parsed === "object" && parsed !== null ? (parsed as { artifacts?: unknown }).artifacts : undefined;
+  const ids = new Set<string>();
+  if (!Array.isArray(entries)) return ids;
+  for (const entry of entries as unknown[]) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { id, made_by } = entry as { id?: unknown; made_by?: unknown };
+    if (typeof id === "string" && made_by === "external") ids.add(id);
+  }
+  return ids;
 }
 
 function compare(a: string, b: string): number {

@@ -7,7 +7,7 @@ import { shownInLog, type AiProfileStep, type AiTeammateProfileResponse, type Bo
 import { columnLabel } from "../board/columns.ts";
 import { describeEvent, formatTime } from "../board/log.ts";
 import { modeMeaning, modes } from "../board/modes.ts";
-import { cardRef, labelOf } from "../board/teammates.ts";
+import { cardRef, labelOf, questionWaitLabel, waitingOnLabel } from "../board/teammates.ts";
 import { cardHref } from "../route.ts";
 
 export interface OwnerChip {
@@ -105,7 +105,7 @@ export function nowItems(profile: AiTeammateProfileResponse, board: BoardRespons
     ref: cardRef(card.id),
     href: cardHref(card.id),
     title: card.title,
-    note: card.status.state === "needs_input" ? `Waiting on ${labelOf(board, card.status.waiting_on)}` : columnLabel(card.status.state),
+    note: card.status.state === "needs_input" ? `Waiting on ${waitingOnLabel(board, card.status.waiting_on)}` : columnLabel(card.status.state),
     tone: card.status.state === "needs_input" ? "needs-input" : "plain",
     mode,
   }));
@@ -162,7 +162,7 @@ export function questionItems(profile: AiTeammateProfileResponse, board: BoardRe
       ref: cardRef(q.card_id),
       href: cardHref(q.card_id),
       text: q.text,
-      status: open ? `Waiting on ${labelOf(board, q.asked_of)}` : `${labelOf(board, q.decided_by ?? q.asked_of)} answered: ${q.answer ?? ""}`,
+      status: open ? `Waiting on ${questionWaitLabel(board, q)}` : `${labelOf(board, q.decided_by ?? q.asked_of)} answered: ${q.answer ?? ""}`,
       open,
     };
   });

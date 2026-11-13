@@ -67,7 +67,14 @@ export const inputs = {
     card_id: cardIdInput,
     text: askRequest.shape.text.describe("The question, written so the person can answer it without opening the code."),
     why_it_blocks: askRequest.shape.why_it_blocks.describe("Why the work cannot go on without the answer."),
-    asked_of: z.string().min(1).optional().describe("The teammate to ask; the card's owner when left out."),
+    asked_of: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("The teammate to ask; the card's owner when left out. With external, the person who relays the question outside the team."),
+    external: askRequest.shape.external.describe(
+      "For an answer only someone outside the team has: an artifact made outside the team (made_by external in process/artifacts.md) and a free-text source in it, such as domain_rules and \"caretaker's fault records\". The card then waits on that source, relayed by asked_of.",
+    ),
     wait_seconds: waitInput,
   }),
   wait_for_answer: z.object({
@@ -121,7 +128,12 @@ function protocolNote(mode: Mode, protocol: Protocol | undefined): string {
 }
 
 function questionView(q: Question) {
-  return { id: q.id, asked_of: q.asked_of, text: q.text, why_it_blocks: q.why_it_blocks, answer: q.answer ?? null, decided_by: q.decided_by ?? null };
+  return { id: q.id, asked_of: q.asked_of, external: q.external ?? null, text: q.text, why_it_blocks: q.why_it_blocks, answer: q.answer ?? null, decided_by: q.decided_by ?? null };
+}
+
+/** Who or what a question waits on, in words: the person, or the external source and the person relaying it. */
+function waitingOnText(q: Question): string {
+  return q.external ? `${q.external.artifact} (${q.external.source}), relayed by ${q.asked_of}` : q.asked_of;
 }
 
 function waitView(result: WaitResult, cardId: string, waitedSeconds: number) {
@@ -131,7 +143,7 @@ function waitView(result: WaitResult, cardId: string, waitedSeconds: number) {
   return {
     answered: false,
     question: q,
-    next: `${why} The card waits on ${result.question.asked_of}. Call wait_for_answer with card_id "${cardId}" and question_id "${result.question.id}" to keep waiting.`,
+    next: `${why} The card waits on ${waitingOnText(result.question)}. Call wait_for_answer with card_id "${cardId}" and question_id "${result.question.id}" to keep waiting.`,
   };
 }
 
@@ -219,7 +231,13 @@ export function createTools(deps: ToolDeps): Tools {
       guarded(async () => {
         const by = await self();
         const asked_of = input.asked_of ?? (await client.card(input.card_id)).card.owner;
-        const out = await client.ask(input.card_id, { actor: by, asked_of, text: input.text, why_it_blocks: input.why_it_blocks });
+        const out = await client.ask(input.card_id, {
+          actor: by,
+          asked_of,
+          ...(input.external ? { external: input.external } : {}),
+          text: input.text,
+          why_it_blocks: input.why_it_blocks,
+        });
         const asked = out.events.find((e) => e.type === "asked");
         if (asked?.type !== "asked") throw new Error("the API recorded no asked event");
         // The question is on the card now. If waiting fails, say so with its id, so the session
@@ -230,7 +248,7 @@ export function createTools(deps: ToolDeps): Tools {
           const why = err instanceof Error ? err.message : String(err);
           return ok({
             answered: false,
-            question: { id: asked.question_id, asked_of: asked.asked_of, text: asked.text, why_it_blocks: asked.why_it_blocks, answer: null, decided_by: null },
+            question: { id: asked.question_id, asked_of: asked.asked_of, external: asked.external ?? null, text: asked.text, why_it_blocks: asked.why_it_blocks, answer: null, decided_by: null },
             next: `The question was asked, but waiting for the answer failed (${why}). Do not ask again: call wait_for_answer with card_id "${input.card_id}" and question_id "${asked.question_id}".`,
           });
         }

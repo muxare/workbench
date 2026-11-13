@@ -23,6 +23,7 @@ import {
   getTeammate,
   listCards,
   listCycles,
+  listQuestions,
   listTeammates,
   logFilters,
   profileEvents,
@@ -227,6 +228,14 @@ describe("appending events", () => {
   it("rejects an answer from the AI, because deciding stays human", async () => {
     const answer: CardEvent = { id: "v6", type: "answered", card_id: "k1", actor: "t-ai", at: at(50), question_id: "q1", answer: "Invented." };
     await expect(appendEvent(db, answer)).rejects.toThrow(/decided by a human/);
+  });
+
+  it("rejects a question outside the team relayed by the AI, because a person relays and records the answer", async () => {
+    const external = { artifact: "domain_rules", source: "Invented: caretaker's fault records" };
+    const base = { type: "asked", card_id: "k1", actor: "t-ai", at: at(50), text: "Invented?", why_it_blocks: "Invented." } as const;
+    await expect(appendEvent(db, { ...base, id: "v6", question_id: "q2", asked_of: "t-ai", external })).rejects.toThrow(/relayed by a person/);
+    await appendEvent(db, { ...base, id: "v7", question_id: "q3", asked_of: "t-human", external });
+    expect((await listQuestions(db, { cardId: "k1" })).at(-1)).toMatchObject({ id: "q3", asked_of: "t-human", external });
   });
 
   it("rejects an event that fails the shared schema", async () => {
@@ -443,12 +452,16 @@ describe("invented seed", () => {
     expect([...modes].sort()).toEqual(["assist", "delegate", "manual"]);
   });
 
-  it("stops in step 7 of the history: the contract waits on the product owner, I-8 is open, and the AI has a card to pick", async () => {
+  it("stops in step 7 of the history: the contract waits on the caretaker's records through the product owner, I-8 is open, and the AI has a card to pick", async () => {
     const cards = new Map((await listCards(seeded)).map((c) => [c.id, c.status]));
     for (const id of ["invented-101", "invented-102", "invented-103", "invented-104", "invented-105"]) {
       expect(cards.get(id)).toEqual({ state: "done" });
     }
-    expect(cards.get("invented-106")).toEqual({ state: "needs_input", waiting_on: "invented-po", question_id: "invented-q106" });
+    expect(cards.get("invented-106")).toEqual({
+      state: "needs_input",
+      waiting_on: { artifact: "domain_rules", source: "caretaker's fault records", relayed_by: "invented-po" },
+      question_id: "invented-q106",
+    });
     expect(cards.get("invented-107")).toEqual({ state: "in_progress" });
     expect(cards.get("invented-108")).toEqual({ state: "ready" });
     const log101 = (await cardLog(seeded, "invented-101")).map((e) => e.type);

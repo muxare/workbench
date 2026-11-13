@@ -17,7 +17,7 @@ import {
 import { columnLabel } from "../board/columns.ts";
 import { describeEvent, logTime } from "../board/log.ts";
 import { modeMeaning } from "../board/modes.ts";
-import { cardRef, findTeammate, labelOf, mainRole, roleTitle } from "../board/teammates.ts";
+import { cardRef, externalLabel, findTeammate, labelOf, mainRole, roleTitle, waitingOnLabel } from "../board/teammates.ts";
 
 /** Colour of a status, as the artboard and the board columns use them. */
 export type StatusTone = "needs-input" | "assist" | "neutral";
@@ -28,10 +28,13 @@ export function statusTone(state: CardStatus): StatusTone {
   return "neutral";
 }
 
-/** The status pill: "Needs input · waiting on BE", or the column name. */
+/**
+ * The status pill: "Needs input · waiting on BE", "Needs input · waiting on
+ * domain_rules (caretaker's fault records), relayed by PO", or the column name.
+ */
 export function statusText(card: Card, board: BoardResponse): string {
   const label = columnLabel(card.status.state);
-  return card.status.state === "needs_input" ? `${label} · waiting on ${labelOf(board, card.status.waiting_on)}` : label;
+  return card.status.state === "needs_input" ? `${label} · waiting on ${waitingOnLabel(board, card.status.waiting_on)}` : label;
 }
 
 /** A teammate's long name: a person's main role title ("Backend developer"), or an AI teammate's "AI". */
@@ -225,8 +228,14 @@ export function linkedWork(card: Card, board: BoardResponse): LinkedLine[] {
 
 export interface OpenQuestionView {
   question: Question;
-  /** "AI → Backend developer". */
+  /** "AI → Backend developer", or "AI → Product owner → domain_rules" for a question relayed outside the team. */
   route: string;
+  /**
+   * For a question relayed outside the team, what it waits on and who relays
+   * it: "For domain_rules (caretaker's fault records), outside the team.
+   * Product owner relays it and records the answer." Undefined otherwise.
+   */
+  relay: string | undefined;
   at: string | undefined;
   /** The human who answers: the person asked, else the card's owner. Undefined when there is none. */
   answerer: string | undefined;
@@ -256,7 +265,10 @@ export function openQuestions(detail: CardResponse, board: BoardResponse): OpenQ
       const answerer = answererOf(q, detail.card, board);
       return {
         question: q,
-        route: `${labelOf(board, q.asked_by)} → ${longLabel(board, q.asked_of)}`,
+        route: `${labelOf(board, q.asked_by)} → ${longLabel(board, q.asked_of)}${q.external ? ` → ${q.external.artifact}` : ""}`,
+        relay: q.external
+          ? `For ${externalLabel(q.external)}, outside the team. ${longLabel(board, q.asked_of)} relays it and records the answer.`
+          : undefined,
         at: asked?.at,
         answerer,
         answererLabel: answerer ? longLabel(board, answerer) : undefined,
