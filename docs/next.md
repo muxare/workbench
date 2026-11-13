@@ -1,6 +1,6 @@
 # Next
 
-Last updated 2026-11-12 by Claude.
+Last updated 2026-11-13 by Claude.
 
 ## Where the work stands
 
@@ -42,14 +42,13 @@ Last updated 2026-11-12 by Claude.
 ## Waiting for Mikael
 
 1. **Which past project for the Phase 2 run?** Not needed before ConCon on 2026-11-18. Recommendation: choose it in the week after ConCon and run it before adding any template field for failed checks or waiting on another role, because that run is what shows whether those fields are needed.
-2. **Who reviews the pull requests the App opens?** GitHub does not let an author review its own pull request, so the App `workbench-ai-muxare` cannot be the critic on the pull requests it opens, and turning the critic gate on would block them all. Recommendation: a second App for the critic (for example `workbench-critic-muxare`), its bot login mapped to `ai` in `github_logins`, because the critic should be a different reviewer from the author anyway and it needs no code change. Related wording: `review_pull_request.md` and `docs/dev-loop.md` say the critic never approves, yet its pass is an APPROVE review; reword it to "its approving review is a pass, not a decision".
-3. **Can a card wait on someone outside the team?** This is the last open laundry-room gap and needs the app. Recommendation: let `waiting_on` name either a teammate or an external artifact with a free-text source (for example `domain_rules`, "caretaker's fault records"), with a teammate still relaying the answer, so `decides: human` holds and no outsider needs an account; let Phase 2 confirm before building it.
 
 ## Next, in the suggested order
 
 1. Run one real card through the MCP server from a Claude Code session against `team:serve`: pick, ask, push, open the pull request, and let a review request changes and a check fail, which the live loop has not shown yet. Needs Mikael at the keyboard.
 2. Move the task list below to the workbench board as cards, and leave this section pointing there.
-3. Turn on the critic gate for the building functions and review one pull request with `/review-pull-request` (blocked by question 2).
-4. Cut the ConCon demo from `main` on 2026-11-16 or 2026-11-17: update `docs/demo.md`, dry-run it in Chrome against a fresh seed, and move the `concon-demo` tag.
-5. Show the critic gate setting on the function or profile screen, and show the AI's delegate picks on its profile.
-6. Draft stage 4: a GitHub Actions workflow that runs Claude Code on a card's branch when the card is handed to the AI.
+3. Finish the CI review workflow (`claude -p`, posting as `github-actions[bot]`; in progress on 2026-11-13), then have Mikael add `ANTHROPIC_API_KEY`, allow Actions to approve pull requests, and turn on the critic gate for the building functions.
+4. Let `waiting_on` name an external artifact with a source, relayed by a teammate, and show it on the board and card screens; then move the last gap in `examples/laundry-room/README.md` to the closed section.
+5. Cut the ConCon demo from `main` on 2026-11-16 or 2026-11-17: update `docs/demo.md`, dry-run it in Chrome against a fresh seed, and move the `concon-demo` tag.
+6. Show the critic gate setting on the function or profile screen, and show the AI's delegate picks on its profile.
+7. Draft stage 4: a GitHub Actions workflow that runs Claude Code on a card's branch when the card is handed to the AI.
