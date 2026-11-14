@@ -202,6 +202,8 @@ Each stage is useful on its own, and each one shows what the next one needs.
 
 **Stage 3: put the MCP server in front of the API.** A Claude Code session picks a card from the board, asks Mikael on the card when it is stuck, opens the pull request, and the webhooks carry the rest. From here the board, not `docs/next.md`, says what comes next.
 
+Stage 3 was first run end to end on 2026-11-14 with card #5 (pull request #4), from a Claude Code session in a separate worktree off `main`, against `team:serve` and `gh webhook forward`, with the owner's mode set to `delegate`. The card's log matched the mapping above at every step: the pick and the question went through the MCP server and the session went on by itself after the answer; the push and the opened pull request gave `workspace_linked`, `work_pushed` and `review_requested`, which moved the card to review; a deliberately failed `check` was recorded as a failed `check_ran` and moved nothing; Mikael's changes request sent the card back to in progress; and after a green `check` and a re-requested review, his approval on the head commit and the merge moved it to done. The critic gate was off for `implement_interactions`, and `ai-review` was not yet on `main`, so neither took part.
+
 **Stage 4: let the AI work unattended.** Handing a card to the AI starts a GitHub Actions workflow that runs Claude Code on the card's branch, and the result comes back as a pull request for Mikael to review. Running the agent in GitHub rather than in the workbench means the workbench does not host it.
 
 ## `docs/next.md` during the change

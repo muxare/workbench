@@ -100,6 +100,7 @@ import {
   listTeammates,
   logFilters,
   StoreError,
+  teamName,
   type StoreErrorCode,
 } from "./store.ts";
 import type { TeammateProvider } from "./teammates/provider.ts";
@@ -240,6 +241,7 @@ export function createApp(deps: AppDeps) {
 
     .get("/board", async (c) => {
       const response: BoardResponse = {
+        team: await teamName(db),
         cards: await listCards(db),
         teammates: await listTeammates(db),
         functions: [...definitions().values()].map((d) => ({ name: d.name, role: d.role, modes: { default: d.modes.default } })),

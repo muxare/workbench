@@ -8,10 +8,24 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cycle, cycleSetting, nextCycle, type Cycle } from "@workbench/shared";
+import { cycle, cycleSetting, nextCycle, sameTeamName, type Cycle, type TeamName } from "@workbench/shared";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
-import { addCard, addCycle, addTeammate, cardRecord, getCard, getCycle, getTeammate, listCycles, listTeammates, StoreError, teammateRecord } from "../store.ts";
+import {
+  addCard,
+  addCycle,
+  addTeammate,
+  appendEvent,
+  cardRecord,
+  getCard,
+  getCycle,
+  getTeammate,
+  listCycles,
+  listTeammates,
+  StoreError,
+  teammateRecord,
+  teamName,
+} from "../store.ts";
 
 /** The repository root; team directories on the command line are relative to it. */
 export const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -28,6 +42,7 @@ export const teamFile = z
   .strictObject({
     id: z.string().regex(/^[a-z][a-z0-9-]*$/, "expected a lower-case team id"),
     name: z.string().min(1),
+    headline: z.string().min(1).optional(),
     teammates: z.array(teammateRecord).min(1),
     cycle,
     cycles: cycleSetting,
@@ -73,6 +88,29 @@ export async function startTeam(db: Db, team: TeamFile, joinedAt: string): Promi
   }
   for (const t of team.teammates) await addTeammate(db, t, joinedAt);
   await addCycle(db, team.cycle);
+  await nameTeam(db, team, joinedAt);
+}
+
+/** The name and headline a team file gives its board. */
+export function teamNameOf(team: TeamFile): TeamName {
+  return team.headline === undefined ? { name: team.name } : { name: team.name, headline: team.headline };
+}
+
+/**
+ * Give the board the name and headline in the team file, through a
+ * `team_named` event, when the board does not have them yet. The change is
+ * recorded as made by the file's first person, because a person edits the
+ * team file and the event must have a human actor. Returns whether it named
+ * the board.
+ */
+export async function nameTeam(db: Db, team: TeamFile, at: string): Promise<boolean> {
+  const current = await teamName(db);
+  const to = teamNameOf(team);
+  if (sameTeamName(current, to)) return false;
+  const person = team.teammates.find((t) => t.kind === "human");
+  if (!person) throw new StoreError("a team file needs a person to name the board", "rule_violation");
+  await appendEvent(db, { id: `team-named-${at}`, type: "team_named", actor: person.id, at, from: current, to });
+  return true;
 }
 
 /**

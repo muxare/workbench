@@ -92,6 +92,11 @@ describe("GET /api/board", () => {
     expect(board.last_seq).toBe(seeded.length);
   });
 
+  it("names the board after the invented team, with the demo's headline", async () => {
+    const board = boardResponse.parse(await (await app.request("/api/board")).json());
+    expect(board.team).toEqual({ name: "Laundry room team (invented)", headline: "AI joins the team at the board" });
+  });
+
   it("gives every person their roles and no AI teammate any", async () => {
     const board = boardResponse.parse(await (await app.request("/api/board")).json());
     const roles = Object.fromEntries(board.teammates.map((t) => [t.id, t.kind === "human" ? t.roles : "none"]));
