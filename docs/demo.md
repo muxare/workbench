@@ -8,9 +8,33 @@ The talk is about how AI and people collaborate; the app is the example. Three p
 - **The AI asks rather than guesses.** When the AI meets tacit knowledge, it stops and asks the person who has it, and the card waits on that person where the whole team can see it.
 - **Every change to how the team works is an event.** Answers, mode changes and log filters are all events in one stream, so the logs show who changed what and when, and every screen updates live.
 
-All data is the invented laundry room project (`examples/laundry-room/`, seeded from `apps/api/src/seed/invented.ts`). Say so on stage: no teammate, card or question describes a real client or person.
+Since 2026-11-14 the demo has two parts. Part 1, below, works real cards on the workbench's own board, where Mikael chooses on stage which work he does himself and which the AI does; nothing in it is planted, so a failed check or a question appears only if the work produces one. Part 2 is the invented script that follows it, kept for the points Part 1 may not reach on the day (the AI asking, a relayed question, the log filter) and as the fallback if the network or GitHub fails. In Part 2 all data is the invented laundry room project (`examples/laundry-room/`, seeded from `apps/api/src/seed/invented.ts`). Say so on stage: no teammate, card or question describes a real client or person.
 
-## Before the talk
+## Part 1: real cards on the workbench's own board
+
+Planned on 2026-11-14 and not yet dry-run. It needs card #15 built first, so that a person can move a card to Ready and pick it on screen; until then those two steps are API calls, shown below. Set the modes, including Mikael's `delegate` for `implement_interactions` from card #5, deliberately before going on stage.
+
+### Which cards
+
+The cards are chosen when the demo is cut on 2026-11-16 or 2026-11-17, not now, because the days before ConCon are heavy development days and any card reserved earlier could be worked, or its bug fixed on the side, before the talk. At the cut, take from the board's Backlog, or enter fresh in `teams/workbench/cards.json`, a set that spans the chain so the modes have something to choose between: two small `fix_bug` cards the AI can finish inside a talk (a fix, the `check` workflow at about 40 s and the `ai-review` critic at a few minutes), one interaction card where the person drives, and one judgment card such as `frame_problem` that the person does alone. Prefer an AI card whose fix shows on the board itself once merged. The steps below name the cards as #A (the AI's) and #B (the person's).
+
+### Before the talk
+
+Rehearse on a copy, because a rehearsal works the real cards. Copy `teams/workbench/board.db` aside before the rehearsal and back after it, close the rehearsal's pull requests unmerged and delete their branches. Then, on the day, start the loop as in `docs/dev-loop.md` under "Running the loop locally" (`team:serve` and `gh webhook forward`), start the web app with `API_URL=http://localhost:3000`, and open a Claude Code session in the repository with the App's environment set (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH`). The critic only runs once `ANTHROPIC_API_KEY` is a repository secret (task 3 in `docs/next.md`).
+
+### The flow
+
+1. **The board.** Real cards in Backlog, and #1 to #5 done. Say what #1 to #5 were: the board built the loop it is about to show.
+2. **I choose what I do and what the AI does.** On Mikael's profile (`#/teammates/mikael`), set a mode per step and say why each time: `fix_bug` "AI does it, I verify", because a small fix with a test is cheap to check; `implement_interactions` "AI assists, I drive", because how a screen feels is mine to shape; `frame_problem` "I do it", because framing a problem is judgment. Then open the AI's profile and show what follows: what it may pick and what is "Not mine".
+3. **Hand the AI its card.** Move #A to Ready; until #15 is built, that is `curl -X POST localhost:3000/api/cards/<A>/status -H 'content-type: application/json' -d '{"actor":"mikael","from":"backlog","to":{"state":"ready"}}'`. In Claude Code: "Work the next card on the workbench board that you may pick." It picks #A in `delegate`, branches, pushes as the App and opens a pull request; the board follows each step live.
+4. **Take my own card.** While the AI works, move #B to Ready and pick it as Mikael; until #15 is built, the same status call for #B and then `curl -X POST localhost:3000/api/cards/<B>/pick -H 'content-type: application/json' -d '{"actor":"mikael","mode":"manual"}'`. Ask the AI to pick it too and show the refusal: the person chose to do this one.
+5. **Come back for the review.** When `check` and the critic have reported on #A, read the critic's review, approve and merge. The card moves to Done, and after pulling `main` its fix shows on the board.
+
+If the AI asks a question on the way, answer it on the card; that is the point of Part 2 happening for real. If GitHub or the network fails, go to Part 2.
+
+## Part 2: the invented team
+
+### Before the talk (Part 2)
 
 The demo runs from the git tag `concon-demo` (set on 2026-11-09 at `35beb00`), so work merged to `main` after that cannot change it. Check it out first with `git checkout concon-demo`.
 
@@ -40,9 +64,9 @@ pnpm --filter @workbench/web dev --port 5173 --strictPort
 
 Open `http://localhost:5173/` in the browser and keep a third terminal ready for the AI run. Check before going on stage that the board's connection indicator says **Live**, that the title reads "Team board · Sprint 4 (invented)", that #108 sits in **Ready** and that #106 sits in **Needs input**, waiting on `domain_rules` (caretaker's fault records) and relayed by PO.
 
-## The demo
+### The demo (Part 2)
 
-### 1. The board as it stands
+#### 1. The board as it stands
 
 **Do:** show `http://localhost:5173/`.
 
@@ -50,7 +74,7 @@ Open `http://localhost:5173/` in the browser and keep a third terminal ready for
 
 **Why it matters:** the AI is a teammate on the same board, not a side panel. The red column is the first instance of the point the whole demo makes: the AI asked instead of guessing, and the work waits on a person in plain view.
 
-### 2. Run the AI teammate
+#### 2. Run the AI teammate
 
 **Do:** in the third terminal:
 
@@ -62,7 +86,7 @@ curl -X POST http://localhost:3000/api/teammates/invented-ai/run
 
 **Why it matters:** the AI picked a card only because the frontend developer's profile puts `refine_ui_spec` in "AI assists, I drive". It read what it could, reported what it found, and stopped at the knowledge only a person holds. It did not invent an answer. The run uses the stub provider and calls no model, which is worth saying: the demo is about the collaboration rules, not about model quality.
 
-### 3. Answer the question on the card
+#### 3. Answer the question on the card
 
 **Do:** click #108 on the board, or open `http://localhost:5173/#/cards/invented-108`. Type an answer in the box under "Answer, and why (kept in the decision log)", for example *"Invented: reuse the booking list and the toast; avoid the old modal, it traps focus."*, and click **Answer and resume** at the top right.
 
@@ -70,7 +94,7 @@ curl -X POST http://localhost:3000/api/teammates/invented-ai/run
 
 **Why it matters:** the person who holds the knowledge answers, and the answer and its reason go into the decision log, not into a chat that disappears. The "decides" field on every step names a person.
 
-### 4. Change a mode on a person's profile
+#### 4. Change a mode on a person's profile
 
 **Do:** open `http://localhost:5173/#/teammates/invented-fe` (the FE panel on the board links there). In "My chain of steps", on "Turn the issue into a buildable UI spec", click **I do it** instead of **AI assists**.
 
@@ -78,7 +102,7 @@ curl -X POST http://localhost:3000/api/teammates/invented-ai/run
 
 **Why it matters:** each person decides, step by step, how much the AI does in their work, and only that person can change it: the API answers 403 "a person sets their own modes" if someone else tries. The change is an event like any card move, so the team can see when Alex changed how they work with AI.
 
-### 5. Filter a log
+#### 5. Filter a log
 
 **Do:** go back to the board. Next to the "Cycle log" heading, open **Filter · All events**; the panel says "Shown in the cycle log, for the whole team". Pick yourself under "Changing as" first (it defaults to PO; choose "FE · Alex Example (invented frontend developer)"), then untick `report_posted`.
 
@@ -86,7 +110,7 @@ curl -X POST http://localhost:3000/api/teammates/invented-ai/run
 
 **Why it matters:** even how the team looks at its own history is a team decision, recorded as a `log_filter_changed` event with who made it. The filter is shared, not a personal view, and a change made from a stale screen is refused with 409 rather than silently overwriting someone else's. Only a person can set a filter; the AI is refused with 403.
 
-### 6. Show the AI teammate's profile
+#### 6. Show the AI teammate's profile
 
 **Do:** open `http://localhost:5173/#/teammates/invented-ai` (or click the AI's panel on the board).
 

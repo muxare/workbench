@@ -7,7 +7,7 @@ import { runTeammate } from "./runner.ts";
 import { stubProvider } from "./stubProvider.ts";
 
 const teammateId = process.env.TEAMMATE_ID ?? "invented-ai";
-const db = await openDb(defaultDatabaseUrl);
+const db = await openDb(defaultDatabaseUrl());
 const run = await runTeammate(db, { teammateId, provider: stubProvider });
 if (!run) {
   console.log(`${teammateId}: no card it may pick.`);
