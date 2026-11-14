@@ -60,6 +60,7 @@ export function testBoard(over: Partial<BoardResponse> = {}): BoardResponse {
     },
   ];
   return {
+    team: { name: "Invented team" },
     teammates: [
       {
         kind: "human",

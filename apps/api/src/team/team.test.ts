@@ -3,8 +3,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "../db/client.ts";
 import { loadFunctionIds } from "../process.ts";
-import { eventsAfter, listCards, listCycles, listTeammates, StoreError } from "../store.ts";
-import { enterCards, readCardsFile, readTeamFile, startTeam, teamDir, type CardsFile, type TeamFile } from "./team.ts";
+import { addTeammate, appendEvent, eventsAfter, listCards, listCycles, listTeammates, StoreError, teamName } from "../store.ts";
+import { enterCards, nameTeam, readCardsFile, readTeamFile, startTeam, teamDir, type CardsFile, type TeamFile } from "./team.ts";
 
 const functionIds = loadFunctionIds();
 const joinedAt = "2026-11-11T09:00:00Z";
@@ -39,7 +39,7 @@ beforeEach(async () => {
 });
 
 describe("startTeam", () => {
-  it("adds the team and its cycle, with no events but each person's joining", async () => {
+  it("adds the team and its cycle, with no events but each person's joining and the team's name", async () => {
     await startTeam(db, team, joinedAt);
     const people = await listTeammates(db);
     expect(people.map((t) => t.id)).toEqual(["invented-ai", "invented-person"]);
@@ -49,12 +49,58 @@ describe("startTeam", () => {
     const stored = await eventsAfter(db, 0);
     expect(stored.map((s) => s.event)).toEqual([
       { id: "roles-invented-person-joined", type: "roles_changed", teammate_id: "invented-person", actor: "invented-person", at: joinedAt, from: [], to: ["po", "be"] },
+      { id: `team-named-${joinedAt}`, type: "team_named", actor: "invented-person", at: joinedAt, from: null, to: { name: "Invented team" } },
     ]);
+    expect(await teamName(db)).toEqual({ name: "Invented team" });
   });
 
   it("refuses a database that already holds a team", async () => {
     await startTeam(db, team, joinedAt);
     await expect(startTeam(db, team, joinedAt)).rejects.toThrow(StoreError);
+  });
+});
+
+describe("nameTeam", () => {
+  const later = "2026-11-12T09:00:00Z";
+
+  it("does nothing when the board already has the file's name and headline", async () => {
+    await startTeam(db, team, joinedAt);
+    expect(await nameTeam(db, team, later)).toBe(false);
+    expect((await eventsAfter(db, 0)).filter((s) => s.event.type === "team_named")).toHaveLength(1);
+  });
+
+  it("renames the board from the file, starting from the name it had", async () => {
+    await startTeam(db, team, joinedAt);
+    expect(await nameTeam(db, { ...team, headline: "Invented headline" }, later)).toBe(true);
+    expect(await teamName(db)).toEqual({ name: "Invented team", headline: "Invented headline" });
+    const last = (await eventsAfter(db, 0)).at(-1)?.event;
+    expect(last).toMatchObject({ type: "team_named", from: { name: "Invented team" }, to: { name: "Invented team", headline: "Invented headline" } });
+  });
+
+  it("names a board started before team_named existed", async () => {
+    for (const t of team.teammates) await addTeammate(db, t, joinedAt);
+    expect(await teamName(db)).toBeNull();
+    expect(await nameTeam(db, team, later)).toBe(true);
+    expect((await eventsAfter(db, 0)).at(-1)?.event).toMatchObject({ type: "team_named", from: null, to: { name: "Invented team" } });
+  });
+});
+
+describe("team_named in the store", () => {
+  const event = { id: "n1", type: "team_named", actor: "invented-person", at: "2026-11-12T09:00:00Z", from: null, to: { name: "Other" } } as const;
+
+  it("refuses a change from a name the board does not have", async () => {
+    await startTeam(db, team, joinedAt);
+    await expect(appendEvent(db, event)).rejects.toThrow(/not as the change says/);
+  });
+
+  it("refuses a change that keeps the name and headline", async () => {
+    await startTeam(db, team, joinedAt);
+    await expect(appendEvent(db, { ...event, from: { name: "Invented team" }, to: { name: "Invented team" } })).rejects.toThrow(/must change/);
+  });
+
+  it("refuses the AI teammate as the one who names the team", async () => {
+    await startTeam(db, team, joinedAt);
+    await expect(appendEvent(db, { ...event, actor: "invented-ai", from: { name: "Invented team" } })).rejects.toThrow(/by a person/);
   });
 });
 
@@ -72,7 +118,8 @@ describe("enterCards", () => {
     ]);
     expect(board[1]).toMatchObject({ milestone: "Invented milestone", links: [{ relation: "depends_on", card_id: "1" }] });
     expect(await enterCards(db, cards, functionIds)).toEqual({ added: [], skipped: ["1", "2"] });
-    expect(await eventsAfter(db, 0)).toHaveLength(1);
+    // Entering cards writes no events: only the joining and naming from startTeam are there.
+    expect(await eventsAfter(db, 0)).toHaveLength(2);
   });
 
   it("refuses a card whose id the board already gives to a different card, and enters nothing for it", async () => {

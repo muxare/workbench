@@ -2,6 +2,15 @@
 
 Newest first. Each entry: what was decided, why, and what would change it.
 
+## 2026-11-14: The board is named by a `team_named` event, with an optional headline the demo keeps (with Mikael)
+
+Card #5 on the workbench board, worked from a Claude Code session through the MCP server. The board's title was written into `apps/web/src/board/BoardView.tsx`, so the workbench's own board showed the ConCon demo's headline, "AI joins the team at the board". Asked on the card how the demo should keep its headline, Mikael chose a separate optional headline over renaming the demo team after it or dropping it, because a headline is not a team name and the demo frozen at `concon-demo` is untouched either way.
+
+- **The name is a team event, `team_named`, with `from` and `to`, each a name and an optional headline.** Every change to how the team works is an event, and the critic gate and log filter are the precedent for a team setting. The store refuses a change whose `from` is not the current name with 409, a change that keeps both with 400, and a change by an AI teammate with 403. `GET /api/board` carries `team`, the latest `to`, or null for a board never named, and the web applies a streamed `team_named` at once. No route changes the name yet; nobody has asked to rename a board from the screen.
+- **The board shows the headline, else the team's name, else "Board".** The fallback keeps an unnamed database rendering (`apps/web/src/board/title.ts`).
+- **`team.json` gives the name and an optional `headline`.** `team:start` names the board from it, and `team:serve` names it again when the file and the board differ, so the board started on 2026-11-11 takes "Workbench" on its next serve without a reseed. The event needs a human actor and is recorded as made by the file's first person, because a person edits the file; this would change if a team file came to have several people who edit it.
+- **The invented seed names its team "Laundry room team (invented)" with the demo's headline**, so a reseeded demo board looks as it did.
+
 ## 2026-11-11: An MCP server in `apps/mcp` lets a Claude Code session work from the board (by Claude)
 
 This is stage 3 of `docs/dev-loop.md` and task 2 in `docs/next.md`. The server is a new workspace package, `apps/mcp`, registered for Claude Code in a project `.mcp.json`; `apps/mcp/README.md` says how to use it. It offers seven tools: `list_cards`, `get_card`, `pick_card`, `ask_question`, `wait_for_answer`, `post_report` and `link_branch`.

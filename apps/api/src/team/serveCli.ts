@@ -2,11 +2,12 @@
 // team's board, teams/<team>/board.db, made by team:start. The same server as
 // `start`, with DATABASE_URL pointed at the board and TEAMMATE_ID (for the
 // optional timer) at the team's AI teammate. The directory is relative to the
-// repository root.
+// repository root. The board takes its name and headline from team.json.
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { openDb } from "../db/client.ts";
 import { formatGithubLogins } from "../github/logins.ts";
-import { boardDatabasePath, readTeamFile, teamDir } from "./team.ts";
+import { boardDatabasePath, nameTeam, readTeamFile, teamDir } from "./team.ts";
 
 const arg = process.argv[2];
 if (!arg) {
@@ -21,6 +22,9 @@ if (!existsSync(path)) {
   process.exit(1);
 }
 process.env.DATABASE_URL = pathToFileURL(path).href;
+// A board started before team_named existed, or a team file whose name or
+// headline changed since, gets the file's name now.
+if (await nameTeam(await openDb(process.env.DATABASE_URL), team, new Date().toISOString())) console.log(`Named the board '${team.name}' from team.json.`);
 const ai = team.teammates.find((t) => t.kind === "ai");
 if (ai && process.env.TEAMMATE_ID === undefined) process.env.TEAMMATE_ID = ai.id;
 // Which teammate each GitHub account is, for the webhook endpoint; an explicit GITHUB_LOGINS wins.

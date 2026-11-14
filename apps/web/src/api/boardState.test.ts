@@ -19,7 +19,7 @@ function report(id: string): CardEvent {
 }
 
 function board(lastSeq: number, log: CardEvent[] = []): BoardResponse {
-  return { cards: [], teammates: [], functions: [], open_questions: [], log, log_filters: defaultLogFilters(), cycle: null, last_seq: lastSeq };
+  return { team: null, cards: [], teammates: [], functions: [], open_questions: [], log, log_filters: defaultLogFilters(), cycle: null, last_seq: lastSeq };
 }
 
 const live = (seq: number, id = `e${seq}`): LiveEvent => ({ seq, event: report(id) });
@@ -188,6 +188,31 @@ describe("a log_filter_changed event", () => {
     const state = mergeEvent(liveBoard(board(3)), filterChanged(4, ["report_posted"]));
     const next = mergeEvent(state, live(5));
     expect(next.board.log.map((e) => e.id)).toEqual(["f4", "e5"]);
+  });
+});
+
+describe("a team_named event", () => {
+  const named = (seq: number, headline?: string): LiveEvent => ({
+    seq,
+    event: {
+      id: `n${seq}`,
+      type: "team_named",
+      actor: "fe-1",
+      at: "2026-11-09T10:00:00.000Z",
+      from: null,
+      to: headline === undefined ? { name: "Invented team" } : { name: "Invented team", headline },
+    },
+  });
+
+  it("renames the board at once and goes into the log", () => {
+    const next = mergeEvent(liveBoard(board(3)), named(4, "Invented headline"));
+    expect(next.board.team).toEqual({ name: "Invented team", headline: "Invented headline" });
+    expect(next.board.log.map((e) => e.id)).toEqual(["n4"]);
+  });
+
+  it("is applied again over a refetch that started before it", () => {
+    const state = mergeEvent(liveBoard(board(3)), named(4));
+    expect(applyRefetch(state, board(3)).board.team).toEqual({ name: "Invented team" });
   });
 });
 

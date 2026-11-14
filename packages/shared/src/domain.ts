@@ -340,6 +340,30 @@ export const criticGateChanged = z.object({
 export type CriticGateChangedEvent = z.infer<typeof criticGateChanged>;
 
 /**
+ * What the board is called: the team's `name`, and an optional `headline`
+ * the board shows in its place. A headline is not a team name; the invented
+ * seed uses one to keep the demo's title, and a real team usually has none.
+ */
+export const teamName = z.strictObject({
+  name: z.string().min(1),
+  headline: z.string().min(1).optional(),
+});
+export type TeamName = z.infer<typeof teamName>;
+
+/**
+ * `team_named` records the team's name and headline from now on (`to`) and
+ * what they were before (`from`, null the first time). The current name is
+ * derived from these events (`deriveTeamName`).
+ */
+export const teamNamed = z.object({
+  ...teamEventBase,
+  type: z.literal("team_named"),
+  from: teamName.nullable(),
+  to: teamName,
+});
+export type TeamNamedEvent = z.infer<typeof teamNamed>;
+
+/**
  * Every event type in the stream, in schema order: the card and teammate
  * event types read from their schemas, then the team event types. The team
  * event `log_filter_changed` names event types itself, so its own type is
@@ -350,6 +374,7 @@ export const streamEventType = z.enum([
   ...teammateEvent.options.map((o) => o.shape.type.value),
   "log_filter_changed" as const,
   criticGateChanged.shape.type.value,
+  teamNamed.shape.type.value,
 ]);
 
 /**
@@ -367,7 +392,7 @@ export const hiddenEventTypes = z
  * types one log hides for the whole team: `hidden` is the whole set it hides
  * from now on, and `was_hidden` the set it hid before. The current filters
  * are derived from these events (`deriveLogFilters`). `critic_gate_changed`
- * is described above (`criticGateChanged`).
+ * and `team_named` are described above (`criticGateChanged`, `teamNamed`).
  */
 export const teamEvent = z.discriminatedUnion("type", [
   z.object({
@@ -378,6 +403,7 @@ export const teamEvent = z.discriminatedUnion("type", [
     was_hidden: hiddenEventTypes,
   }),
   criticGateChanged,
+  teamNamed,
 ]);
 export type TeamEvent = z.infer<typeof teamEvent>;
 export type LogFilterChangedEvent = Extract<TeamEvent, { type: "log_filter_changed" }>;
@@ -511,4 +537,20 @@ export function logEventTypes(log: LogName): readonly StreamEventType[] {
 export function shownInLog<E extends StreamEvent>(events: readonly E[], filters: LogFilters, log: LogName): E[] {
   const hidden = new Set<StreamEventType>(filters[log]);
   return events.filter((e) => !hidden.has(e.type));
+}
+
+/**
+ * The team's name and headline from the stream: the `to` of the latest
+ * `team_named` event, or null when the team has never been named. `events`
+ * must be in stream order.
+ */
+export function deriveTeamName(events: readonly StreamEvent[]): TeamName | null {
+  let current: TeamName | null = null;
+  for (const e of events) if (e.type === "team_named") current = e.to;
+  return current;
+}
+
+/** Whether two team names are the same name with the same headline. */
+export function sameTeamName(a: TeamName | null, b: TeamName | null): boolean {
+  return a?.name === b?.name && a?.headline === b?.headline;
 }

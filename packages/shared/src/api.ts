@@ -19,6 +19,7 @@ import {
   mode,
   question,
   streamEvent,
+  teamName,
   teammate,
   teammateId,
   teammateRoles,
@@ -123,8 +124,11 @@ export type BoardCycle = z.infer<typeof boardCycle>;
  * just what `chainOf` and `ownerMode` need, so a panel counts a person's modes
  * over the same chain and with the same default as their profile, and keeps
  * doing so as `mode_changed` and `roles_changed` events stream in.
+ * `team` is the team's name and headline from its `team_named` events, or
+ * null when the team has never been named.
  */
 export const boardResponse = z.object({
+  team: teamName.nullable(),
   cards: z.array(card),
   teammates: z.array(teammate),
   functions: z.array(chainFunction),
