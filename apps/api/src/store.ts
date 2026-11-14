@@ -7,8 +7,8 @@
 // its `status_changed` events, a person's process profile from their
 // `mode_changed` events, their roles from their `roles_changed` events, and
 // the team's log filters from the `log_filter_changed` events, and each
-// function's critic gate from the `critic_gate_changed` events, in the same
-// way. The filters are a view setting: no query here applies them.
+// function's critic gate from the `critic_gate_changed` events, and the
+// team's name from the `team_named` events, in the same way. The filters are a view setting: no query here applies them.
 import { and, asc, desc, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   card as cardSchema,
@@ -18,9 +18,11 @@ import {
   deriveLogFilters,
   deriveProfile,
   deriveRoles,
+  deriveTeamName,
   humanTeammate,
   sameEventTypes,
   sameRoles,
+  sameTeamName,
   streamEvent,
   teammate as teammateSchema,
   type Card,
@@ -38,6 +40,8 @@ import {
   type Status,
   type StreamEvent,
   type StreamEventType,
+  type TeamName,
+  type TeamNamedEvent,
   type Teammate,
   type TeammateRole,
   type ProcessProfile,
@@ -192,6 +196,12 @@ export async function criticGates(db: Db): Promise<CriticGates> {
   return deriveCriticGates(rows.map(fromRow));
 }
 
+/** The team's name and headline, from the `team_named` events: the latest wins; null when never named. */
+export async function teamName(db: Db): Promise<TeamName | null> {
+  const rows = await db.select().from(events).where(eq(events.type, "team_named")).orderBy(asc(events.seq));
+  return deriveTeamName(rows.map(fromRow));
+}
+
 interface Pending {
   statuses: Map<string, Status>;
   /** Keyed by teammate id and function id. */
@@ -202,6 +212,8 @@ interface Pending {
   filters: Map<LogName, StreamEventType[]>;
   /** What earlier events in the write set each function's critic gate to. */
   gates: Map<string, boolean>;
+  /** What an earlier event in the write set named the team; undefined when none did. */
+  team?: TeamName | null;
 }
 
 /**
@@ -305,11 +317,29 @@ async function checkRolesChange(db: Db, event: RolesChangedEvent, pending: Pendi
 }
 
 /**
+ * A team name change must come from a person, start from the current name
+ * (null before the first), so two changes made from the same view cannot both
+ * win, and change the name or the headline.
+ */
+async function checkTeamNamed(db: Db, event: TeamNamedEvent, pending: Pending): Promise<void> {
+  const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
+  if (!actor) throw new StoreError(`${event.id}: no teammate '${event.actor}'`, "not_found");
+  if (actor.kind !== "human") throw new StoreError(`${event.id}: the team is named by a person, not ${event.actor}`, "forbidden");
+  const current = pending.team !== undefined ? pending.team : await teamName(db);
+  if (!sameTeamName(current, event.from)) {
+    throw new StoreError(`${event.id}: the team is named ${current === null ? "nothing yet" : `'${current.name}'`}, not as the change says it was`, "conflict");
+  }
+  if (sameTeamName(event.from, event.to)) throw new StoreError(`${event.id}: a team name change must change the name or the headline`);
+  pending.team = event.to;
+}
+
+/**
  * Check an event against the stream so far: it must parse; a status change's
  * `from` must be the card's current state; an answer must come from a human,
  * because in every protocol `decides` is human; a mode change must pass
  * `checkModeChange`, a roles change `checkRolesChange`, a filter change
- * `checkLogFilterChange`, and a critic gate change `checkCriticGateChange`.
+ * `checkLogFilterChange`, a critic gate change `checkCriticGateChange`, and a
+ * team name change `checkTeamNamed`.
  * `pending` holds what earlier events in the same write have changed.
  */
 async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise<StreamEvent> {
@@ -325,6 +355,7 @@ async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise
   if (event.type === "roles_changed") await checkRolesChange(db, event, pending);
   if (event.type === "log_filter_changed") await checkLogFilterChange(db, event, pending);
   if (event.type === "critic_gate_changed") await checkCriticGateChange(db, event, pending);
+  if (event.type === "team_named") await checkTeamNamed(db, event, pending);
   if (event.type === "answered") {
     const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
     if (actor?.kind !== "human") {

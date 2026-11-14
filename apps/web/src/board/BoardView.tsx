@@ -6,6 +6,7 @@ import { Legend } from "./Legend.tsx";
 import { linksFor } from "./links.ts";
 import { TeammatePanel } from "./TeammatePanel.tsx";
 import { placeTeammates } from "./teammates.ts";
+import { boardTitle } from "./title.ts";
 
 function Group({ board, side, teammates }: { board: BoardResponse; side: Side; teammates: Teammate[] }) {
   return (
@@ -35,7 +36,7 @@ export function BoardView({
     <main className="page">
       <header className="page__head">
         <div className="page__intro">
-          <h1>AI joins the team at the board</h1>
+          <h1>{boardTitle(board)}</h1>
           <p>
             Everyone, AI included, picks work from the same board. Each person's process map sets how they work with AI.
             Results, questions and status changes land on the card and in the cycle log.

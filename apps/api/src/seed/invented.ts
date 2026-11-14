@@ -438,8 +438,20 @@ export function inventedSeedAt(seededAt: Date): SeedData {
   const sprint4 = runningCycle(seededAt);
   const readyAt = Math.min(Date.parse(sprint4.starts_at) + 3 * 60 * 60 * 1000, Math.max(seededAt.getTime(), Date.parse(sprint4.starts_at)));
   const i3Ready = move("invented-108", PO, new Date(readyAt).toISOString(), "backlog", "ready");
-  return { ...base, cycles: [...base.cycles, sprint4], events: numbered([...steps.flat(), i3Ready]) };
+  return { ...base, cycles: [...base.cycles, sprint4], events: numbered([named, ...steps.flat(), i3Ready]) };
 }
+
+/**
+ * The team is named when it joins. The headline keeps the title the ConCon
+ * demo was shown with; the board shows it in place of the team's name.
+ */
+const named: NewEvent = {
+  type: "team_named",
+  actor: PO,
+  at: "2026-08-31T06:00:00Z",
+  from: null,
+  to: { name: "Laundry room team (invented)", headline: "AI joins the team at the board" },
+};
 
 const base: Omit<SeedData, "events"> = {
   teammates: [

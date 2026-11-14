@@ -9,7 +9,8 @@
 // A `log_filter_changed` event replaces its log's filter at once in the same
 // way, so a filter changed in another browser applies here as soon as it
 // streams in. The filter only decides what a log shows; the log kept here
-// holds every event, hidden or not. A streamed event whose time falls in the
+// holds every event, hidden or not. A `team_named` event renames the board at
+// once. A streamed event whose time falls in the
 // current cycle's window joins the cycle log too; which cycle is current is
 // the server's call, so a refetch brings a new cycle when one starts.
 import { inCycle, streamEvent, type BoardResponse, type StreamEvent } from "@workbench/shared";
@@ -87,6 +88,7 @@ function appendToBoard(board: BoardResponse, live: LiveEvent): BoardResponse {
     ...board,
     teammates: applyToTeammates(board.teammates, live.event),
     log_filters: applyToFilters(board.log_filters, live.event),
+    team: live.event.type === "team_named" ? live.event.to : board.team,
     log: log.slice(-BOARD_LOG_LIMIT),
     cycle: appendToCycle(board.cycle, live.event),
     last_seq: live.seq,
