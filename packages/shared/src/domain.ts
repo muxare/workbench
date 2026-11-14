@@ -79,13 +79,44 @@ export const cardStatus = z.enum(["backlog", "ready", "in_progress", "needs_inpu
 export type CardStatus = z.infer<typeof cardStatus>;
 
 /**
- * A card's status. `needs_input` must say who the card waits on and which
- * question is open; every other state must not (the objects are strict, so a
- * stray `waiting_on` is rejected rather than silently dropped).
+ * An artifact's `id` from process/artifacts.md. Checked only for shape
+ * (snake_case); which artifacts exist, and which are made outside the team, is
+ * read from process/ at runtime.
+ */
+export const artifactId = z.string().regex(/^[a-z][a-z0-9_]*$/, "expected a snake_case artifact id");
+
+/**
+ * Something outside the team a question is for: an external artifact (one
+ * whose `made_by` is `external` in process/artifacts.md) and, in free text,
+ * where in it the answer comes from, such as `domain_rules` and "caretaker's
+ * fault records". Nobody outside the team has an account, so a teammate
+ * relays the question and records the answer.
+ */
+export const externalSource = z.strictObject({ artifact: artifactId, source: z.string().min(1) });
+export type ExternalSource = z.infer<typeof externalSource>;
+
+/**
+ * Who or what a card in `needs_input` waits on: a teammate, or an external
+ * source with the person who relays the question to it (`relayed_by`). A
+ * card that waited before external sources existed stored a teammate id,
+ * which still reads as one.
+ */
+export const waitingOn = z.union([teammateId, z.strictObject({ ...externalSource.shape, relayed_by: teammateId })]);
+export type WaitingOn = z.infer<typeof waitingOn>;
+
+/** The teammate who acts on a card's wait: the one waited on, or the one who relays to the external source. */
+export function waitingOnTeammate(w: WaitingOn): string {
+  return typeof w === "string" ? w : w.relayed_by;
+}
+
+/**
+ * A card's status. `needs_input` must say who or what the card waits on and
+ * which question is open; every other state must not (the objects are strict,
+ * so a stray `waiting_on` is rejected rather than silently dropped).
  */
 export const status = z.discriminatedUnion("state", [
   z.strictObject({ state: cardStatus.exclude(["needs_input"]) }),
-  z.strictObject({ state: z.literal("needs_input"), waiting_on: teammateId, question_id: questionId }),
+  z.strictObject({ state: z.literal("needs_input"), waiting_on: waitingOn, question_id: questionId }),
 ]);
 export type Status = z.infer<typeof status>;
 
@@ -120,7 +151,8 @@ export function unfinishedDependencies(card: Card, cards: readonly Card[]): stri
  * A question asked on a card. `answer` and `decided_by` are set together.
  * In every protocol `decides` is human, so `decided_by` must be a human
  * teammate; the schema cannot see the teammate list, so check that with
- * `decidedByHuman`.
+ * `decidedByHuman`. A question for someone outside the team names the
+ * `external` source it is for, and `asked_of` is the person who relays it.
  */
 export const question = z
   .object({
@@ -128,6 +160,7 @@ export const question = z
     card_id: cardId,
     asked_by: teammateId,
     asked_of: teammateId,
+    external: externalSource.optional(),
     text: z.string().min(1),
     why_it_blocks: z.string().min(1),
     answer: z.string().min(1).optional(),
@@ -158,6 +191,44 @@ export const cycle = z
     path: ["ends_at"],
   });
 export type Cycle = z.infer<typeof cycle>;
+
+/**
+ * A team's cycle setting (team.json's `cycles`): how long a cycle runs and how
+ * the next one is named. In `id` and `name`, `{n}` stands for the cycle's
+ * number on the board, one more than the cycles it already has. `name` is the
+ * fallback when no name is given for the cycle; a team whose cycles are named
+ * for their stage leaves it out, so each name must be given.
+ */
+const numbered = (what: string) =>
+  z.string().min(1).refine((s) => s.includes("{n}"), { message: `the ${what} pattern must contain {n}` });
+export const cycleSetting = z.strictObject({
+  length_days: z.int().min(1).max(365),
+  id: numbered("id"),
+  name: numbered("name").optional(),
+});
+export type CycleSetting = z.infer<typeof cycleSetting>;
+
+/**
+ * The cycle that follows the board's cycles under `setting`: it starts where
+ * the cycle that ends last ends and runs `length_days` days, numbered one more
+ * than the cycles already on the board. `name` wins over the setting's name
+ * pattern; with neither, or with no cycle on the board to follow, it throws.
+ */
+export function nextCycle(setting: CycleSetting, cycles: readonly Cycle[], name?: string): Cycle {
+  const last = cycles.reduce<Cycle | undefined>((best, c) => (best === undefined || Date.parse(c.ends_at) > Date.parse(best.ends_at) ? c : best), undefined);
+  if (!last) throw new Error("the board has no cycle to follow; team:start adds the first one from team.json");
+  const n = String(cycles.length + 1);
+  const chosen = name?.trim() || setting.name?.replaceAll("{n}", n);
+  if (!chosen) throw new Error("the team's cycle setting has no name pattern, so the cycle's name must be given");
+  const start = Date.parse(last.ends_at);
+  const iso = (ms: number) => new Date(ms).toISOString().replace(".000Z", "Z");
+  return cycle.parse({
+    id: setting.id.replaceAll("{n}", n),
+    name: chosen,
+    starts_at: iso(start),
+    ends_at: iso(start + setting.length_days * 86_400_000),
+  });
+}
 
 /** Whether the time `at` falls in the cycle's window, [starts_at, ends_at). */
 export function inCycle(c: Cycle, at: string): boolean {
@@ -210,7 +281,9 @@ export const cardEvent = z.discriminatedUnion("type", [
     ...cardEventBase,
     type: z.literal("asked"),
     question_id: questionId,
+    /** The teammate asked; with `external`, the person who relays the question outside the team. */
     asked_of: teammateId,
+    external: externalSource.optional(),
     text: z.string().min(1),
     why_it_blocks: z.string().min(1),
   }),

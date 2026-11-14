@@ -83,7 +83,7 @@ describe("GET /api/board", () => {
     expect(board.teammates).toHaveLength(inventedSeed.teammates.length);
     expect(board.cards.find((c) => c.id === "invented-106")?.status).toEqual({
       state: "needs_input",
-      waiting_on: PO,
+      waiting_on: { artifact: "domain_rules", source: "caretaker's fault records", relayed_by: PO },
       question_id: "invented-q106",
     });
     expect(board.open_questions.map((q) => q.id)).toEqual(["invented-q106"]);
@@ -424,6 +424,47 @@ describe("POST /api/cards/:id/questions", () => {
 
   it("refuses a card that is not in progress", async () => {
     await expectProblem(await post("/api/cards/invented-108/questions", ask), 409, "conflict", /ready/);
+  });
+
+  const external = { artifact: "domain_rules", source: "Invented: caretaker's fault records" };
+
+  it("asks outside the team through a person, and the card waits on the external source relayed by them", async () => {
+    const out = writeResponse.parse(await (await post("/api/cards/invented-107/questions", { ...ask, external })).json());
+    expect(out.events[0]).toMatchObject({ type: "asked", asked_of: PO, external });
+    expect(out.card.status).toEqual({ state: "needs_input", waiting_on: { ...external, relayed_by: PO }, question_id: "invented-new-1" });
+    const detail = cardResponse.parse(await (await app.request("/api/cards/invented-107")).json());
+    expect(detail.questions.at(-1)).toMatchObject({ asked_of: PO, external });
+  });
+
+  it("lets any person record the answer to a relayed question, and the card resumes", async () => {
+    await post("/api/cards/invented-107/questions", { ...ask, external });
+    const out = writeResponse.parse(
+      await (await post("/api/cards/invented-107/questions/invented-new-1/answer", { actor: FE, answer: "Invented: a shared form." })).json(),
+    );
+    expect(out.card.status).toEqual({ state: "in_progress" });
+  });
+
+  it("refuses an artifact that is not made outside the team, or unknown, and appends nothing", async () => {
+    const before = await lastSeq(db);
+    for (const artifact of ["problem_statement", "invented_nothing"]) {
+      await expectProblem(
+        await post("/api/cards/invented-107/questions", { ...ask, external: { ...external, artifact } }),
+        422,
+        "rule_violation",
+        new RegExp(`'${artifact}' is not an artifact made outside the team`),
+      );
+    }
+    expect(await lastSeq(db)).toBe(before);
+  });
+
+  it("refuses the AI teammate as the relayer, and an empty source", async () => {
+    await expectProblem(await post("/api/cards/invented-107/questions", { ...ask, asked_of: AI, external }), 422, "rule_violation", /must be a person/);
+    await expectProblem(
+      await post("/api/cards/invented-107/questions", { ...ask, external: { ...external, source: "" } }),
+      400,
+      "invalid_request",
+      /external\.source/,
+    );
   });
 });
 

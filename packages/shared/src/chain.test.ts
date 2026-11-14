@@ -1,6 +1,6 @@
 // All data here is invented.
 import { describe, expect, it } from "vitest";
-import { chainModeCounts, chainOf, mayMoveCard, ownerMode, type ChainFunction, type MoveFunction } from "./chain.ts";
+import { chainModeCounts, chainOf, mayMoveCard, maySendCardBack, ownerMode, type ChainFunction, type MoveFunction } from "./chain.ts";
 import type { AiTeammate, HumanTeammate } from "./domain.ts";
 
 const fns: ChainFunction[] = [
@@ -102,5 +102,24 @@ describe("mayMoveCard", () => {
   it("lets only an AI owner move its own card", () => {
     expect(mayMoveCard(ai, ai, implement)).toEqual({ allowed: true });
     expect(mayMoveCard(person(["be"]), ai, implement).allowed).toBe(false);
+  });
+
+  describe("maySendCardBack", () => {
+    it("lets any person send a card back, in every mode and whoever owns it", () => {
+      for (const m of ["manual", "assist", "delegate"] as const) {
+        expect(maySendCardBack(other, person(["be"], { implement_services: m }), implement)).toEqual({ allowed: true });
+        expect(maySendCardBack(other, person(["be"]), implement, m)).toEqual({ allowed: true });
+      }
+      expect(maySendCardBack(person(["be"]), ai, implement)).toEqual({ allowed: true });
+    });
+
+    it("holds the AI to mayMoveCard", () => {
+      expect(maySendCardBack(ai, person(["be"]), implement)).toEqual({ allowed: true });
+      for (const m of ["manual", "assist"] as const) {
+        const owner = person(["be"], { implement_services: m });
+        expect(maySendCardBack(ai, owner, implement)).toEqual(mayMoveCard(ai, owner, implement));
+        expect(maySendCardBack(ai, owner, implement).allowed).toBe(false);
+      }
+    });
   });
 });

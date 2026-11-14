@@ -1,7 +1,7 @@
 // Which teammate is linked to which card, and how. The artboard's three line
 // styles: solid = works on a card, dashed = needs input, dotted = reports back.
 import { isCardEvent, type BoardResponse, type Card, type CardStatus, type Mode } from "@workbench/shared";
-import { aiTeammate, cardRef, findTeammate, labelOf } from "./teammates.ts";
+import { aiTeammate, cardRef, externalLabel, findTeammate, labelOf } from "./teammates.ts";
 
 /** Statuses in which someone is working on a card. */
 export const activeStatuses: readonly CardStatus[] = ["in_progress", "needs_input", "review"];
@@ -88,7 +88,9 @@ export function linksFor(teammateId: string, board: BoardResponse): Link[] {
         kind: "asks",
         arrow: "teammate",
         cardIds: [q.card_id],
-        label: `${labelOf(board, q.asked_by)} asks on ${cardRef(q.card_id)}`,
+        label: q.external
+          ? `${labelOf(board, q.asked_by)} asks on ${cardRef(q.card_id)}, to relay to ${externalLabel(q.external)}`
+          : `${labelOf(board, q.asked_by)} asks on ${cardRef(q.card_id)}`,
       });
     }
     if (q.asked_by === teammateId) {
@@ -96,7 +98,9 @@ export function linksFor(teammateId: string, board: BoardResponse): Link[] {
         kind: "asks",
         arrow: "none",
         cardIds: [q.card_id],
-        label: `asks ${labelOf(board, q.asked_of)} on ${cardRef(q.card_id)}: ${q.text}`,
+        label: q.external
+          ? `asks ${externalLabel(q.external)} through ${labelOf(board, q.asked_of)} on ${cardRef(q.card_id)}: ${q.text}`
+          : `asks ${labelOf(board, q.asked_of)} on ${cardRef(q.card_id)}: ${q.text}`,
       });
     }
   }

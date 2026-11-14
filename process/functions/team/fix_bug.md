@@ -7,7 +7,7 @@ summary: Reproduces a reported bug in a failing test, fixes it on its own branch
 inputs:
   - artifact: bug_report
     required: true
-    from: debug_failure
+    from: external
 context:
   - artifact: codebase
     from: external
@@ -99,5 +99,4 @@ summary: Store and show status dates as calendar dates, not timestamps.
 
 ## Open points
 
-- The map says `bug_report` comes from debug_failure, which is not drafted, and most bugs are reported by a person rather than found by debugging. Should `bug_report` be `made_by: external` instead?
 - The map has fix_bug output a pull request directly. Here it outputs a branch, and open_pull_request makes the pull request, so every change reaches review the same way. Is that the right split?

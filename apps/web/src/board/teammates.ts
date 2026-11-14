@@ -8,10 +8,13 @@ import {
   teammateRole,
   type BoardResponse,
   type ChainFunction,
+  type ExternalSource,
   type HumanTeammate,
   type Mode,
+  type Question,
   type Teammate,
   type TeammateRole,
+  type WaitingOn,
 } from "@workbench/shared";
 import { modes } from "./modes.ts";
 
@@ -85,6 +88,25 @@ export function findTeammate(board: BoardResponse, id: string): Teammate | undef
 
 export function labelOf(board: BoardResponse, id: string): string {
   return shortLabel(findTeammate(board, id), id);
+}
+
+/** An external source as the board names it: "domain_rules (caretaker's fault records)". */
+export function externalLabel(external: ExternalSource): string {
+  return `${external.artifact} (${external.source})`;
+}
+
+/**
+ * Who or what a card waits on, in the board's words: a teammate's label
+ * ("BE"), or an external source and the person relaying to it
+ * ("domain_rules (caretaker's fault records), relayed by PO").
+ */
+export function waitingOnLabel(board: BoardResponse, w: WaitingOn): string {
+  return typeof w === "string" ? labelOf(board, w) : `${externalLabel(w)}, relayed by ${labelOf(board, w.relayed_by)}`;
+}
+
+/** Who or what an open question waits on, in the same words as `waitingOnLabel`. */
+export function questionWaitLabel(board: BoardResponse, q: Question): string {
+  return waitingOnLabel(board, q.external ? { ...q.external, relayed_by: q.asked_of } : q.asked_of);
 }
 
 /** The first AI teammate, who assists or drafts on cards in `assist` and `delegate`. */

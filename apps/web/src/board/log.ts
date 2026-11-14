@@ -5,7 +5,7 @@
 import { shownInLog, type BoardResponse, type Cycle, type LogName, type StreamEvent } from "@workbench/shared";
 import { columnLabel } from "./columns.ts";
 import { modeLabel } from "./modes.ts";
-import { cardRef, labelOf } from "./teammates.ts";
+import { cardRef, externalLabel, labelOf, waitingOnLabel } from "./teammates.ts";
 
 /** "09:41", 24-hour, in the viewer's time zone unless one is given. */
 export function formatTime(at: string, timeZone?: string): string {
@@ -47,14 +47,16 @@ export function describeEvent(e: StreamEvent, board: BoardResponse): string {
     case "picked":
       return `${who} picked ${card} · mode: ${modeLabel[e.mode]}`;
     case "asked":
-      return `${who} asked ${labelOf(board, e.asked_of)} on ${card}: ${e.text}`;
+      return e.external
+        ? `${who} asked ${externalLabel(e.external)} through ${labelOf(board, e.asked_of)} on ${card}: ${e.text}`
+        : `${who} asked ${labelOf(board, e.asked_of)} on ${card}: ${e.text}`;
     case "answered":
       return `${who} answered on ${card}: ${e.answer}`;
     case "check_ran":
       return `${who} ran the ${e.check} check on ${card} · ${e.passed ? "passed" : "failed"}: ${e.summary}`;
     case "status_changed": {
       const to = `${who} moved ${card} to ${columnLabel(e.to.state)}`;
-      return e.to.state === "needs_input" ? `${to} · waiting on ${labelOf(board, e.to.waiting_on)}` : to;
+      return e.to.state === "needs_input" ? `${to} · waiting on ${waitingOnLabel(board, e.to.waiting_on)}` : to;
     }
     case "report_posted":
       return `${who} posted a report on ${card}: ${e.text}`;

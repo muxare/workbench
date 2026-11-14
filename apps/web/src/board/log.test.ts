@@ -27,6 +27,20 @@ describe("describeEvent", () => {
     ).toBe("BE answered on #151: Invented: a cursor.");
   });
 
+  it("describes a question relayed outside the team and the wait on it", () => {
+    const external = { artifact: "domain_rules", source: "Invented: caretaker's fault records" };
+    const base = { card_id: "c-151", actor: "t-ai", at: "2026-11-06T09:50:00Z" };
+    expect(
+      describeEvent({ ...base, id: "a", type: "asked", question_id: "q", asked_of: "t-po", external, text: "Invented: what format?", why_it_blocks: "Invented." }, board),
+    ).toBe("AI asked domain_rules (Invented: caretaker's fault records) through PO on #151: Invented: what format?");
+    expect(
+      describeEvent(
+        { ...base, id: "b", type: "status_changed", from: "in_progress", to: { state: "needs_input", waiting_on: { ...external, relayed_by: "t-po" }, question_id: "q" } },
+        board,
+      ),
+    ).toBe("AI moved #151 to Needs input · waiting on domain_rules (Invented: caretaker's fault records), relayed by PO");
+  });
+
   it("describes the events GitHub reports on a card", () => {
     const base = { id: "g", card_id: "c-151", actor: "t-be", at: "2026-11-06T09:57:00Z" } as const;
     const pr = "https://github.com/invented/repo/pull/7";

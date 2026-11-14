@@ -512,6 +512,40 @@ describe("who moves the card follows the owner's mode", () => {
     expect(body.reason).toMatch(/only mikael or the AI may move the card, not invented-other/);
   });
 
+  it("lets another person send the owner's card back on changes requested in every mode, but not move it to review", async () => {
+    for (const m of ["manual", "assist", "delegate"] as const) {
+      db = await openDb(":memory:");
+      await addTeammate(db, { kind: "human", id: "mikael", name: "Mikael (invented test team)", roles: ["po", "be"] }, "2026-11-11T08:00:00Z");
+      await addTeammate(db, { kind: "ai", id: "ai", name: "AI teammate" });
+      await addTeammate(db, { kind: "human", id: "invented-other", name: "Invented other person", roles: ["be"] }, "2026-11-11T08:00:00Z");
+      await addCard(db, { id: "2", title: "Invented card 2", function_id: "implement_services", owner: "mikael", links: [] }, loadFunctionIds());
+      app = createApp({
+        db,
+        functionIds: loadFunctionIds(),
+        now: () => new Date(NOW),
+        githubWebhookSecret: SECRET,
+        githubLogins: parseGithubLogins("muxare=mikael,workbench-agent[bot]=ai,invented-other-login=invented-other"),
+      });
+      await setMode(m);
+      await moveCard2("ready", "in_progress");
+      // The other person's review request records the event but leaves the card in progress.
+      const asked = await recorded("pull_request", tweak(fixture("pull_request.opened"), "sender.login", "invented-other-login"));
+      expect(types(asked.events)).toEqual(["review_requested"]);
+      expect(asked.reason).toMatch(/card 2 stays in_progress: .*not invented-other/);
+      expect((await cardStatus(db, "2")).state).toBe("in_progress");
+      // Mikael moves it to review by hand; the other person's changes request sends it back.
+      await moveCard2("review");
+      const review = tweak(tweak(fixture("pull_request_review.changes_requested"), "review.user.login", "invented-other-login"), "sender.login", "invented-other-login");
+      const back = await recorded("pull_request_review", review);
+      expect(back.events).toMatchObject([
+        { type: "changes_requested", actor: "invented-other" },
+        { type: "status_changed", actor: "invented-other", from: "review", to: { state: "in_progress" } },
+      ]);
+      expect(back.reason).toBeUndefined();
+      expect((await cardStatus(db, "2")).state).toBe("in_progress");
+    }
+  });
+
   it("sends the card back on the AI critic's changes request only where the AI may move it", async () => {
     await setMode("assist");
     await moveCard2("ready", "in_progress", "review");
@@ -653,6 +687,63 @@ describe("pull_request merged", () => {
       await moveCard2("ready", "in_progress", "review");
     });
 
+    it("counts the App's review, mapped to the AI by this repository's team file, as the critic's pass", async () => {
+      const team = JSON.parse(readFileSync(new URL("../../../../teams/workbench/team.json", import.meta.url), "utf8")) as { github_logins: Record<string, string> };
+      const githubLogins = parseGithubLogins(formatGithubLogins(team.github_logins));
+      app = createApp({ db, functionIds: loadFunctionIds(), now: () => new Date(NOW), githubWebhookSecret: SECRET, githubLogins });
+      const critic = await recorded("pull_request_review", fixture("pull_request_review.app_approved"));
+      expect(critic.events).toMatchObject([
+        {
+          type: "check_ran",
+          actor: "ai",
+          check: "consistency",
+          passed: true,
+          pull_request: 3,
+          commit_sha: "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+          url: "https://github.com/muxare/workbench/pull/3#pullrequestreview-900000040",
+        },
+      ]);
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      expect((await recorded("pull_request", fixture("pull_request.closed.merged"))).events).toMatchObject([{ actor: "mikael", to: { state: "done" } }]);
+    });
+
+    it("counts the ai-review workflow's review as github-actions[bot], mapped to the AI by this repository's team file, as the critic", async () => {
+      const team = JSON.parse(readFileSync(new URL("../../../../teams/workbench/team.json", import.meta.url), "utf8")) as { github_logins: Record<string, string> };
+      const githubLogins = parseGithubLogins(formatGithubLogins(team.github_logins));
+      app = createApp({ db, functionIds: loadFunctionIds(), now: () => new Date(NOW), githubWebhookSecret: SECRET, githubLogins });
+      const actions = fixture("pull_request_review.actions_approved");
+      expect(actions).toMatchObject({ review: { user: { login: "github-actions[bot]", type: "Bot" } }, sender: { type: "Bot" } });
+
+      // A failed review first: a failed consistency check on the commit, and the card goes back as a person's changes request would.
+      const failed = await recorded("pull_request_review", tweak(tweak(actions, "review.state", "changes_requested"), "review.id", 900000049));
+      expect(failed.events).toMatchObject([
+        { type: "check_ran", actor: "ai", check: "consistency", passed: false, pull_request: 3, commit_sha: "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d" },
+        { type: "changes_requested", actor: "ai", pull_request: 3 },
+        { type: "status_changed", actor: "ai", from: "review", to: { state: "in_progress" } },
+      ]);
+      await moveCard2("review");
+
+      const passed = await recorded("pull_request_review", actions);
+      expect(passed.events).toEqual([
+        {
+          id: expect.any(String),
+          type: "check_ran",
+          card_id: "2",
+          actor: "ai",
+          at: NOW,
+          check: "consistency",
+          passed: true,
+          summary: "The AI critic passed pull request #3.",
+          url: "https://github.com/muxare/workbench/pull/3#pullrequestreview-900000050",
+          pull_request: 3,
+          commit_sha: "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+        },
+      ]);
+      expect(types(await cardLog(db, "2"))).not.toContain("approved");
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      expect((await recorded("pull_request", fixture("pull_request.closed.merged"))).events).toMatchObject([{ actor: "mikael", to: { state: "done" } }]);
+    });
+
     it("refuses a merge the critic has not reviewed, even after a person's approval", async () => {
       await recorded("pull_request_review", fixture("pull_request_review.approved"));
       await refused(/implement_services requires the AI critic to pass before a person approves, and it has not reviewed the pull request/);
@@ -670,6 +761,21 @@ describe("pull_request merged", () => {
       await recorded("pull_request_review", fixture("pull_request_review.approved"));
       await recorded("pull_request_review", criticReview("approved"));
       await refused(/it passed only after the approval/);
+    });
+
+    it("still moves the card to done when the critic passes again on the same head after the approval", async () => {
+      await recorded("pull_request_review", criticReview("approved"));
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      await recorded("pull_request_review", tweak(criticReview("approved"), "review.id", 900000077));
+      const body = await recorded("pull_request", fixture("pull_request.closed.merged"));
+      expect(body.events).toMatchObject([{ actor: "mikael", to: { state: "done" } }]);
+    });
+
+    it("refuses a merge whose critic failed after the person approved", async () => {
+      await recorded("pull_request_review", criticReview("approved"));
+      await recorded("pull_request_review", fixture("pull_request_review.approved"));
+      await recorded("pull_request_review", tweak(criticReview("changes_requested"), "review.id", 900000078));
+      await refused(/./);
     });
 
     it("refuses a merge whose critic passed on another pull request", async () => {

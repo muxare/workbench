@@ -13,7 +13,8 @@ artifacts:
     owner: stakeholders
     made_by: external
     format: markdown
-    fields: [goal, metric, horizon]
+    fields: [goal, metric, horizon, held_by]
+    note: held_by names the stakeholder who holds the goal, so goals that pull against each other show whose they are (added 2026-11-12).
   - id: domain_rules
     name: Domain rules
     owner: stakeholders
@@ -161,10 +162,10 @@ artifacts:
   - id: bug_report
     name: Bug report
     owner: team
-    made_by: debug_failure
+    made_by: external
     format: markdown
     fields: [observed, expected, steps_to_reproduce, where, severity]
-    note: Supplied by hand until debug_failure is drafted; a person who finds a bug writes one directly.
+    note: Made outside the chain, because most bugs are reported by a person; debug_failure may also write one once it is drafted (decided 2026-11-12).
   - id: service_code
     name: Service code
     owner: be
@@ -209,7 +210,7 @@ This first version covers the phase 1 segment: frame_problem → write_issues �
 - `made_by: external` means the artifact comes from outside the team's chain, or is standing context nobody in the chain produces.
 - `fields` are the required fields. The structural check of the function that makes the artifact verifies them.
 - An artifact made in one role and used in another is a **handoff**. In this segment: `problem_statement`, `success_criteria` (ux → team), `issues` (team → fe), `refined_ui_spec` (fe → be), `design_questions` (fe → ux).
-- The coding functions added on 2026-11-11 (`implement_services`, `implement_interactions`, `fix_bug`, `open_pull_request`, `review_pull_request`) hand code to each other as commits on a branch: `service_code`, `working_ui` and `bug_fix` go into `open_pull_request`, and its `pull_request` goes into `review_pull_request`. Their inputs from steps not yet drafted (`tasks`, `backend_spec`, `ui_components`, `api_mocks`, `bug_report`) are supplied by hand, like `ui_spec`.
+- The coding functions added on 2026-11-11 (`implement_services`, `implement_interactions`, `fix_bug`, `open_pull_request`, `review_pull_request`) hand code to each other as commits on a branch: `service_code`, `working_ui` and `bug_fix` go into `open_pull_request`, and its `pull_request` goes into `review_pull_request`. Their inputs from steps not yet drafted (`tasks`, `backend_spec`, `ui_components`, `api_mocks`) are supplied by hand, like `ui_spec`; `bug_report` comes from outside the chain.
 
 ## Artifact files
 

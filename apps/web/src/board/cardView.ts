@@ -1,7 +1,7 @@
 // What a card tile and a teammate panel say, derived from the board response.
-import { unfinishedDependencies, type BoardResponse, type Card } from "@workbench/shared";
+import { unfinishedDependencies, waitingOnTeammate, type BoardResponse, type Card } from "@workbench/shared";
 import { cardMode, cardParticipants, isActive } from "./links.ts";
-import { cardRef, findTeammate, labelOf } from "./teammates.ts";
+import { cardRef, externalLabel, findTeammate, labelOf } from "./teammates.ts";
 
 /** `plain` is the text colour, as the artboard sets a panel's "Now" and "Just finished" lines. */
 export type Tone = "plain" | "muted" | "needs-input" | "assist";
@@ -41,13 +41,18 @@ export function cardNotes(card: Card, board: BoardResponse): Note[] {
   const status = card.status;
 
   if (status.state === "needs_input") {
-    const waitingOn = findTeammate(board, status.waiting_on);
-    const label = labelOf(board, status.waiting_on);
-    notes.push({
-      text: waitingOn?.kind === "ai" ? `Waiting on AI` : `Waiting on a person: ${label}`,
-      tone: "needs-input",
-      strong: true,
-    });
+    const w = status.waiting_on;
+    if (typeof w !== "string") {
+      // Outside the team: the source is what the card waits on, and a person relays to it.
+      notes.push({ text: `Waiting on: ${externalLabel(w)}`, tone: "needs-input", strong: true });
+      notes.push({ text: `Relayed by ${labelOf(board, w.relayed_by)}`, tone: "muted" });
+    } else {
+      notes.push({
+        text: findTeammate(board, w)?.kind === "ai" ? `Waiting on AI` : `Waiting on a person: ${labelOf(board, w)}`,
+        tone: "needs-input",
+        strong: true,
+      });
+    }
   } else if (status.state !== "done") {
     const open = openQuestionsOn(card, board).length;
     if (open > 0) notes.push({ text: `${open} open question${open === 1 ? "" : "s"}`, tone: "needs-input" });
@@ -123,18 +128,29 @@ export function teammateNotes(teammateId: string, board: BoardResponse): Note[] 
   if (verifying.length > 0) notes.push({ text: `Next: verify ${refs(verifying)}`, tone: "muted" });
 
   const open = board.open_questions.filter((q) => q.answer === undefined);
-  const forMe = open.filter((q) => q.asked_of === teammateId);
+  const forMe = open.filter((q) => q.asked_of === teammateId && !q.external);
   if (forMe.length > 0) {
     notes.push({
       text: `${forMe.length} question${forMe.length === 1 ? "" : "s"} waiting for me`,
       tone: "needs-input",
     });
   }
+  const toRelay = open.filter((q) => q.asked_of === teammateId && q.external);
+  if (toRelay.length > 0) {
+    notes.push({
+      text: `${toRelay.length} question${toRelay.length === 1 ? "" : "s"} to relay outside the team`,
+      tone: "needs-input",
+    });
+  }
   for (const q of open.filter((q) => q.asked_by === teammateId)) {
-    notes.push({ text: `Waiting on ${labelOf(board, q.asked_of)} for ${cardRef(q.card_id)}`, tone: "needs-input" });
+    // A panel line stays short: the source's artifact and the person relaying to it.
+    const on = q.external ? `${q.external.artifact} through ${labelOf(board, q.asked_of)}` : labelOf(board, q.asked_of);
+    notes.push({ text: `Waiting on ${on} for ${cardRef(q.card_id)}`, tone: "needs-input" });
   }
 
-  const waiting = board.cards.filter((c) => c.status.state === "needs_input" && c.status.waiting_on === teammateId);
+  const waiting = board.cards.filter(
+    (c) => c.status.state === "needs_input" && waitingOnTeammate(c.status.waiting_on) === teammateId,
+  );
   if (waiting.length > 0) {
     const blocked = new Set(waiting.map((c) => c.id));
     for (const c of board.cards) {

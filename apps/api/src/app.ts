@@ -78,7 +78,7 @@ import {
   type WriteResponse,
 } from "@workbench/shared";
 import type { Db } from "./db/client.ts";
-import { loadFunctionDefinitions } from "./process.ts";
+import { loadExternalArtifacts, loadFunctionDefinitions } from "./process.ts";
 import { buildAiProfile, cardsInHand } from "./aiProfile.ts";
 import { buildProfile } from "./profile.ts";
 import { eventStream, startingPoint } from "./sse.ts";
@@ -123,6 +123,11 @@ export interface AppDeps {
    * process/functions, read on each run and each card request.
    */
   definitions?: ReadonlyMap<string, FunctionFrontMatter>;
+  /**
+   * The ids of the artifacts made outside the team, which a question may be
+   * for. Defaults to process/artifacts.md, read on each such question.
+   */
+  externalArtifacts?: ReadonlySet<string>;
   /** The optional timer (TEAMMATE_INTERVAL_MS) and the AI teammate it runs, for that teammate's profile. */
   teammateTimer?: { teammateId: string; intervalMs: number };
   /** The secret GitHub signs webhooks with (GITHUB_WEBHOOK_SECRET); without it the webhook endpoint answers 503. */
@@ -329,11 +334,26 @@ export function createApp(deps: AppDeps) {
       const card = await cardOr404(c.req.param("id"));
       const req = await body(c, askRequest);
       await teammateOr422(req.actor, "actor");
-      await teammateOr422(req.asked_of, "asked_of");
+      const askedOf = await teammateOr422(req.asked_of, "asked_of");
+      if (req.external) {
+        // Nobody outside the team has an account: a person relays the
+        // question and records the answer, so `decides` stays human.
+        if (askedOf.kind !== "human") {
+          throw new ApiProblem("rule_violation", `asked_of '${askedOf.id}' relays a question outside the team, so it must be a person`);
+        }
+        const external = deps.externalArtifacts ?? loadExternalArtifacts();
+        if (!external.has(req.external.artifact)) {
+          throw new ApiProblem(
+            "rule_violation",
+            `external.artifact '${req.external.artifact}' is not an artifact made outside the team in process/artifacts.md`,
+          );
+        }
+      }
       if (card.status.state !== "in_progress") {
         throw new ApiProblem("conflict", `${card.id} is ${card.status.state}; questions are asked on a card in progress`);
       }
       const questionId = newId();
+      const waitingOn = req.external ? { ...req.external, relayed_by: req.asked_of } : req.asked_of;
       return c.json(
         await write(card.id, [
           {
@@ -341,6 +361,7 @@ export function createApp(deps: AppDeps) {
             type: "asked",
             question_id: questionId,
             asked_of: req.asked_of,
+            ...(req.external ? { external: req.external } : {}),
             text: req.text,
             why_it_blocks: req.why_it_blocks,
           },
@@ -348,7 +369,7 @@ export function createApp(deps: AppDeps) {
             ...base(card.id, req.actor),
             type: "status_changed",
             from: "in_progress",
-            to: { state: "needs_input", waiting_on: req.asked_of, question_id: questionId },
+            to: { state: "needs_input", waiting_on: waitingOn, question_id: questionId },
           },
         ]),
       );
@@ -544,6 +565,7 @@ export function createApp(deps: AppDeps) {
         now,
         newId,
         ...(deps.definitions === undefined ? {} : { definitions: deps.definitions }),
+        ...(deps.externalArtifacts === undefined ? {} : { externalArtifacts: deps.externalArtifacts }),
       });
       if (!run) throw new ApiProblem("conflict", `${id} has no card it may pick`);
       const response: TeammateRunResponse = { card: await cardOr404(run.card.id), events: run.events };

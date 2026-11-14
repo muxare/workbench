@@ -4,7 +4,7 @@
 // The stub in ./stubProvider.ts is deterministic and is what the tests and the
 // demo use. A Claude provider plugs in here later by implementing the same
 // interface (see docs/decisions.md, 2026-11-08, "AI teammate").
-import type { Card, CardEvent, FunctionFrontMatter, Mode, Protocol, Teammate } from "@workbench/shared";
+import type { Card, CardEvent, ExternalSource, FunctionFrontMatter, Mode, Protocol, Teammate } from "@workbench/shared";
 
 /** Everything a provider sees about one step of work. All of it is read, never invented by the runner. */
 export interface WorkContext {
@@ -28,10 +28,15 @@ export interface WorkContext {
   teammates: Teammate[];
 }
 
-/** A question the AI raises on the card. The card then waits on `asked_of`. */
+/**
+ * A question the AI raises on the card. The card then waits on `asked_of`,
+ * or, with `external`, on that source outside the team, relayed by `asked_of`.
+ */
 export interface RaisedQuestion {
   /** A human teammate: in every protocol `decides` is human. */
   asked_of: string;
+  /** For someone outside the team: an artifact made outside it (process/artifacts.md) and a free-text source. */
+  external?: ExternalSource;
   text: string;
   why_it_blocks: string;
 }
