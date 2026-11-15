@@ -51,6 +51,7 @@ export function OpenQuestion({ cardId, view, onAnswered }: { cardId: string; vie
         </span>
       </div>
       <p className="question__text">{q.text}</p>
+      {view.relay && <p className="question__why">{view.relay}</p>}
       <p className="question__why">Why it blocks: {q.why_it_blocks}</p>
       {answerer ? (
         <form id={formId} className="question__form" onSubmit={submit}>

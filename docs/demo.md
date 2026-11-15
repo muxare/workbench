@@ -38,7 +38,7 @@ pnpm --filter @workbench/web dev --port 5173 --strictPort
 
 `--strictPort` makes Vite fail loudly if 5173 is taken instead of quietly moving to 5174, which is what happened with a stale Vite process on 2026-11-09 (see "If something goes wrong"). `pnpm dev` at the root starts both at once, but two terminals make it easier to see which one complains.
 
-Open `http://localhost:5173/` in the browser and keep a third terminal ready for the AI run. Check before going on stage that the board's connection indicator says **Live**, that the title reads "Team board · Sprint 4 (invented)", that #108 sits in **Ready** and that #106 sits in **Needs input**, waiting on PO.
+Open `http://localhost:5173/` in the browser and keep a third terminal ready for the AI run. Check before going on stage that the board's connection indicator says **Live**, that the title reads "Team board · Sprint 4 (invented)", that #108 sits in **Ready** and that #106 sits in **Needs input**, waiting on `domain_rules` (caretaker's fault records) and relayed by PO.
 
 ## The demo
 
@@ -46,7 +46,7 @@ Open `http://localhost:5173/` in the browser and keep a third terminal ready for
 
 **Do:** show `http://localhost:5173/`.
 
-**The audience sees** five people around one board: PO, UX, FE, BE and the AI teammate. The title says "Team board · Sprint 4 (invented)". Five of eight cards are done. #106 (`define_api_contract`) is in Needs input, red, "Waiting on a person: PO", because the AI asked something only the caretaker can answer, and the backend developer cannot say it either. #108 (`refine_ui_spec`, owned by FE) is in Ready. Under the board, "Cycle log · 7 Nov – 21 Nov" (the dates follow the seed day) holds one line so far: PO moved #108 to Ready at the start of the sprint. The earlier history is in Sprints 1 to 3, which have ended.
+**The audience sees** five people around one board: PO, UX, FE, BE and the AI teammate. The title says "Team board · Sprint 4 (invented)". Five of eight cards are done. #106 (`define_api_contract`) is in Needs input, red, "Waiting on: domain_rules (caretaker's fault records)" and "Relayed by PO", because the AI asked something only the caretaker can answer, the backend developer cannot say it either, and the caretaker is not on the team, so the product owner passes the question on and records the answer (since 2026-11-13). #108 (`refine_ui_spec`, owned by FE) is in Ready. Under the board, "Cycle log · 7 Nov – 21 Nov" (the dates follow the seed day) holds one line so far: PO moved #108 to Ready at the start of the sprint. The earlier history is in Sprints 1 to 3, which have ended.
 
 **Why it matters:** the AI is a teammate on the same board, not a side panel. The red column is the first instance of the point the whole demo makes: the AI asked instead of guessing, and the work waits on a person in plain view.
 

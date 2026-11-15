@@ -12,8 +12,10 @@
     "teammate:run": "tsx src/teammates/runCli.ts",
     "team:start": "tsx src/team/startCli.ts",
     "team:cards": "tsx src/team/cardsCli.ts",
+    "team:cycle": "tsx src/team/cycleCli.ts",
     "team:serve": "tsx src/team/serveCli.ts",
-    "github:token": "tsx src/github/tokenCli.ts"
+    "github:token": "tsx src/github/tokenCli.ts",
+    "github:review": "tsx src/github/reviewCli.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",

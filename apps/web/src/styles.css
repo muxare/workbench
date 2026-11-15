@@ -769,6 +769,8 @@ a:hover {
 
 .card__note {
   font-size: 11px;
+  /* An artifact id such as domain_rules is one unbreakable token in a narrow column. */
+  overflow-wrap: anywhere;
 }
 
 /* Cycle log */

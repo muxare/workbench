@@ -209,6 +209,29 @@ describe("a run with the stub provider", () => {
     expect((await cardStatus(db, "invented-108")).state).toBe("ready");
   });
 
+  const asksOutside = (artifact: string): TeammateProvider => ({
+    name: "invented-outside",
+    async work(context) {
+      const step = await stubProvider.work(context);
+      return { ...step, question: { ...step.question, external: { artifact, source: "Invented: the residents' notice board" } } };
+    },
+  });
+
+  it("asks outside the team through the person, and the card waits on the external source", async () => {
+    const run = await runTeammate(db, { teammateId: AI, provider: asksOutside("stakeholder_context"), newId, now });
+    const external = { artifact: "stakeholder_context", source: "Invented: the residents' notice board" };
+    expect(run?.events[3]).toMatchObject({ type: "asked", asked_of: FE, external });
+    expect(await cardStatus(db, "invented-108")).toMatchObject({ state: "needs_input", waiting_on: { ...external, relayed_by: FE } });
+  });
+
+  it("appends nothing when the provider names an artifact made inside the team", async () => {
+    const before = (await cardLog(db, "invented-108")).length;
+    await expect(runTeammate(db, { teammateId: AI, provider: asksOutside("ui_spec"), newId, now })).rejects.toThrow(
+      /not an artifact made outside the team/,
+    );
+    expect(await cardLog(db, "invented-108")).toHaveLength(before);
+  });
+
   it("stores no part of the run when the card moves while the provider works", async () => {
     // Someone moves the card back to backlog after the runner chose it. The
     // pick itself passes the store's checks, but the move out of Ready does

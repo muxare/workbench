@@ -49,7 +49,7 @@ export function createServer(deps: ToolDeps): McpServer {
     "ask_question",
     {
       title: "Ask a person on the card",
-      description: `Ask a question on a card in progress; the card waits on the person (its owner unless asked_of says otherwise) until they answer on the board. Then waits for the answer, up to wait_seconds (at most ${String(MAX_WAIT_SECONDS)}). If no answer comes in time, it returns the question id; call wait_for_answer to keep waiting.`,
+      description: `Ask a question on a card in progress; the card waits on the person (its owner unless asked_of says otherwise) until they answer on the board, or, with external, on a source outside the team that asked_of relays to and answers for. Then waits for the answer, up to wait_seconds (at most ${String(MAX_WAIT_SECONDS)}). If no answer comes in time, it returns the question id; call wait_for_answer to keep waiting.`,
       inputSchema: inputs.ask_question,
       annotations: write,
     },

@@ -362,6 +362,13 @@ async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise
       throw new StoreError(`${event.id}: answers are decided by a human, not ${event.actor}`, "forbidden");
     }
   }
+  // A question for someone outside the team is relayed by a person, who records the answer.
+  if (event.type === "asked" && event.external) {
+    const [relayer] = await db.select().from(teammates).where(eq(teammates.id, event.asked_of));
+    if (relayer?.kind !== "human") {
+      throw new StoreError(`${event.id}: a question outside the team is relayed by a person, not ${event.asked_of}`, "rule_violation");
+    }
+  }
   return event;
 }
 
@@ -644,6 +651,7 @@ export async function listQuestions(db: Db, options: { cardId?: string } = {}): 
         card_id: e.card_id,
         asked_by: e.actor,
         asked_of: e.asked_of,
+        ...(e.external ? { external: e.external } : {}),
         text: e.text,
         why_it_blocks: e.why_it_blocks,
       });

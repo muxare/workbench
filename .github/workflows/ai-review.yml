@@ -1,0 +1,211 @@
+# The AI critic's review of every pull request from this repository
+# (docs/dev-loop.md, "The three checks on this repository"). Claude Code reads
+# the pull request's head headless and judges it by
+# .claude/skills/review-pull-request/checks.md, the procedure the
+# /review-pull-request skill follows by hand; then a second job posts the
+# verdict as github-actions[bot] with GITHUB_TOKEN. Posting with GITHUB_TOKEN
+# rather than as the App workbench-ai-muxare is the point: GitHub does not let
+# an author review their own pull request, and the App opens the AI's pull
+# requests. The workbench maps github-actions[bot] to the AI teammate
+# (teams/workbench/team.json), so the review reaches the card as `check_ran`
+# with `check: "consistency"` on the commit reviewed.
+#
+# Judging and posting are separate jobs on purpose. The judge reads untrusted
+# input, the diff, so it gets read-only tools, the Anthropic key and a token
+# that can only read; the poster gets the write token and no model, and
+# checks the verdict before posting it (`github:review --verdict-file`).
+#
+# A person still reads the change and merges: an approval here is the
+# critic's pass, not a decision. Approving needs the repository setting
+# "Allow GitHub Actions to create and approve pull requests"; without it
+# GitHub refuses the approval and the post job fails, while a changes
+# request still posts.
+name: ai-review
+
+# pull_request_target, not pull_request: the workflow file and the post job's
+# code then come from the base branch, so a pull request cannot rewrite how it
+# is reviewed or post a pass of its own through this workflow. The head is only
+# checked out for reading by a model with Read, Glob and Grep; no step runs
+# code from it, and that must stay so, because this event has the secrets.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  # One review per pull request; a newer push cancels the review of the older head.
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  judge:
+    name: judge
+    # Pull requests from this repository only: a fork's run gets no secrets, and
+    # its code is not trusted with them. Drafts are reviewed when marked ready.
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      reviewed: ${{ steps.judge.outputs.reviewed }}
+    env:
+      # Pinned, from the stable channel; raise it on purpose.
+      CLAUDE_CODE_VERSION: 2.1.311
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Check for the Anthropic key
+        id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # What the judge reads besides the checkout, and the prompt it is given, both outside the checkout.
+          echo "REVIEW_DIR=$RUNNER_TEMP/review" >> "$GITHUB_ENV"
+          echo "PROMPT_DIR=$RUNNER_TEMP/prompt" >> "$GITHUB_ENV"
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::notice title=AI review skipped::The repository secret ANTHROPIC_API_KEY is not set, so the AI critic did not review this pull request. docs/dev-loop.md says how to set it."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The head commit itself, not the merge commit, since the review is
+      # posted on the head. No credentials are left in .git/config.
+      - uses: actions/checkout@v7
+        if: steps.key.outputs.present == 'true'
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Gather the pull request
+        if: steps.key.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$REVIEW_DIR/base" "$PROMPT_DIR"
+          jq '.pull_request | {number, title, body, author: .user.login, url: .html_url,
+              head_ref: .head.ref, head_sha: .head.sha, base_ref: .base.ref, base_sha: .base.sha}' \
+            "$GITHUB_EVENT_PATH" > "$REVIEW_DIR/pull_request.json"
+          git diff --no-color --no-ext-diff --no-textconv "$BASE_SHA...$HEAD_SHA" > "$REVIEW_DIR/diff.patch"
+          git diff --no-color --no-ext-diff --no-textconv --name-status "$BASE_SHA...$HEAD_SHA" > "$REVIEW_DIR/files.txt"
+          # The rules as the base has them, which the pull request cannot have changed.
+          for f in AGENTS.md process/template.md docs/architecture.md .claude/agents/design-reviewer.md; do
+            if git cat-file -e "$BASE_SHA:$f" 2>/dev/null; then
+              mkdir -p "$REVIEW_DIR/base/$(dirname "$f")"
+              git show "$BASE_SHA:$f" > "$REVIEW_DIR/base/$f"
+            fi
+          done
+          # The prompt, the procedure and the schema come from the base too, so a
+          # pull request cannot rewrite how it is judged. A file that is new in
+          # this pull request is taken from it, with a warning.
+          for f in .github/ai-review/prompt.md .claude/skills/review-pull-request/checks.md .github/ai-review/verdict.schema.json; do
+            name="$(basename "$f")"
+            if git cat-file -e "$BASE_SHA:$f" 2>/dev/null; then
+              git show "$BASE_SHA:$f" > "$PROMPT_DIR/$name"
+            else
+              echo "::warning title=AI review::$f is not on the base commit, so the pull request's own copy is used."
+              cp "$f" "$PROMPT_DIR/$name"
+            fi
+          done
+          { sed "s|[\$]REVIEW_DIR|$REVIEW_DIR|g" "$PROMPT_DIR/prompt.md"; cat "$PROMPT_DIR/checks.md"; } > "$PROMPT_DIR/full.md"
+          wc -c "$REVIEW_DIR/diff.patch" "$PROMPT_DIR/full.md"
+
+      - name: Install Claude Code
+        if: steps.key.outputs.present == 'true'
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Read-only: the only tools are Read, Glob and Grep, and Bash, edits and
+      # the web are denied besides. --bare skips the checkout's hooks, skills,
+      # subagents, CLAUDE.md and .mcp.json, and --setting-sources user skips its
+      # .claude/settings.json, whose env block --bare would still apply. The only
+      # secret in the environment is the Anthropic key; GITHUB_TOKEN is not.
+      - name: Judge with Claude Code
+        id: judge
+        if: steps.key.outputs.present == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DISABLE_AUTOUPDATER: "1"
+        run: |
+          set -uo pipefail
+          status=0
+          claude --bare -p "$(cat "$PROMPT_DIR/full.md")" \
+            --setting-sources user \
+            --tools "Read,Glob,Grep" \
+            --allowedTools "Read,Glob,Grep" \
+            --disallowedTools "Bash" "Edit" "Write" "NotebookEdit" "WebFetch" "WebSearch" \
+            --permission-mode dontAsk \
+            --add-dir "$REVIEW_DIR" \
+            --output-format json \
+            --json-schema "$(cat "$PROMPT_DIR/verdict.schema.json")" \
+            --model opus \
+            --max-turns 100 \
+            --max-budget-usd 5 \
+            --no-session-persistence \
+            > "$RUNNER_TEMP/claude.json" || status=$?
+          jq '{subtype, is_error, num_turns, total_cost_usd, terminal_reason, permission_denials, result: (if .structured_output then null else .result end)}' \
+            "$RUNNER_TEMP/claude.json" || cat "$RUNNER_TEMP/claude.json"
+          mkdir -p "$RUNNER_TEMP/verdict"
+          if [ "$status" -ne 0 ] || ! jq -e '.is_error == false and (.structured_output | type) == "object"' "$RUNNER_TEMP/claude.json" > /dev/null; then
+            echo "::error title=AI review::Claude Code exited with $status and no verdict; nothing is posted."
+            exit 1
+          fi
+          jq '.structured_output' "$RUNNER_TEMP/claude.json" > "$RUNNER_TEMP/verdict/verdict.json"
+          jq -r '"Verdict: \(.verdict)"' "$RUNNER_TEMP/verdict/verdict.json"
+          echo "reviewed=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        if: steps.judge.outputs.reviewed == 'true'
+        with:
+          name: ai-review-verdict
+          path: ${{ runner.temp }}/verdict/verdict.json
+          retention-days: 7
+          if-no-files-found: error
+
+  post:
+    name: post
+    needs: judge
+    if: needs.judge.outputs.reviewed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # The base commit's code posts the review, so the pull request under review
+      # does not run with the write token.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      # No `version`: the action reads `packageManager` from package.json.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ai-review-verdict
+          path: ${{ runner.temp }}/verdict
+
+      # Checks the verdict (approve or request_changes, a body whose first line
+      # names the same verdict on the head), refuses unless the head is still
+      # the commit that was read, and posts the review on that commit.
+      - name: Post the review as github-actions[bot]
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          pnpm --silent --filter @workbench/api github:review "$REPO" "$PR_NUMBER" \
+            --head "$HEAD_SHA" --verdict-file "$RUNNER_TEMP/verdict/verdict.json" --github-actions

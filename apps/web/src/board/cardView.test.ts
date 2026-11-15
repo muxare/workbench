@@ -12,6 +12,20 @@ describe("cardNotes", () => {
     const onAi = card("x", { status: { state: "needs_input", waiting_on: AI, question_id: "q" } });
     expect(texts(cardNotes(onAi, board))).toEqual(["Waiting on AI"]);
   });
+  it("says what a card waits on outside the team, and who relays it", () => {
+    const external = { artifact: "domain_rules", source: "Invented: caretaker's fault records" };
+    const relayed = card("x", { status: { state: "needs_input", waiting_on: { ...external, relayed_by: PO }, question_id: "q-x" } });
+    expect(cardNotes(relayed, board)).toEqual([
+      { text: "Waiting on: domain_rules (Invented: caretaker's fault records)", tone: "needs-input", strong: true },
+      { text: "Relayed by PO", tone: "muted" },
+    ]);
+    const b = testBoard({
+      cards: [...board.cards, relayed],
+      open_questions: [{ id: "q-x", card_id: "x", asked_by: AI, asked_of: PO, external, text: "Invented?", why_it_blocks: "Invented." }],
+    });
+    expect(texts(teammateNotes(PO, b))).toEqual(expect.arrayContaining(["1 question to relay outside the team", "Blocks x"]));
+    expect(texts(teammateNotes(AI, b))).toContain("Waiting on domain_rules through PO for x");
+  });
   it("says what blocks a ready card", () => {
     expect(texts(cardNotes(byId("c-152"), board))).toEqual(["Blocked by #151"]);
   });

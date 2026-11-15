@@ -5,8 +5,9 @@
 // from history.md, the answer key.
 //
 // The board is a snapshot at the end of 2026-10-06, in step 7 of the history:
-// the fault-status contract (#106) waits on the product owner, who has passed
-// the AI's question to the caretaker, and I-8 (#107), which #106 depends on, is
+// the fault-status contract (#106) waits on the caretaker's fault records in
+// `domain_rules`, relayed by the product owner, who has passed the AI's
+// question to the caretaker, and I-8 (#107), which #106 depends on, is
 // in progress. Three things go beyond the history:
 // - A running cycle, Sprint 4, set relative to when the seed runs
 //   (`runningCycle`), so the cycle log under the board holds the events made
@@ -33,7 +34,7 @@
 // run, see docs/decisions.md, 2026-11-08) replaces it by exporting another
 // `SeedData`; nothing else needs to change. Function ids must be names of
 // files in process/functions; `seed()` checks them against process/.
-import type { CardStatus, Cycle, Mode, StreamEvent } from "@workbench/shared";
+import type { CardStatus, Cycle, ExternalSource, Mode, StreamEvent } from "@workbench/shared";
 import type { SeedData } from "../store.ts";
 
 const PO = "invented-po";
@@ -57,11 +58,24 @@ function move(card_id: string, actor: string, when: string, from: Settled, to: S
   return { type: "status_changed", card_id, actor, at: when, from, to: { state: to } };
 }
 
-/** The AI asks `asked_of`, and the card waits on them. */
-function ask(card_id: string, when: string, question_id: string, asked_of: string, text: string, why_it_blocks: string): NewEvent[] {
+/**
+ * The AI asks `asked_of`, and the card waits on them. With `external`, the
+ * question is for someone outside the team: the card waits on that source,
+ * and `asked_of` relays the question.
+ */
+function ask(
+  card_id: string,
+  when: string,
+  question_id: string,
+  asked_of: string,
+  text: string,
+  why_it_blocks: string,
+  external?: ExternalSource,
+): NewEvent[] {
+  const waiting_on = external ? { ...external, relayed_by: asked_of } : asked_of;
   return [
-    { type: "asked", card_id, actor: AI, at: when, question_id, asked_of, text, why_it_blocks },
-    { type: "status_changed", card_id, actor: AI, at: when, from: "in_progress", to: { state: "needs_input", waiting_on: asked_of, question_id } },
+    { type: "asked", card_id, actor: AI, at: when, question_id, asked_of, ...(external ? { external } : {}), text, why_it_blocks },
+    { type: "status_changed", card_id, actor: AI, at: when, from: "in_progress", to: { state: "needs_input", waiting_on, question_id } },
   ];
 }
 
@@ -393,6 +407,7 @@ const steps: NewEvent[][] = [
       PO,
       "Invented: which source does the fault-status endpoint read, and what format are the caretaker's fault records in? Pat cannot say; only Lee can, and Lee is not on the team, so this goes to him through Robin.",
       "Invented: without a source the API can read, no endpoint can serve machine state or fault progress.",
+      { artifact: "domain_rules", source: "caretaker's fault records" },
     ),
     move("invented-107", PO, at("09-29", "14:00"), "backlog", "ready"),
     move("invented-107", PO, at("09-30", "09:00"), "ready", "in_progress"),

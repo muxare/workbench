@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["approve", "request_changes"],
+      "description": "request_changes when any finding is blocking, approve otherwise."
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60000,
+      "description": "The review body in Markdown, in the shape checks.md gives; its first line names the verdict and the full head commit sha."
+    }
+  },
+  "required": ["verdict", "body"],
+  "additionalProperties": false
+}

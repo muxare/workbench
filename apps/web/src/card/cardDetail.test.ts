@@ -225,7 +225,23 @@ describe("open questions", () => {
     const views = openQuestions({ ...d, questions: [other, answered, open] }, testBoard());
     expect(views.map((v) => v.question.id)).toEqual(["q-151", "q-other"]);
     expect(views[0]).toMatchObject({ route: "AI → Backend developer", at: at(41), answerer: BE, answererLabel: "Backend developer", resumes: true });
-    expect(views[1]).toMatchObject({ resumes: false, at: undefined });
+    expect(views[1]).toMatchObject({ resumes: false, at: undefined, relay: undefined });
+  });
+
+  it("shows a question relayed outside the team: its route, the source and who records the answer", () => {
+    const board = testBoard();
+    const d = detail();
+    const external = { artifact: "domain_rules", source: "Invented: caretaker's fault records" };
+    const relayed = { ...d.questions[0]!, asked_of: PO, external };
+    const c151 = { ...d.card, status: { state: "needs_input" as const, waiting_on: { ...external, relayed_by: PO }, question_id: "q-151" } };
+    const [view] = openQuestions({ ...d, card: c151, questions: [relayed] }, board);
+    expect(view).toMatchObject({
+      route: "AI → Product owner → domain_rules",
+      relay: "For domain_rules (Invented: caretaker's fault records), outside the team. Product owner relays it and records the answer.",
+      answerer: PO,
+      resumes: true,
+    });
+    expect(statusText(c151, board)).toBe("Needs input · waiting on domain_rules (Invented: caretaker's fault records), relayed by PO");
   });
 
   it("refuses an empty answer and trims the rest", () => {

@@ -12,6 +12,7 @@ import {
   cardStatus,
   criticGates,
   cycle,
+  externalSource,
   functionId,
   hiddenEventTypes,
   humanTeammate,
@@ -64,10 +65,18 @@ export type CreateCardRequest = z.input<typeof createCardRequest>;
 export const pickRequest = z.strictObject({ actor: teammateId, mode: mode.optional() });
 export type PickRequest = z.infer<typeof pickRequest>;
 
-/** `POST /cards/:id/questions`: ask on an `in_progress` card, which then waits on `asked_of`. */
+/**
+ * `POST /cards/:id/questions`: ask on an `in_progress` card, which then waits
+ * on `asked_of`. With `external`, the question is for someone outside the
+ * team: `external.artifact` must be an artifact whose `made_by` is
+ * `external` in process/artifacts.md, `asked_of` must be a person, who
+ * relays the question and records the answer, and the card waits on the
+ * external source, relayed by `asked_of`.
+ */
 export const askRequest = z.strictObject({
   actor: teammateId,
   asked_of: teammateId,
+  external: externalSource.optional(),
   text: z.string().min(1),
   why_it_blocks: z.string().min(1),
 });
@@ -75,8 +84,9 @@ export type AskRequest = z.infer<typeof askRequest>;
 
 /**
  * `POST /cards/:id/questions/:questionId/answer`: answer an open question.
- * The actor decides, so it must be a human. A card waiting on this question
- * goes back to `in_progress`.
+ * The actor decides, so it must be a human; any person may record the
+ * answer, also to a question relayed outside the team. A card waiting on this
+ * question goes back to `in_progress`.
  */
 export const answerRequest = z.strictObject({ actor: teammateId, answer: z.string().min(1) });
 export type AnswerRequest = z.infer<typeof answerRequest>;
@@ -360,7 +370,8 @@ export type ApiError = z.infer<typeof apiError>;
  * report or retry a delivery the board chose not to record:
  * - `recorded`: `events` were appended to the card `card_id`. A `reason`
  *   here says why the card did not move although the delivery would move
- *   it, because its sender may not under the owner's mode (`mayMoveCard`).
+ *   it, because its sender may not under the card's mode (`mayMoveCard`,
+ *   or `maySendCardBack` for the move back on changes requested).
  * - `ignored`: nothing was recorded, because the event is not one the board
  *   maps, or names no card on the board, or `reason` says otherwise.
  * - `refused`: the delivery names a card, but recording it would break a

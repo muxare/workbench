@@ -48,6 +48,8 @@ checks:
       rule: The problem statement can be traced to something in the client brief, or the difference is explained.
     - id: criteria_trace_to_goals
       rule: Every success criterion serves at least one business goal.
+    - id: every_holder_heard
+      rule: Every stakeholder named in held_by has a goal that a success criterion serves, or a non-goal or client question says why not.
     - id: no_contradictions
       rule: No non-goal contradicts the brief without a client question about it.
     - id: problem_not_a_solution
