@@ -102,7 +102,7 @@ export function createServer(deps: ToolDeps): McpServer {
     {
       title: "Plan a batch",
       description:
-        "Post the plan for a batch handed to you: the waves its cards are worked in, in order, the cards of one wave side by side. Every card of the batch goes in exactly one wave. A card goes in a later wave than every batch card it depends_on. Cards likely to change the same files, such as the same route module or the same screen, go in different waves. Each wave has a note saying why its cards are together. A batch is planned once; a refused plan records nothing and the error says why, so fix it and call again.",
+        "Post the plan for a batch handed to you: the waves its cards are worked in, in order, the cards of one wave side by side. The board refuses a plan that breaks its rules: every card of the batch in exactly one wave, and each card in a later wave than every batch card it depends_on. Within those rules the split is your judgement: put cards likely to change the same files, such as the same route module or the same screen, in different waves, and give each wave a note saying why its cards are together. A batch is planned once; a refused plan records nothing and the error says why, so fix it and call again.",
       inputSchema: inputs.plan_batch,
       annotations: write,
     },

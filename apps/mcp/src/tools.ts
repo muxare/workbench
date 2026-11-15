@@ -14,6 +14,12 @@
 // to the AI at once. `list_batches` finds one, `get_batch` reads its cards
 // the way `get_card` shows a card, and `plan_batch` posts the waves the
 // session will work them in; the API checks the plan.
+//
+// `get_batch` says per card whether the AI may pick it, by the API's own
+// eligibility rule (apps/api/src/teammates/eligibility.ts), a pure function
+// over the card, its log, the definitions and the board; nothing here opens
+// the database.
+import { checkEligibility, SESSION_MODES } from "@workbench/api/src/teammates/eligibility.ts";
 import {
   askRequest,
   batchListState,
@@ -28,6 +34,7 @@ import {
   type BoardResponse,
   type Card,
   type CardResponse,
+  type FunctionFrontMatter,
   type Mode,
   type Protocol,
   type Question,
@@ -161,11 +168,17 @@ function modeView(detail: CardResponse, board: BoardResponse) {
  * its mode, its dependencies split into those inside the batch (which order
  * the waves) and those outside (already done when the batch was handed), the
  * function's outputs, which hint at what the work touches, and the questions
- * still open. The full definition and the log are left to `get_card`.
+ * still open, and whether the AI may pick it once the batch cards it depends
+ * on are done. The full definition and the log are left to `get_card`.
  */
-function batchCardView(detail: CardResponse, board: BoardResponse, batch: Batch) {
+function batchCardView(detail: CardResponse, board: BoardResponse, batch: Batch, definitions: ReadonlyMap<string, FunctionFrontMatter>) {
   const dependsOn = detail.card.links.filter((l) => l.relation === "depends_on").map((l) => l.card_id);
   const { mode, what_the_ai_does } = modeView(detail, board);
+  // The rule of a pick from an agent session, with the batch's other cards
+  // counted as done, as when the batch was handed: the plan orders those.
+  // A mode changed since the hand-over shows here as may_pick false.
+  const assumed = board.cards.map((c) => (c.id !== detail.card.id && batch.card_ids.includes(c.id) ? { ...c, status: { state: "done" as const } } : c));
+  const verdict = checkEligibility(detail.card, detail.log, definitions, board.teammates, assumed, SESSION_MODES);
   return {
     id: detail.card.id,
     title: detail.card.title,
@@ -177,6 +190,8 @@ function batchCardView(detail: CardResponse, board: BoardResponse, batch: Batch)
       : { name: detail.card.function_id, title: null, summary: null, outputs: [] },
     mode,
     what_the_ai_does,
+    may_pick: verdict.eligible,
+    ...(verdict.eligible ? {} : { why_not: verdict.reason }),
     depends_on_in_batch: dependsOn.filter((id) => batch.card_ids.includes(id)),
     depends_on_outside: dependsOn.filter((id) => !batch.card_ids.includes(id)),
     branch: branchForCard(detail.card) ?? null,
@@ -326,13 +341,15 @@ export function createTools(deps: ToolDeps): Tools {
 
     list_batches: (input) =>
       guarded(async () => {
-        const [{ batches }, board] = await Promise.all([client.batches(input.state), client.board()]);
+        // The board carries the open batches, oldest first, as GET /api/batches does.
+        const board = await client.board();
         const actingAs = await self(board);
-        const mine = batches.filter((b) => b.handed_to === actingAs);
+        const mine = board.batches.filter((b) => b.handed_to === actingAs);
         const oldestHanded = mine.find((b) => b.state === "handed");
+        const shown = board.batches.filter((b) => input.state === undefined || b.state === input.state);
         return ok({
           acting_as: actingAs,
-          batches: batches.map((b) => ({
+          batches: shown.map((b) => ({
             id: b.id,
             state: b.state,
             card_ids: b.card_ids,
@@ -353,9 +370,10 @@ export function createTools(deps: ToolDeps): Tools {
       guarded(async () => {
         const [detail, board] = await Promise.all([client.batch(input.batch_id), client.board()]);
         const actingAs = await self(board);
+        const definitions = new Map(detail.cards.flatMap((c) => (c.function ? [[c.function.name, c.function] as const] : [])));
         return ok({
           batch: detail.batch,
-          cards: detail.cards.map((c) => batchCardView(c, board, detail.batch)),
+          cards: detail.cards.map((c) => batchCardView(c, board, detail.batch, definitions)),
           next: batchNext(detail.batch, actingAs),
         });
       }),
@@ -367,7 +385,9 @@ export function createTools(deps: ToolDeps): Tools {
           return ok({ batch: out.batch, next: batchNext(out.batch, out.batch.handed_to) });
         } catch (err) {
           if (err instanceof ApiRefusal && err.status === 409) {
-            const retry = /already has a plan/.test(err.message)
+            // Card #16 adds the code already_planned for a batch that has a plan.
+            // The message test is a fallback for the API before that; remove it once #16's fix is merged.
+            const retry = err.code === "already_planned" || /already has a plan/.test(err.message)
               ? "The batch keeps the plan it has; read it with get_batch and work it."
               : "Nothing was recorded. Fix the plan and call plan_batch again.";
             return fail(`The workbench refused this plan (HTTP 409 ${err.code}): ${err.message}. ${retry}`);

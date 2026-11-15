@@ -6,15 +6,12 @@
 import {
   apiError,
   batchDetailResponse,
-  batchesResponse,
   batchResponse,
   boardResponse,
   cardResponse,
   writeResponse,
   type AskRequest,
   type BatchDetailResponse,
-  type BatchesResponse,
-  type BatchListState,
   type BatchResponse,
   type BoardResponse,
   type CardResponse,
@@ -72,10 +69,6 @@ export class WorkbenchClient {
 
   report(id: string, req: ReportRequest): Promise<WriteResponse> {
     return this.post(`/api/cards/${encodeURIComponent(id)}/reports`, req, writeResponse);
-  }
-
-  batches(state?: BatchListState): Promise<BatchesResponse> {
-    return this.get(state === undefined ? "/api/batches" : `/api/batches?state=${encodeURIComponent(state)}`, batchesResponse);
   }
 
   batch(id: string): Promise<BatchDetailResponse> {
