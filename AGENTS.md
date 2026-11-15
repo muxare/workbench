@@ -23,6 +23,8 @@ Rules:
 - Do not start a task that depends on an open question. Mark it "(blocked by question N)" and take the next one.
 - If Mikael reorders the list, keep his order.
 - Keep the file short enough to read in a minute.
+- Write `docs/next.md` in a pull request as it should read on `main` once the pull request is merged: record the branch's work as merged to `main` ("Merged to `main` from `feat/…`: …"), because the file on `main` describes `main`. Do not open a branch only to record a merge.
+- After Mikael merges a pull request, switch to `main`, pull, delete the merged branch, run `pnpm wb restart api` if the merge touched app code, and stop there. A fact that only arises after a merge, such as a setting Mikael changed on GitHub or a run that was watched, goes into `docs/next.md` on the next work branch, not on a branch of its own.
 
 ## Agents, subagents, hooks and skills
 
