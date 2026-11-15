@@ -6,7 +6,9 @@ import {
   batchCardIds,
   batchId,
   batchWave,
+  cardId,
   teammateId,
+  unfinishedDependencies,
   type BatchWave,
   type Card,
   type StreamEvent,
@@ -28,10 +30,17 @@ export const batchPlan = z.object({
 });
 export type BatchPlan = z.infer<typeof batchPlan>;
 
-/** A batch as derived from the stream: who handed which cards to whom, its plan once posted, and its state. */
+/**
+ * A batch as derived from the stream: who handed which cards to whom, its
+ * plan once posted, and its state. `card_ids` are the cards as handed;
+ * `released_card_ids` are those that have left the batch since, because a
+ * person moved the card back to Backlog or handed it again in a later batch.
+ * A released card no longer counts towards the batch's state or its plan.
+ */
 export const batch = z.object({
   id: batchId,
   card_ids: batchCardIds,
+  released_card_ids: z.array(cardId),
   handed_to: teammateId,
   handed_by: teammateId,
   handed_at: z.iso.datetime({ offset: true }),
@@ -40,23 +49,48 @@ export const batch = z.object({
 });
 export type Batch = z.infer<typeof batch>;
 
+/** The cards still in the batch: those handed, less those released, in batch order. */
+export function batchCards(b: Batch): string[] {
+  const released = new Set(b.released_card_ids);
+  return b.card_ids.filter((id) => !released.has(id));
+}
+
 /** The states in which a card no longer needs the batch: its work is in review or merged. */
 const FINISHED_CARD_STATES = new Set<string>(["review", "done"]);
 
 /**
  * Every batch in the stream, in the order it was handed, with its state
- * derived from `cards`. A card not in `cards` counts as unfinished. A
+ * derived from `cards`. A card leaves (is released from) a batch when a
+ * `status_changed` event moves it to Backlog, or when a later `batch_handed`
+ * includes it, so a card is in at most one batch at a time. A batch is
+ * finished once every card still in it is in Review or Done, which includes
+ * a batch with no cards left, and it stays finished: a card sent back from
+ * Review later (changes requested) is worked on its own, and may be handed
+ * in a new batch. Card statuses are read from the `status_changed` events in
+ * `events` as they come, and from `cards` as they stand now; a card in
+ * neither counts as unfinished. A
  * `batch_planned` event about no handed batch is ignored, and only the first
  * plan of a batch counts; the store refuses both. `events` must be in stream
  * order; events of other types are ignored.
  */
 export function deriveBatches(events: readonly StreamEvent[], cards: readonly Card[]): Batch[] {
   const byId = new Map<string, Batch>();
+  const finished = new Set<string>();
+  const status = new Map<string, string>();
+  const release = (cardId: string) => {
+    for (const b of byId.values()) {
+      if (b.card_ids.includes(cardId) && !b.released_card_ids.includes(cardId)) b.released_card_ids.push(cardId);
+    }
+  };
+  const done = (b: Batch) => batchCards(b).every((id) => FINISHED_CARD_STATES.has(status.get(id) ?? ""));
   for (const e of events) {
+    if (e.type === "status_changed") status.set(e.card_id, e.to.state);
     if (e.type === "batch_handed" && !byId.has(e.batch_id)) {
+      for (const id of e.card_ids) release(id);
       byId.set(e.batch_id, {
         id: e.batch_id,
         card_ids: [...e.card_ids],
+        released_card_ids: [],
         handed_to: e.handed_to,
         handed_by: e.actor,
         handed_at: e.at,
@@ -64,16 +98,46 @@ export function deriveBatches(events: readonly StreamEvent[], cards: readonly Ca
         plan: null,
       });
     }
+    if (e.type === "status_changed" && e.to.state === "backlog") release(e.card_id);
     if (e.type === "batch_planned") {
       const b = byId.get(e.batch_id);
       if (b && b.plan === null) b.plan = { waves: e.waves.map((w) => ({ card_ids: [...w.card_ids], note: w.note })), planned_by: e.actor, planned_at: e.at };
     }
+    if (e.type === "status_changed" || e.type === "batch_handed") {
+      for (const b of byId.values()) if (!finished.has(b.id) && done(b)) finished.add(b.id);
+    }
   }
-  const status = new Map(cards.map((c) => [c.id, c.status.state]));
+  // The cards as they stand now decide too, for a caller that passes only the batch events.
+  for (const c of cards) status.set(c.id, c.status.state);
   return [...byId.values()].map((b) => {
-    const finished = b.card_ids.every((id) => FINISHED_CARD_STATES.has(status.get(id) ?? ""));
-    return { ...b, state: finished ? "finished" : b.plan === null ? "handed" : "planned" };
+    const over = finished.has(b.id) || done(b);
+    return { ...b, state: over ? "finished" : b.plan === null ? "handed" : "planned" };
   });
+}
+
+/**
+ * The ids of the cards `card` depends on that do not let it be picked yet:
+ * those not done (`unfinishedDependencies`), less those met by a plan. A
+ * dependency is met by a plan when `card` and the dependency are both still
+ * in an open, planned batch in `batches` and the dependency is in an earlier
+ * wave than `card`: its branch is worked first and `card`'s branch is stacked
+ * on it, so the pull requests still merge in order and a person approves
+ * each. A dependency in the same or a later wave, or outside the batch, must
+ * be done. Pass only the batches handed to the teammate picking; with none,
+ * this is `unfinishedDependencies`.
+ */
+export function unmetDependencies(card: Card, cards: readonly Card[], batches: readonly Batch[] = []): string[] {
+  const met = new Set<string>();
+  for (const b of openBatches(batches)) {
+    if (b.plan === null) continue;
+    const inBatch = new Set(batchCards(b));
+    if (!inBatch.has(card.id)) continue;
+    const wave = b.plan.waves.findIndex((w) => w.card_ids.includes(card.id));
+    for (const earlier of b.plan.waves.slice(0, Math.max(wave, 0))) {
+      for (const id of earlier.card_ids) if (inBatch.has(id)) met.add(id);
+    }
+  }
+  return unfinishedDependencies(card, cards).filter((id) => !met.has(id));
 }
 
 /** The batches not yet finished, in the order given. */

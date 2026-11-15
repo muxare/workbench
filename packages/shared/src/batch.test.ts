@@ -1,6 +1,6 @@
 // All data here is invented.
 import { describe, expect, it } from "vitest";
-import { checkPlan, deriveBatches, nextBatchId, openBatches } from "./batch.ts";
+import { checkPlan, deriveBatches, nextBatchId, openBatches, unmetDependencies } from "./batch.ts";
 import { batchHanded, batchPlanned, streamEvent, teamEvent, type Card, type CardStatus, type StreamEvent } from "./domain.ts";
 
 const at = "2026-11-15T10:00:00Z";
@@ -81,6 +81,73 @@ describe("deriveBatches", () => {
     expect(rest).toEqual([]);
     expect(only?.state).toBe("planned");
     expect(only?.plan?.waves[0]?.note).toBe("first");
+  });
+});
+
+describe("deriveBatches, releasing cards", () => {
+  const moved = (card_id: string, from: CardStatus, to: CardStatus, id = `s-${card_id}-${to}`): StreamEvent => ({
+    id,
+    type: "status_changed",
+    card_id,
+    actor: "invented-fe",
+    at,
+    from,
+    to: { state: to } as Card["status"],
+  });
+
+  it("takes a card handed again out of the earlier batch, which stays finished when the card is sent back", () => {
+    const events = [
+      handed("1", ["1", "2"]),
+      moved("1", "ready", "in_progress"),
+      moved("2", "ready", "in_progress"),
+      moved("1", "in_progress", "review"),
+      moved("2", "in_progress", "review"),
+      // Changes requested on #1, which goes back to Ready and into a new batch.
+      moved("1", "review", "in_progress"),
+      moved("1", "in_progress", "ready"),
+      handed("2", ["1", "3"]),
+    ];
+    const cards = [card("1"), card("2", "review"), card("3")];
+    const [first, second] = deriveBatches(events, cards);
+    expect(first).toMatchObject({ state: "finished", released_card_ids: ["1"] });
+    expect(second).toMatchObject({ state: "handed", released_card_ids: [] });
+    expect(openBatches(deriveBatches(events, cards)).filter((b) => b.card_ids.includes("1")).map((b) => b.id)).toEqual(["2"]);
+  });
+
+  it("releases a card moved back to Backlog, so the batch can finish without it", () => {
+    const events = [handed("1", ["1", "2"]), moved("1", "ready", "backlog")];
+    const [only] = deriveBatches(events, [card("1", "backlog"), card("2", "review")]);
+    expect(only).toMatchObject({ state: "finished", released_card_ids: ["1"] });
+  });
+
+  it("finishes a batch with no cards left of its own", () => {
+    const events = [handed("1", ["1", "2"]), handed("2", ["1", "2"])];
+    expect(deriveBatches(events, [card("1"), card("2")]).map((b) => b.state)).toEqual(["finished", "handed"]);
+  });
+});
+
+describe("unmetDependencies", () => {
+  const cards = [card("1", "in_progress"), card("2", "ready", ["1"]), card("3", "ready", ["1", "outside"]), card("outside", "review")];
+  const batchOf = (waves: string[][]) =>
+    deriveBatches(
+      [handed("1", ["1", "2", "3"]), planned("1", waves.map((card_ids) => ({ card_ids, note: "Invented." })))],
+      cards,
+    );
+
+  it("meets a dependency in an earlier wave of an open planned batch", () => {
+    expect(unmetDependencies(card("2", "ready", ["1"]), cards, batchOf([["1"], ["2", "3"]]))).toEqual([]);
+  });
+
+  it("still needs a dependency in the same or a later wave, or outside the batch, to be done", () => {
+    expect(unmetDependencies(card("2", "ready", ["1"]), cards, batchOf([["1", "2", "3"]]))).toEqual(["1"]);
+    expect(unmetDependencies(card("2", "ready", ["1"]), cards, batchOf([["2", "3"], ["1"]]))).toEqual(["1"]);
+    expect(unmetDependencies(card("3", "ready", ["1", "outside"]), cards, batchOf([["1"], ["2", "3"]]))).toEqual(["outside"]);
+  });
+
+  it("is unfinishedDependencies without a plan or without batches", () => {
+    const unplanned = deriveBatches([handed("1", ["1", "2"])], cards);
+    expect(unmetDependencies(card("2", "ready", ["1"]), cards, unplanned)).toEqual(["1"]);
+    expect(unmetDependencies(card("2", "ready", ["1"]), cards)).toEqual(["1"]);
   });
 });
 

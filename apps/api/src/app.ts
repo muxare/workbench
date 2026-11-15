@@ -72,7 +72,8 @@ import {
   setLogFilterRequest,
   setModeRequest,
   setRolesRequest,
-  unfinishedDependencies,
+  batchCards,
+  unmetDependencies,
   type HumanTeammate,
   type TeammateResponse,
   type TeammateProfileResponse,
@@ -167,12 +168,14 @@ const httpStatus = {
   forbidden: 403,
   not_found: 404,
   conflict: 409,
+  already_planned: 409,
   rule_violation: 422,
   unavailable: 503,
 } as const satisfies Record<ApiErrorCode, number>;
 
 const fromStoreCode: Record<StoreErrorCode, ApiErrorCode> = {
   conflict: "conflict",
+  already_planned: "already_planned",
   forbidden: "forbidden",
   not_found: "not_found",
   unknown_function: "rule_violation",
@@ -335,16 +338,16 @@ export function createApp(deps: AppDeps) {
     .post("/batches", async (c) => {
       const req = await body(c, handBatchRequest);
       const actor = await teammateOr422(req.actor, "actor");
-      const handedTo = await batchTeammate(req.handed_to);
-      const batchCards: Card[] = [];
-      for (const id of req.card_ids) batchCards.push(await cardOr404(id));
       if (actor.kind !== "human") throw new ApiProblem("forbidden", `a batch is handed over by a person, not ${actor.id}`);
+      const handedTo = await batchTeammate(req.handed_to);
+      const handed: Card[] = [];
+      for (const id of req.card_ids) handed.push(await cardOr404(id));
       const defs = definitions();
       const cards = await listCards(db);
       const teammates = await listTeammates(db);
       const open = openBatches(await listBatches(db));
-      for (const card of batchCards) {
-        const holder = open.find((b) => b.card_ids.includes(card.id));
+      for (const card of handed) {
+        const holder = open.find((b) => batchCards(b).includes(card.id));
         if (holder) throw new ApiProblem("conflict", `${card.id} is already in batch ${holder.id}, which is not finished`);
         // The AI may pick each card by the rules of a pick from an agent
         // session, with one difference: the plan puts a card after the batch
@@ -369,8 +372,9 @@ export function createApp(deps: AppDeps) {
       if (req.actor !== batch.handed_to) {
         throw new ApiProblem("forbidden", `batch ${batch.id} was handed to ${batch.handed_to}, so ${req.actor} may not plan it`);
       }
-      if (batch.plan !== null) throw new ApiProblem("conflict", `batch ${batch.id} already has a plan`);
-      const verdict = checkPlan(batch.card_ids, req.waves, await listCards(db));
+      if (batch.plan !== null) throw new ApiProblem("already_planned", `batch ${batch.id} already has a plan`);
+      if (batch.state === "finished") throw new ApiProblem("conflict", `batch ${batch.id} is finished, so it takes no plan`);
+      const verdict = checkPlan(batchCards(batch), req.waves, await listCards(db));
       if (!verdict.ok) throw new ApiProblem("conflict", `the plan for batch ${batch.id} is not valid: ${verdict.reason}`);
       // The store checks the plan again inside the write, so two plans posted at once cannot both land.
       await appendEvents(db, [
@@ -427,14 +431,16 @@ export function createApp(deps: AppDeps) {
         throw new ApiProblem("conflict", `${card.id} is ${card.status.state}; only a ready card can be picked`);
       }
       const cards = await listCards(db);
-      const blockers = unfinishedDependencies(card, cards);
+      // For the AI, a dependency in an earlier wave of a plan for a batch handed to it is met (`unmetDependencies`).
+      const batches = actor.kind === "ai" ? (await listBatches(db)).filter((b) => b.handed_to === actor.id) : [];
+      const blockers = unmetDependencies(card, cards, batches);
       if (blockers.length > 0) {
         throw new ApiProblem("conflict", `${card.id} depends on ${blockers.join(", ")}, which is not done`);
       }
       // The AI teammate picks only where the owner's mode gives it a part, by
       // the same rules as its runner, in the modes it works in from an agent session.
       if (actor.kind === "ai") {
-        const verdict = checkEligibility(card, await cardLog(db, card.id), defs, await listTeammates(db), cards, SESSION_MODES);
+        const verdict = checkEligibility(card, await cardLog(db, card.id), defs, await listTeammates(db), cards, SESSION_MODES, batches);
         if (!verdict.eligible) throw new ApiProblem("rule_violation", `${actor.id} may not pick ${verdict.reason}`);
       }
       return c.json(

@@ -15,7 +15,8 @@ import { createApp } from "./app.ts";
 import { openDb, type Db } from "./db/client.ts";
 import { loadFunctionIds } from "./process.ts";
 import { inventedSeedAt } from "./seed/invented.ts";
-import { appendEvents, handBatch, lastSeq, listBatches, onAppend, seed, StoreError } from "./store.ts";
+import { addTeammate, appendEvents, getBatch, handBatch, lastSeq, listBatches, onAppend, seed, StoreError } from "./store.ts";
+import { eligibleCards } from "./teammates/runner.ts";
 
 const inventedSeed = inventedSeedAt(new Date("2026-11-07T08:00:00Z"));
 const functionIds = loadFunctionIds();
@@ -72,6 +73,7 @@ describe("POST /api/batches", () => {
     expect(batch).toEqual({
       id: "1",
       card_ids: [first, second, "invented-108"],
+      released_card_ids: [],
       handed_to: AI,
       handed_by: PO,
       handed_at: AT,
@@ -181,7 +183,7 @@ describe("POST /api/batches/:id/plan", () => {
       { card_ids: [second], note: "Invented." },
     ];
     await plan("1", waves);
-    await expectProblem(await plan("1", waves), 409, "conflict", /already has a plan/);
+    await expectProblem(await plan("1", waves), 409, "already_planned", /already has a plan/);
   });
 
   it("refuses a plan that leaves out, repeats or misorders a card, with the reason, and appends nothing", async () => {
@@ -250,7 +252,114 @@ describe("GET /api/batches and /api/batches/:id", () => {
   });
 });
 
+describe("picking a card stacked on an earlier wave", () => {
+  async function plannedBatch(waves?: (ids: { first: string; second: string }) => string[][]) {
+    const first = await readyCard("first");
+    const second = await readyCard("second", [first]);
+    await hand([first, second]);
+    if (waves) await plan("1", waves({ first, second }).map((card_ids) => ({ card_ids, note: "Invented." })));
+    return { first, second };
+  }
+
+  it("lets the AI pick a card whose dependency is in an earlier wave of the plan, and the runner agrees", async () => {
+    const { first, second } = await plannedBatch(({ first, second }) => [[first], [second]]);
+    expect((await post(`/api/cards/${first}/pick`, { actor: AI })).status).toBe(200);
+    const verdict = (await eligibleCards(db, undefined, AI)).find((e) => e.card.id === second);
+    expect(verdict?.eligible).toBe(true);
+    expect((await post(`/api/cards/${second}/pick`, { actor: AI })).status).toBe(200);
+  });
+
+  it("still refuses it before the plan, to a person, and to the runner without the batch", async () => {
+    const { second } = await plannedBatch();
+    await expectProblem(await post(`/api/cards/${second}/pick`, { actor: AI }), 409, "conflict", /which is not done/);
+    await plan("1", [
+      { card_ids: [(await getBatch(db, "1"))!.card_ids[0]!], note: "n" },
+      { card_ids: [second], note: "n" },
+    ]);
+    await expectProblem(await post(`/api/cards/${second}/pick`, { actor: FE }), 409, "conflict", /which is not done/);
+    expect((await eligibleCards(db)).find((e) => e.card.id === second)?.eligible).toBe(false);
+  });
+});
+
+describe("cards leaving a batch", () => {
+  it("lets a card be handed again after its batch finished, and the old batch stays finished", async () => {
+    const [a, b, c] = [await readyCard("a"), await readyCard("b"), await readyCard("c")];
+    await hand([a, b]);
+    for (const id of [a, b]) {
+      await post(`/api/cards/${id}/pick`, { actor: AI });
+      await post(`/api/cards/${id}/status`, { actor: AI, from: "in_progress", to: { state: "review" } });
+    }
+    // Changes requested on a, which goes back to Ready.
+    await post(`/api/cards/${a}/status`, { actor: FE, from: "review", to: { state: "in_progress" } });
+    await post(`/api/cards/${a}/status`, { actor: FE, from: "in_progress", to: { state: "ready" } });
+    expect((await getBatch(db, "1"))?.state).toBe("finished");
+    const res = await hand([a, c]);
+    expect(res.status).toBe(201);
+    expect(batchResponse.parse(await res.json()).batch.id).toBe("2");
+    expect(await getBatch(db, "1")).toMatchObject({ state: "finished", released_card_ids: [a] });
+    expect(batchesResponse.parse(await (await app.request("/api/batches")).json()).batches.map((x) => x.id)).toEqual(["2"]);
+  });
+
+  it("releases a card a person moves back to Backlog, so the batch can finish and the card be handed again", async () => {
+    const [a, b, c] = [await readyCard("a"), await readyCard("b"), await readyCard("c")];
+    await hand([a, b]);
+    await post(`/api/cards/${a}/status`, { actor: FE, from: "ready", to: { state: "backlog" } });
+    await post(`/api/cards/${b}/pick`, { actor: AI });
+    await post(`/api/cards/${b}/status`, { actor: AI, from: "in_progress", to: { state: "review" } });
+    expect(await getBatch(db, "1")).toMatchObject({ state: "finished", released_card_ids: [a] });
+    await post(`/api/cards/${a}/status`, { actor: FE, from: "backlog", to: { state: "ready" } });
+    expect((await hand([a, c])).status).toBe(201);
+  });
+
+  it("refuses a plan for a finished batch", async () => {
+    const [a, b] = [await readyCard("a"), await readyCard("b")];
+    await hand([a, b]);
+    for (const id of [a, b]) await post(`/api/cards/${id}/status`, { actor: FE, from: "ready", to: { state: "backlog" } });
+    await expectProblem(await plan("1", [{ card_ids: [a, b], note: "n" }]), 409, "conflict", /finished/);
+  });
+});
+
+describe("more refusals", () => {
+  it("refuses a plan listing a card not in the batch", async () => {
+    const [a, b] = [await readyCard("a"), await readyCard("b")];
+    await hand([a, b]);
+    await expectProblem(await plan("1", [{ card_ids: [a, b, "invented-108"], note: "n" }]), 409, "conflict", /invented-108 is not in the batch/);
+  });
+
+  it("refuses to guess handed_to when the team has two AI teammates, or none", async () => {
+    const [a, b] = [await readyCard("a"), await readyCard("b")];
+    await addTeammate(db, { kind: "ai", id: "invented-ai-2", name: "Second invented AI" });
+    await expectProblem(await hand([a, b]), 422, "rule_violation", /2 AI teammates, so handed_to must name one/);
+    expect((await post("/api/batches", { actor: PO, card_ids: [a, b], handed_to: "invented-ai-2" })).status).toBe(201);
+
+    const empty = await openDb(":memory:");
+    await addTeammate(empty, { kind: "human", id: PO, name: "Invented product owner", roles: ["po"] }, "2026-11-07T09:00:00Z");
+    const a2 = createApp({ db: empty, functionIds });
+    const res = await a2.request("/api/batches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actor: PO, card_ids: ["1", "2"] }),
+    });
+    await expectProblem(res, 422, "rule_violation", /no AI teammate/);
+  });
+});
+
 describe("the store's batch checks", () => {
+  it("refuses a second plan appended straight to the store", async () => {
+    const [a, b] = [await readyCard("a"), await readyCard("b")];
+    await hand([a, b]);
+    const planned = (id: string): StreamEvent => ({
+      id,
+      type: "batch_planned",
+      actor: AI,
+      at: AT,
+      batch_id: "1",
+      waves: [{ card_ids: [a, b], note: "Invented." }],
+    });
+    await appendEvents(db, [planned("invented-p1")]);
+    await expect(appendEvents(db, [planned("invented-p2")])).rejects.toMatchObject({ code: "already_planned", message: expect.stringMatching(/already has a plan/) });
+  });
+
   it("gives batches handed at the same time different numbers", async () => {
     const ids = [await readyCard("a"), await readyCard("b"), await readyCard("c"), await readyCard("d")];
     const input = (n: number, card_ids: string[]) => ({ id: `invented-h${String(n)}`, actor: PO, at: AT, card_ids, handed_to: AI });

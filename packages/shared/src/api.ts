@@ -222,8 +222,10 @@ export type HandBatchRequest = z.infer<typeof handBatchRequest>;
  * plan, which appends one `batch_planned` event and answers with the batch.
  * Refusals: 400 for a bad body; 404 for an unknown batch; 422 for an unknown
  * actor; 403 when the actor is not the teammate the batch was handed to; 409
- * when the batch already has a plan or the plan is invalid (`checkPlan`),
- * with the reason.
+ * `already_planned` when the batch already has a plan; 409 `conflict` when
+ * the batch is finished or the plan is invalid (`checkPlan`), with the
+ * reason. A card that has left the batch (`released_card_ids`) is not in the
+ * plan.
  */
 export const planBatchRequest = z.strictObject({ actor: teammateId, waves: z.array(batchWave).min(1) });
 export type PlanBatchRequest = z.infer<typeof planBatchRequest>;
@@ -394,12 +396,16 @@ export type TeammateResponse = z.infer<typeof teammateResponse>;
  * Why the API refused a request. `unauthorized` (401) is a GitHub webhook
  * whose signature does not match; `unavailable` (503) is the webhook endpoint
  * when no secret is configured, so it cannot check any signature.
+ * `already_planned` (409) is `POST /batches/:id/plan` on a batch that has a
+ * plan, kept apart from `conflict` so a client can tell "someone planned it
+ * already" from "this plan is invalid" without reading `reason`.
  */
 export const apiErrorCode = z.enum([
   "invalid_request",
   "unauthorized",
   "not_found",
   "conflict",
+  "already_planned",
   "forbidden",
   "rule_violation",
   "unavailable",

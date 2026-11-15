@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import type { Card, CardEvent, FunctionFrontMatter } from "@workbench/shared";
 import type { Db } from "../db/client.ts";
 import { loadExternalArtifacts, loadFunctionDefinitions } from "../process.ts";
-import { appendEvents, cardLog, listCards, listTeammates } from "../store.ts";
+import { appendEvents, cardLog, listBatches, listCards, listTeammates } from "../store.ts";
 import { checkEligibility, type Eligibility } from "./eligibility.ts";
 import type { TeammateProvider, WorkStep } from "./provider.ts";
 
@@ -38,14 +38,22 @@ export interface TeammateRun {
   events: CardEvent[];
 }
 
-/** Every card with whether the AI teammate may pick it, and why not. */
+/**
+ * Every card with whether the AI teammate may pick it, and why not. With
+ * `teammateId`, the batches handed to that teammate count, so a dependency in
+ * an earlier wave of its plan is met.
+ */
 export async function eligibleCards(
   db: Db,
   definitions: ReadonlyMap<string, FunctionFrontMatter> = loadFunctionDefinitions(),
+  teammateId?: string,
 ): Promise<Eligibility[]> {
   const teammates = await listTeammates(db);
   const cards = await listCards(db);
-  return Promise.all(cards.map(async (card) => checkEligibility(card, await cardLog(db, card.id), definitions, teammates, cards)));
+  const batches = teammateId === undefined ? [] : (await listBatches(db)).filter((b) => b.handed_to === teammateId);
+  return Promise.all(
+    cards.map(async (card) => checkEligibility(card, await cardLog(db, card.id), definitions, teammates, cards, undefined, batches)),
+  );
 }
 
 /**
@@ -66,7 +74,7 @@ export async function runTeammate(db: Db, options: RunOptions): Promise<Teammate
   const self = teammates.find((t) => t.id === options.teammateId);
   if (self?.kind !== "ai") throw new TeammateRefusal(`${options.teammateId} is not an AI teammate`);
 
-  const all = await eligibleCards(db, definitions);
+  const all = await eligibleCards(db, definitions, self.id);
   let chosen: Eligibility | undefined;
   if (options.cardId !== undefined) {
     chosen = all.find((e) => e.card.id === options.cardId);

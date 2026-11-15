@@ -2,7 +2,7 @@
 // definition in process/ and its owner's process profile. Nothing here names
 // a function or copies a protocol; the only fixed facts are the board status a
 // card is picked from and the modes this teammate knows how to work in.
-import { ownerMode, unfinishedDependencies, type Card, type CardEvent, type FunctionFrontMatter, type Mode, type Protocol, type Teammate } from "@workbench/shared";
+import { ownerMode, unmetDependencies, type Batch, type Card, type CardEvent, type FunctionFrontMatter, type Mode, type Protocol, type Teammate } from "@workbench/shared";
 
 /**
  * The modes this AI teammate works in. It only assists for now: in `assist`
@@ -56,7 +56,10 @@ export function workableMode(
 /**
  * Decide whether the AI teammate may pick `card`:
  *
- * 1. The card is in Ready, and every card it depends on is done.
+ * 1. The card is in Ready, and every card it depends on is done, or is in
+ *    an earlier wave of an open planned batch in `batches` that holds the
+ *    card too (`unmetDependencies`). `batches` are the batches handed to
+ *    this teammate.
  * 2. Its function exists in process/ and its owner is a human teammate.
  * 3. The mode is the owner's choice for the function, or the function's
  *    `modes.default` when the owner has not chosen one, and that mode is in
@@ -76,11 +79,12 @@ export function checkEligibility(
   teammates: readonly Teammate[],
   cards: readonly Card[],
   modes: readonly Mode[] = TEAMMATE_MODES,
+  batches: readonly Batch[] = [],
 ): Eligibility {
   const refuse = (reason: string): Eligibility => ({ eligible: false, card, reason: `${card.id}: ${reason}` });
 
   if (card.status.state !== "ready") return refuse(`card is ${card.status.state}, not ready`);
-  const blockers = unfinishedDependencies(card, cards);
+  const blockers = unmetDependencies(card, cards, batches);
   if (blockers.length > 0) return refuse(`depends on ${blockers.join(", ")}, which is not done`);
 
   const definition = definitions.get(card.function_id);

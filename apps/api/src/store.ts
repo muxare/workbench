@@ -15,6 +15,7 @@ import { and, asc, desc, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   card as cardSchema,
   cardEvent,
+  batchCards,
   checkPlan,
   cycle as cycleSchema,
   deriveBatches,
@@ -84,9 +85,10 @@ export const INITIAL_STATUS: Status = { state: "backlog" };
  * with the right status: `conflict` when the stream has moved on (a stale
  * `from`), `forbidden` when the actor may not do this (a non-human answer),
  * `unknown_function` when process/ has no such function, `not_found` for a
- * missing record, `rule_violation` for anything else.
+ * missing record, `already_planned` for a second plan for a batch,
+ * `rule_violation` for anything else.
  */
-export type StoreErrorCode = "conflict" | "forbidden" | "unknown_function" | "not_found" | "rule_violation";
+export type StoreErrorCode = "conflict" | "already_planned" | "forbidden" | "unknown_function" | "not_found" | "rule_violation";
 
 export class StoreError extends Error {
   override name = "StoreError";
@@ -223,14 +225,24 @@ interface Pending {
   gates: Map<string, boolean>;
   /** What an earlier event in the write set named the team; undefined when none did. */
   team?: TeamName | null;
-  /** The `batch_handed` and `batch_planned` events earlier in the write set. */
-  batches: (BatchHandedEvent | BatchPlannedEvent)[];
+  /** The events earlier in the write set that batches are derived from (`BATCH_TYPES`). */
+  batches: StreamEvent[];
 }
 
-const BATCH_TYPES: StreamEventType[] = ["batch_handed", "batch_planned"];
+/**
+ * The event types batches are derived from: the batch events, and status
+ * changes, since a card moved back to Backlog leaves its batch.
+ */
+const BATCH_TYPES: StreamEventType[] = ["batch_handed", "batch_planned", "status_changed"];
 
-/** Every `batch_handed` and `batch_planned` event, in stream order; served by the (type, seq) index. */
+/**
+ * Every event batches are derived from, in stream order; served by the
+ * (type, seq) index. With no batch handed yet, there is nothing to derive, so
+ * the status changes are not read.
+ */
 async function batchEvents(db: Db): Promise<StreamEvent[]> {
+  const [any] = await db.select({ seq: events.seq }).from(events).where(eq(events.type, "batch_handed")).limit(1);
+  if (!any) return [];
   const rows = await db.select().from(events).where(inArray(events.type, BATCH_TYPES));
   return rows.sort((a, b) => a.seq - b.seq).map(fromRow);
 }
@@ -275,16 +287,17 @@ async function checkBatchHanded(db: Db, event: BatchHandedEvent, pending: Pendin
     if (card.status.state !== "ready") {
       throw new StoreError(`${event.id}: ${id} is ${card.status.state}; only Ready cards are handed over`, "conflict");
     }
-    const holder = open.find((b) => b.card_ids.includes(id));
+    const holder = open.find((b) => batchCards(b).includes(id));
     if (holder) throw new StoreError(`${event.id}: ${id} is already in batch ${holder.id}, which is not finished`, "conflict");
   }
   pending.batches.push(event);
 }
 
 /**
- * A batch's plan is posted by the AI teammate it was handed to, once, and
- * must pass `checkPlan`: every card of the batch in exactly one wave, and a
- * card in a later wave than every card of the batch it depends on.
+ * A batch's plan is posted by the AI teammate it was handed to, once, while
+ * the batch is open, and must pass `checkPlan`: every card still in the batch
+ * in exactly one wave, and a card in a later wave than every card of the
+ * batch it depends on.
  */
 async function checkBatchPlanned(db: Db, event: BatchPlannedEvent, pending: Pending): Promise<void> {
   const { batches, cards } = await batchesWithPending(db, pending);
@@ -293,8 +306,9 @@ async function checkBatchPlanned(db: Db, event: BatchPlannedEvent, pending: Pend
   if (event.actor !== batch.handed_to) {
     throw new StoreError(`${event.id}: batch ${batch.id} was handed to ${batch.handed_to}, so ${event.actor} may not plan it`, "forbidden");
   }
-  if (batch.plan !== null) throw new StoreError(`${event.id}: batch ${batch.id} already has a plan`, "conflict");
-  const verdict = checkPlan(batch.card_ids, event.waves, cards);
+  if (batch.plan !== null) throw new StoreError(`${event.id}: batch ${batch.id} already has a plan`, "already_planned");
+  if (batch.state === "finished") throw new StoreError(`${event.id}: batch ${batch.id} is finished, so it takes no plan`, "conflict");
+  const verdict = checkPlan(batchCards(batch), event.waves, cards);
   if (!verdict.ok) throw new StoreError(`${event.id}: the plan for batch ${batch.id} is not valid: ${verdict.reason}`, "conflict");
   pending.batches.push(event);
 }
@@ -434,6 +448,7 @@ async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise
       throw new StoreError(`${event.id}: card ${event.card_id} is ${current.state}, not ${event.from}`, "conflict");
     }
     pending.statuses.set(event.card_id, event.to);
+    pending.batches.push(event);
   }
   if (event.type === "mode_changed") await checkModeChange(db, event, pending);
   if (event.type === "roles_changed") await checkRolesChange(db, event, pending);
@@ -513,10 +528,11 @@ export function appendEvents(db: Db, inputs: readonly StreamEvent[]): Promise<St
  * Hand cards to an AI teammate as the next batch: one `batch_handed` event
  * under the next plain-number batch id (`nextBatchId`). The id is read from
  * the stream and the event appended inside one serialized write, so two
- * batches handed at the same time in this process cannot take the same id.
- * Across processes on one file, a second writer that read the same id is
- * refused by `checkBatchHanded` ("there is already a batch"). Answers with
- * the stored event.
+ * batches handed at the same time cannot take the same id. That holds within
+ * one process only: the serialization is per process, and nothing in the
+ * database stops a second process from taking the same id. The API is the
+ * only writer of batches, so that is enough today. Answers with the stored
+ * event.
  */
 export function handBatch(
   db: Db,
