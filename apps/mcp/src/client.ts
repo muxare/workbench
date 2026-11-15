@@ -5,13 +5,21 @@
 // client does not follow fails loudly instead of passing bad data on.
 import {
   apiError,
+  batchDetailResponse,
+  batchesResponse,
+  batchResponse,
   boardResponse,
   cardResponse,
   writeResponse,
   type AskRequest,
+  type BatchDetailResponse,
+  type BatchesResponse,
+  type BatchListState,
+  type BatchResponse,
   type BoardResponse,
   type CardResponse,
   type PickRequest,
+  type PlanBatchRequest,
   type ReportRequest,
   type WriteResponse,
 } from "@workbench/shared";
@@ -64,6 +72,18 @@ export class WorkbenchClient {
 
   report(id: string, req: ReportRequest): Promise<WriteResponse> {
     return this.post(`/api/cards/${encodeURIComponent(id)}/reports`, req, writeResponse);
+  }
+
+  batches(state?: BatchListState): Promise<BatchesResponse> {
+    return this.get(state === undefined ? "/api/batches" : `/api/batches?state=${encodeURIComponent(state)}`, batchesResponse);
+  }
+
+  batch(id: string): Promise<BatchDetailResponse> {
+    return this.get(`/api/batches/${encodeURIComponent(id)}`, batchDetailResponse);
+  }
+
+  planBatch(id: string, req: PlanBatchRequest): Promise<BatchResponse> {
+    return this.post(`/api/batches/${encodeURIComponent(id)}/plan`, req, batchResponse);
   }
 
   /**

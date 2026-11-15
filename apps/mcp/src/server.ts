@@ -12,7 +12,7 @@ export function createServer(deps: ToolDeps): McpServer {
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
       instructions:
-        "Work from the workbench board as its AI teammate. Find a card with list_cards and read it with get_card, which shows its function and what the owner's mode lets the AI do. Pick it with pick_card; the board refuses cards the AI may not pick. Work on the branch link_branch names. When something only a person can settle blocks you, ask on the card with ask_question instead of guessing, and keep waiting with wait_for_answer if it times out. Post what you did with post_report. Opening the pull request moves the card to review; a person approves it.",
+        "Work from the workbench board as its AI teammate. Find a card with list_cards and read it with get_card, which shows its function and what the owner's mode lets the AI do. Pick it with pick_card; the board refuses cards the AI may not pick. Work on the branch link_branch names. When something only a person can settle blocks you, ask on the card with ask_question instead of guessing, and keep waiting with wait_for_answer if it times out. Post what you did with post_report. Opening the pull request moves the card to review; a person approves it. When a person hands you several cards at once as a batch, follow the /work-batch skill: find the batch with list_batches, read its cards with get_batch, post the waves you will work them in with plan_batch, then pick and work each card as above.",
     },
   );
   const read = { readOnlyHint: true, openWorldHint: false } as const;
@@ -74,6 +74,39 @@ export function createServer(deps: ToolDeps): McpServer {
       annotations: write,
     },
     (input) => tools.post_report(input),
+  );
+  server.registerTool(
+    "list_batches",
+    {
+      title: "List batches",
+      description:
+        "The open batches on the board: groups of Ready cards a person handed to an AI teammate to work together, oldest first, each handed (no plan yet) or planned. When you are asked to work a batch and none is named, take the oldest handed batch handed to you.",
+      inputSchema: inputs.list_batches,
+      annotations: read,
+    },
+    (input) => tools.list_batches(input),
+  );
+  server.registerTool(
+    "get_batch",
+    {
+      title: "Read a batch",
+      description:
+        "One batch with its plan, if it has one, and each of its cards as planning needs it: state, function and its outputs, the owner's mode and what it lets the AI do, the cards it depends on inside and outside the batch, its branch and open questions. Read it before plan_batch; get_card has a card's full definition and log.",
+      inputSchema: inputs.get_batch,
+      annotations: read,
+    },
+    (input) => tools.get_batch(input),
+  );
+  server.registerTool(
+    "plan_batch",
+    {
+      title: "Plan a batch",
+      description:
+        "Post the plan for a batch handed to you: the waves its cards are worked in, in order, the cards of one wave side by side. Every card of the batch goes in exactly one wave. A card goes in a later wave than every batch card it depends_on. Cards likely to change the same files, such as the same route module or the same screen, go in different waves. Each wave has a note saying why its cards are together. A batch is planned once; a refused plan records nothing and the error says why, so fix it and call again.",
+      inputSchema: inputs.plan_batch,
+      annotations: write,
+    },
+    (input) => tools.plan_batch(input),
   );
   server.registerTool(
     "link_branch",
