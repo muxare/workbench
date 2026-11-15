@@ -91,7 +91,7 @@ export function createServer(deps: ToolDeps): McpServer {
     {
       title: "Read a batch",
       description:
-        "One batch with its plan, if it has one, and each of its cards as planning needs it: state, function and its outputs, the owner's mode and what it lets the AI do, the cards it depends on inside and outside the batch, its branch and open questions. Read it before plan_batch; get_card has a card's full definition and log.",
+        "One batch with its plan, if it has one, and each of its cards as planning needs it: state, function and its outputs, the owner's mode and what it lets the AI do, the cards it depends on inside and outside the batch, its branch, its open questions and whether the AI may pick it. Cards released from the batch are listed apart and are not planned. Read it before plan_batch; get_card has a card's full definition and log.",
       inputSchema: inputs.get_batch,
       annotations: read,
     },
@@ -102,7 +102,7 @@ export function createServer(deps: ToolDeps): McpServer {
     {
       title: "Plan a batch",
       description:
-        "Post the plan for a batch handed to you: the waves its cards are worked in, in order, the cards of one wave side by side. The board refuses a plan that breaks its rules: every card of the batch in exactly one wave, and each card in a later wave than every batch card it depends_on. Within those rules the split is your judgement: put cards likely to change the same files, such as the same route module or the same screen, in different waves, and give each wave a note saying why its cards are together. A batch is planned once; a refused plan records nothing and the error says why, so fix it and call again.",
+        "Post the plan for a batch handed to you: the waves its cards are worked in, in order, the cards of one wave side by side. The board refuses a plan that breaks its rules: every card still in the batch in exactly one wave (cards released from it are left out), and each card in a later wave than every batch card it depends_on. Within those rules the split is your judgement: put cards likely to change the same files, such as the same route module or the same screen, in different waves, and give each wave a note saying why its cards are together. A batch is planned once; a refused plan records nothing and the error says why, so fix it and call again.",
       inputSchema: inputs.plan_batch,
       annotations: write,
     },

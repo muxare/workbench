@@ -22,6 +22,7 @@
 import { checkEligibility, SESSION_MODES } from "@workbench/api/src/teammates/eligibility.ts";
 import {
   askRequest,
+  batchCards,
   batchListState,
   branchForCard,
   cardIdFromBranch,
@@ -167,18 +168,27 @@ function modeView(detail: CardResponse, board: BoardResponse) {
  * A batch card as planning needs it: what `get_card` says about the card and
  * its mode, its dependencies split into those inside the batch (which order
  * the waves) and those outside (already done when the batch was handed), the
- * function's outputs, which hint at what the work touches, and the questions
- * still open, and whether the AI may pick it once the batch cards it depends
- * on are done. The full definition and the log are left to `get_card`.
+ * function's outputs, which hint at what the work touches, the questions
+ * still open, and whether the AI may pick it. The full definition and the log
+ * are left to `get_card`.
+ *
+ * `may_pick` is the API's rule for a pick from an agent session, given the
+ * open batches handed to the same AI, so a mode changed after the hand-over
+ * shows here. Once the batch is planned, that is exactly what `pick_card`
+ * meets now: a dependency in an earlier wave counts as met, one outside the
+ * batch must be done. Before a plan, the batch's other cards count as done,
+ * as when the batch was handed, because the plan is what will order them.
  */
 function batchCardView(detail: CardResponse, board: BoardResponse, batch: Batch, definitions: ReadonlyMap<string, FunctionFrontMatter>) {
+  const inBatch = batchCards(batch);
   const dependsOn = detail.card.links.filter((l) => l.relation === "depends_on").map((l) => l.card_id);
   const { mode, what_the_ai_does } = modeView(detail, board);
-  // The rule of a pick from an agent session, with the batch's other cards
-  // counted as done, as when the batch was handed: the plan orders those.
-  // A mode changed since the hand-over shows here as may_pick false.
-  const assumed = board.cards.map((c) => (c.id !== detail.card.id && batch.card_ids.includes(c.id) ? { ...c, status: { state: "done" as const } } : c));
-  const verdict = checkEligibility(detail.card, detail.log, definitions, board.teammates, assumed, SESSION_MODES);
+  const cards =
+    batch.plan === null
+      ? board.cards.map((c) => (c.id !== detail.card.id && inBatch.includes(c.id) ? { ...c, status: { state: "done" as const } } : c))
+      : board.cards;
+  const batches = board.batches.filter((b) => b.handed_to === batch.handed_to);
+  const verdict = checkEligibility(detail.card, detail.log, definitions, board.teammates, cards, SESSION_MODES, batches);
   return {
     id: detail.card.id,
     title: detail.card.title,
@@ -192,8 +202,8 @@ function batchCardView(detail: CardResponse, board: BoardResponse, batch: Batch,
     what_the_ai_does,
     may_pick: verdict.eligible,
     ...(verdict.eligible ? {} : { why_not: verdict.reason }),
-    depends_on_in_batch: dependsOn.filter((id) => batch.card_ids.includes(id)),
-    depends_on_outside: dependsOn.filter((id) => !batch.card_ids.includes(id)),
+    depends_on_in_batch: dependsOn.filter((id) => inBatch.includes(id)),
+    depends_on_outside: dependsOn.filter((id) => !inBatch.includes(id)),
     branch: branchForCard(detail.card) ?? null,
     open_questions: detail.questions.filter((q) => q.answer === undefined).map(questionView),
   };
@@ -203,7 +213,9 @@ function batchCardView(detail: CardResponse, board: BoardResponse, batch: Batch,
 function batchNext(batch: Batch, actingAs: string): string {
   if (batch.handed_to !== actingAs) return `Batch ${batch.id} was handed to ${batch.handed_to}, not ${actingAs}; leave it to that teammate.`;
   if (batch.state === "handed") return `Sort the cards into waves and post them with plan_batch (batch_id "${batch.id}").`;
-  if (batch.state === "planned") return "Work the plan wave by wave: pick each card of a wave with pick_card, one subagent per card, and start the next wave once the cards it depends on are done.";
+  if (batch.state === "planned") {
+    return "Work the plan wave by wave: pick each card of a wave with pick_card, one subagent per card. A card that depends on a card in an earlier wave may be picked once that card is worked; stack its branch on the earlier card's branch.";
+  }
   return `Every card of batch ${batch.id} is in review or done.`;
 }
 
@@ -352,7 +364,8 @@ export function createTools(deps: ToolDeps): Tools {
           batches: shown.map((b) => ({
             id: b.id,
             state: b.state,
-            card_ids: b.card_ids,
+            card_ids: batchCards(b),
+            released_card_ids: b.released_card_ids,
             handed_to: b.handed_to,
             handed_by: b.handed_by,
             handed_at: b.handed_at,
@@ -371,9 +384,14 @@ export function createTools(deps: ToolDeps): Tools {
         const [detail, board] = await Promise.all([client.batch(input.batch_id), client.board()]);
         const actingAs = await self(board);
         const definitions = new Map(detail.cards.flatMap((c) => (c.function ? [[c.function.name, c.function] as const] : [])));
+        // The API answers every card handed; a released card has left the batch, so it is listed apart and not planned.
+        const inBatch = new Set(batchCards(detail.batch));
         return ok({
           batch: detail.batch,
-          cards: detail.cards.map((c) => batchCardView(c, board, detail.batch, definitions)),
+          cards: detail.cards.filter((c) => inBatch.has(c.card.id)).map((c) => batchCardView(c, board, detail.batch, definitions)),
+          released: detail.cards
+            .filter((c) => !inBatch.has(c.card.id))
+            .map((c) => ({ id: c.card.id, title: c.card.title, state: c.card.status.state })),
           next: batchNext(detail.batch, actingAs),
         });
       }),
@@ -385,9 +403,7 @@ export function createTools(deps: ToolDeps): Tools {
           return ok({ batch: out.batch, next: batchNext(out.batch, out.batch.handed_to) });
         } catch (err) {
           if (err instanceof ApiRefusal && err.status === 409) {
-            // Card #16 adds the code already_planned for a batch that has a plan.
-            // The message test is a fallback for the API before that; remove it once #16's fix is merged.
-            const retry = err.code === "already_planned" || /already has a plan/.test(err.message)
+            const retry = err.code === "already_planned"
               ? "The batch keeps the plan it has; read it with get_batch and work it."
               : "Nothing was recorded. Fix the plan and call plan_batch again.";
             return fail(`The workbench refused this plan (HTTP 409 ${err.code}): ${err.message}. ${retry}`);
