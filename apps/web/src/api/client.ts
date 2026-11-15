@@ -17,6 +17,8 @@ import {
   type CardResponse,
   type LogFiltersResponse,
   type LogName,
+  type MoveStatusRequest,
+  type PickRequest,
   type SetLogFilterRequest,
   type SetModeRequest,
   type TeammateProfileResponse,
@@ -138,6 +140,22 @@ export async function answerQuestion(cardId: string, questionId: string, request
   const path = `/cards/${encodeURIComponent(cardId)}/questions/${encodeURIComponent(questionId)}/answer`;
   const parsed = writeResponse.safeParse(await postJson(path, request));
   if (!parsed.success) throw new ApiRequestError("bad_response", "the answer from the API does not match the shared schema");
+  return parsed.data;
+}
+
+/** `POST /api/cards/:id/status`: a person's status move, such as Backlog to Ready. `from` must be the card's current state. */
+export async function moveCard(cardId: string, request: MoveStatusRequest): Promise<WriteResponse> {
+  return parseWrite(await postJson(`/cards/${encodeURIComponent(cardId)}/status`, request), "the move");
+}
+
+/** `POST /api/cards/:id/pick`: move a Ready card to In progress in its owner's mode; `mode`, when given, must be that mode. */
+export async function pickCard(cardId: string, request: PickRequest): Promise<WriteResponse> {
+  return parseWrite(await postJson(`/cards/${encodeURIComponent(cardId)}/pick`, request), "the pick");
+}
+
+function parseWrite(body: unknown, what: string): WriteResponse {
+  const parsed = writeResponse.safeParse(body);
+  if (!parsed.success) throw new ApiRequestError("bad_response", `the answer to ${what} does not match the shared schema`);
   return parsed.data;
 }
 

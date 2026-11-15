@@ -1092,8 +1092,62 @@ a:hover {
 .detail__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+/* Top-aligned so the moves' hint can hang below the buttons; the indicator keeps the buttons' height to stay level with them. */
+.detail__actions > .connection {
+  min-height: 44px;
+}
+
+/* The card header's moves before work starts: move to Ready, back to Backlog, pick in a chosen mode. */
+.moves {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 100%;
+}
+.moves__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 8px;
+}
+.moves__mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.moves__mode select {
+  font: inherit;
+  font-size: 14px;
+  min-height: 44px;
+  padding: 8px 10px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.moves__hint,
+.moves__error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: right;
+}
+.moves__hint {
+  color: var(--muted);
+}
+/* Not --needs-input: that colour means a card waiting on someone, and a refused move is not that. */
+.moves__error {
+  font-weight: 600;
+  color: var(--fg);
+}
+.moves__mode select:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .btn {
