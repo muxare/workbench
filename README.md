@@ -19,6 +19,7 @@ The full plan is in `docs/plan.md`. The claude.ai project "Collabborating with A
 | `docs/decisions.md` | Decisions about the process model and the app, newest first. |
 | `docs/runs.md` | How a run is stored: artifact files, approvals, proposals. |
 | `docs/tutorial-pnpm-hono-sse.md` | Hands-on introduction to pnpm, Hono and server-sent events. |
+| `packages/dev/` | `pnpm wb`, which starts, stops and restarts the local development loop. |
 | `runs/` | One folder per feature run through the chain (from phase 2). |
 
 ## Status
@@ -43,6 +44,8 @@ pnpm install
 pnpm dev      # API on :3000, web on :5173 with /api proxied to the API
 pnpm check    # lint, typecheck, tests and the process validator
 ```
+
+To run the development loop on the workbench's own board, use `pnpm wb` instead of `pnpm dev`. It starts the API on `teams/workbench`, the webhook forwarder and the web board as detached processes, so they keep running after the terminal closes, and `pnpm wb restart api` picks up a merge without touching the others. `pnpm wb help` lists the commands, and `docs/dev-loop.md` explains the loop.
 
 ## Check the process files
 
