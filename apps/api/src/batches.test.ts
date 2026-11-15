@@ -269,6 +269,15 @@ describe("picking a card stacked on an earlier wave", () => {
     expect((await post(`/api/cards/${second}/pick`, { actor: AI })).status).toBe(200);
   });
 
+  it("refuses the later wave while its dependency in the earlier wave is still Ready, to the pick and the runner", async () => {
+    const { second } = await plannedBatch(({ first, second }) => [[first], [second]]);
+    await expectProblem(await post(`/api/cards/${second}/pick`, { actor: AI }), 409, "conflict", /which is not done/);
+    expect((await eligibleCards(db, undefined, AI)).find((e) => e.card.id === second)?.eligible).toBe(false);
+    const run = await post(`/api/teammates/${AI}/run`, {});
+    expect(run.status).toBe(200);
+    expect(((await run.json()) as { card: { id: string } }).card.id).not.toBe(second);
+  });
+
   it("still refuses it before the plan, to a person, and to the runner without the batch", async () => {
     const { second } = await plannedBatch();
     await expectProblem(await post(`/api/cards/${second}/pick`, { actor: AI }), 409, "conflict", /which is not done/);
@@ -307,6 +316,9 @@ describe("cards leaving a batch", () => {
     await post(`/api/cards/${b}/pick`, { actor: AI });
     await post(`/api/cards/${b}/status`, { actor: AI, from: "in_progress", to: { state: "review" } });
     expect(await getBatch(db, "1")).toMatchObject({ state: "finished", released_card_ids: [a] });
+    const detail = batchDetailResponse.parse(await (await app.request("/api/batches/1")).json());
+    expect(detail.cards.map((x) => x.card.id)).toEqual([b]);
+    expect(detail.batch.released_card_ids).toEqual([a]);
     await post(`/api/cards/${a}/status`, { actor: FE, from: "backlog", to: { state: "ready" } });
     expect((await hand([a, c])).status).toBe(201);
   });

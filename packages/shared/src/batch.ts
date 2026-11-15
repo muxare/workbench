@@ -55,6 +55,9 @@ export function batchCards(b: Batch): string[] {
   return b.card_ids.filter((id) => !released.has(id));
 }
 
+/** The states of a card someone has picked and not finished; a done dependency is met anyway. */
+const PICKED_STATES = new Set<string>(["in_progress", "needs_input", "review"]);
+
 /** The states in which a card no longer needs the batch: its work is in review or merged. */
 const FINISHED_CARD_STATES = new Set<string>(["review", "done"]);
 
@@ -122,19 +125,22 @@ export function deriveBatches(events: readonly StreamEvent[], cards: readonly Ca
  * in an open, planned batch in `batches` and the dependency is in an earlier
  * wave than `card`: its branch is worked first and `card`'s branch is stacked
  * on it, so the pull requests still merge in order and a person approves
- * each. A dependency in the same or a later wave, or outside the batch, must
- * be done. Pass only the batches handed to the teammate picking; with none,
- * this is `unfinishedDependencies`.
+ * each. Only a dependency that has been picked counts (In progress, Needs
+ * input or Review), so the later wave never starts before the earlier one;
+ * a Ready dependency still blocks. A dependency in the same or a later wave,
+ * or outside the batch, must be done. Pass only the batches handed to the
+ * teammate picking; with none, this is `unfinishedDependencies`.
  */
 export function unmetDependencies(card: Card, cards: readonly Card[], batches: readonly Batch[] = []): string[] {
   const met = new Set<string>();
+  const status = new Map(cards.map((c) => [c.id, c.status.state]));
   for (const b of openBatches(batches)) {
     if (b.plan === null) continue;
     const inBatch = new Set(batchCards(b));
     if (!inBatch.has(card.id)) continue;
     const wave = b.plan.waves.findIndex((w) => w.card_ids.includes(card.id));
     for (const earlier of b.plan.waves.slice(0, Math.max(wave, 0))) {
-      for (const id of earlier.card_ids) if (inBatch.has(id)) met.add(id);
+      for (const id of earlier.card_ids) if (inBatch.has(id) && PICKED_STATES.has(status.get(id) ?? "")) met.add(id);
     }
   }
   return unfinishedDependencies(card, cards).filter((id) => !met.has(id));

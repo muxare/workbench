@@ -138,6 +138,15 @@ describe("unmetDependencies", () => {
     expect(unmetDependencies(card("2", "ready", ["1"]), cards, batchOf([["1"], ["2", "3"]]))).toEqual([]);
   });
 
+  it("does not meet an earlier-wave dependency that nobody has picked yet", () => {
+    const notPicked = cards.map((c) => (c.id === "1" ? card("1") : c));
+    const batches = deriveBatches(
+      [handed("1", ["1", "2", "3"]), planned("1", [{ card_ids: ["1"], note: "n" }, { card_ids: ["2", "3"], note: "n" }])],
+      notPicked,
+    );
+    expect(unmetDependencies(card("2", "ready", ["1"]), notPicked, batches)).toEqual(["1"]);
+  });
+
   it("still needs a dependency in the same or a later wave, or outside the batch, to be done", () => {
     expect(unmetDependencies(card("2", "ready", ["1"]), cards, batchOf([["1", "2", "3"]]))).toEqual(["1"]);
     expect(unmetDependencies(card("2", "ready", ["1"]), cards, batchOf([["2", "3"], ["1"]]))).toEqual(["1"]);

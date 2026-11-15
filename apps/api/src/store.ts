@@ -237,13 +237,22 @@ const BATCH_TYPES: StreamEventType[] = ["batch_handed", "batch_planned", "status
 
 /**
  * Every event batches are derived from, in stream order; served by the
- * (type, seq) index. With no batch handed yet, there is nothing to derive, so
- * the status changes are not read.
+ * (type, seq) index. Only events from the first `batch_handed` on are read,
+ * since an earlier status change cannot affect a batch; with no batch handed
+ * yet, nothing is.
  */
 async function batchEvents(db: Db): Promise<StreamEvent[]> {
-  const [any] = await db.select({ seq: events.seq }).from(events).where(eq(events.type, "batch_handed")).limit(1);
-  if (!any) return [];
-  const rows = await db.select().from(events).where(inArray(events.type, BATCH_TYPES));
+  const [first] = await db
+    .select({ seq: events.seq })
+    .from(events)
+    .where(eq(events.type, "batch_handed"))
+    .orderBy(asc(events.seq))
+    .limit(1);
+  if (!first) return [];
+  const rows = await db
+    .select()
+    .from(events)
+    .where(and(inArray(events.type, BATCH_TYPES), gte(events.seq, first.seq)));
   return rows.sort((a, b) => a.seq - b.seq).map(fromRow);
 }
 

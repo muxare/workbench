@@ -330,7 +330,7 @@ export function createApp(deps: AppDeps) {
       const batch = await batchOr404(c.req.param("id"));
       const defs = definitions();
       const cards: CardResponse[] = [];
-      for (const id of batch.card_ids) cards.push(await cardDetail(await cardOr404(id), defs));
+      for (const id of batchCards(batch)) cards.push(await cardDetail(await cardOr404(id), defs));
       const response: BatchDetailResponse = { batch, cards };
       return c.json(response);
     })
