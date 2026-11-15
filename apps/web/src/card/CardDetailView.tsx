@@ -19,6 +19,7 @@ import {
   statusText,
   statusTone,
 } from "./cardDetail.ts";
+import { CardMoves } from "./CardMoves.tsx";
 import { answerFormId, OpenQuestion } from "./OpenQuestion.tsx";
 import { useCardDetail } from "./useCardDetail.ts";
 
@@ -123,6 +124,7 @@ function Detail({
           </div>
           <div className="detail__actions">
             <ConnectionIndicator connection={connection} />
+            <CardMoves detail={detail} board={board} onMoved={reload} />
             {resuming && (
               <button type="submit" form={answerFormId(resuming.question.id)} className="btn btn--primary">
                 Answer and resume
