@@ -20,7 +20,7 @@ The cards are chosen when the demo is cut on 2026-11-16 or 2026-11-17, not now, 
 
 ### Before the talk
 
-Rehearse on a copy, because a rehearsal works the real cards. Copy `teams/workbench/board.db` aside before the rehearsal and back after it, close the rehearsal's pull requests unmerged and delete their branches. Then, on the day, start the loop as in `docs/dev-loop.md` under "Running the loop locally" (`team:serve` and `gh webhook forward`), start the web app with `API_URL=http://localhost:3000`, and open a Claude Code session in the repository with the App's environment set (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH`). The critic only runs once `ANTHROPIC_API_KEY` is a repository secret (task 3 in `docs/next.md`).
+Rehearse on a copy, because a rehearsal works the real cards. Copy `teams/workbench/board.db` aside before the rehearsal and back after it, close the rehearsal's pull requests unmerged and delete their branches. Then, on the day, start the loop as in `docs/dev-loop.md` under "Running the loop locally" (`team:serve` and `gh webhook forward`), start the web app with `API_URL=http://localhost:3000`, and open a Claude Code session in the repository with the App's environment set (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH`). The critic only runs with the repository secret `ANTHROPIC_API_KEY`, added on 2026-11-15.
 
 ### The flow
 
