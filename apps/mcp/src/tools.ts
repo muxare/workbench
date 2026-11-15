@@ -14,23 +14,21 @@
 // to the AI at once. `list_batches` finds one, `get_batch` reads its cards
 // the way `get_card` shows a card, and `plan_batch` posts the waves the
 // session will work them in; the API checks the plan.
-//
-// `get_batch` says per card whether the AI may pick it, by the API's own
-// eligibility rule (apps/api/src/teammates/eligibility.ts), a pure function
-// over the card, its log, the definitions and the board; nothing here opens
-// the database.
-import { checkEligibility, SESSION_MODES } from "@workbench/api/src/teammates/eligibility.ts";
+// `get_batch` also says per card whether the AI may pick it, by the same
+// shared rule (`checkEligibility`) the API's pick uses.
 import {
   askRequest,
   batchCards,
   batchListState,
   branchForCard,
   cardIdFromBranch,
+  checkEligibility,
   cardStatus,
   ownerMode,
   planBatchRequest,
   pullRequestBodyLine,
   reportRequest,
+  SESSION_MODES,
   type Batch,
   type BoardResponse,
   type Card,
@@ -175,8 +173,8 @@ function modeView(detail: CardResponse, board: BoardResponse) {
  * `may_pick` is the API's rule for a pick from an agent session, given the
  * open batches handed to the same AI, so a mode changed after the hand-over
  * shows here. Once the batch is planned, that is exactly what `pick_card`
- * meets now: a dependency in an earlier wave counts as met, one outside the
- * batch must be done. Before a plan, the batch's other cards count as done,
+ * meets now: a dependency in an earlier wave counts as met once it is picked,
+ * one outside the batch must be done. Before a plan, the batch's other cards count as done,
  * as when the batch was handed, because the plan is what will order them.
  */
 function batchCardView(detail: CardResponse, board: BoardResponse, batch: Batch, definitions: ReadonlyMap<string, FunctionFrontMatter>) {
@@ -214,7 +212,7 @@ function batchNext(batch: Batch, actingAs: string): string {
   if (batch.handed_to !== actingAs) return `Batch ${batch.id} was handed to ${batch.handed_to}, not ${actingAs}; leave it to that teammate.`;
   if (batch.state === "handed") return `Sort the cards into waves and post them with plan_batch (batch_id "${batch.id}").`;
   if (batch.state === "planned") {
-    return "Work the plan wave by wave: pick each card of a wave with pick_card, one subagent per card. A card that depends on a card in an earlier wave may be picked once that card is worked; stack its branch on the earlier card's branch.";
+    return "Work the plan wave by wave: pick each card of a wave with pick_card, one subagent per card. A card that depends on a card in an earlier wave may be picked once that card is picked; stack its branch on the earlier card's branch.";
   }
   return `Every card of batch ${batch.id} is in review or done.`;
 }
@@ -384,14 +382,14 @@ export function createTools(deps: ToolDeps): Tools {
         const [detail, board] = await Promise.all([client.batch(input.batch_id), client.board()]);
         const actingAs = await self(board);
         const definitions = new Map(detail.cards.flatMap((c) => (c.function ? [[c.function.name, c.function] as const] : [])));
-        // The API answers every card handed; a released card has left the batch, so it is listed apart and not planned.
-        const inBatch = new Set(batchCards(detail.batch));
+        // The API answers only the cards still in the batch; a released card is listed apart, from the board, and is not planned.
         return ok({
           batch: detail.batch,
-          cards: detail.cards.filter((c) => inBatch.has(c.card.id)).map((c) => batchCardView(c, board, detail.batch, definitions)),
-          released: detail.cards
-            .filter((c) => !inBatch.has(c.card.id))
-            .map((c) => ({ id: c.card.id, title: c.card.title, state: c.card.status.state })),
+          cards: detail.cards.map((c) => batchCardView(c, board, detail.batch, definitions)),
+          released: detail.batch.released_card_ids.map((id) => {
+            const card = board.cards.find((c) => c.id === id);
+            return { id, title: card?.title ?? null, state: card?.status.state ?? null };
+          }),
           next: batchNext(detail.batch, actingAs),
         });
       }),
