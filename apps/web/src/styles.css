@@ -720,24 +720,29 @@ a:hover {
   flex-wrap: wrap;
   gap: 2px 6px;
 }
+/* At least 24px to hit; the column head's mono label, so it reads as part of the head. */
 .column__select {
+  margin-left: auto;
+  min-height: 24px;
   font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--delegate);
+  color: var(--muted);
   background: none;
   border: 1px solid transparent;
-  border-radius: 99px;
+  border-radius: 6px;
   padding: 2px 6px;
   cursor: pointer;
 }
 .column__select:hover {
-  border-color: var(--delegate);
+  color: var(--fg);
+  border-color: var(--line);
 }
 .column__select[aria-pressed="true"] {
-  background: var(--delegate-bg);
-  border-color: var(--delegate);
+  color: var(--fg);
+  background: var(--surface);
+  border-color: var(--line);
 }
 
 .column__empty {
@@ -810,16 +815,21 @@ a:hover {
   margin: 0;
   width: 16px;
   height: 16px;
-  accent-color: var(--delegate);
+  accent-color: var(--fg);
   cursor: pointer;
 }
-.card.is-ticked {
-  border-color: var(--delegate);
+/* While selecting, a tile that can be selected is the checkbox's label. */
+.card--pickable {
+  cursor: pointer;
+}
+.card.is-selected {
+  border-color: var(--fg);
 }
 
 /* Ticking Ready cards to hand to the AI as one batch: under the board head, above the columns. */
 .batch-bar {
-  background: var(--delegate-bg);
+  background: var(--bg);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 8px 10px;
   display: flex;
@@ -834,7 +844,7 @@ a:hover {
 }
 .batch-bar__count {
   font-size: 11px;
-  color: var(--delegate);
+  color: var(--fg);
 }
 .batch-bar__hint,
 .batch-bar__error {
@@ -1255,6 +1265,13 @@ a:hover {
   border-color: var(--fg);
   background: var(--fg);
   color: var(--surface);
+}
+/* A button inside the board: the board's 12px text, not the 44px form button. */
+.btn--compact {
+  font-size: 12px;
+  min-height: 30px;
+  padding: 5px 12px;
+  border-radius: 6px;
 }
 .btn:disabled {
   cursor: default;

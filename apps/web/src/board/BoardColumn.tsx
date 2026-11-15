@@ -7,7 +7,7 @@ import type { Column } from "./columns.ts";
 /** Done collapses to its first cards and a "+N more" toggle, as on the artboard. */
 const COLLAPSE_AFTER = 2;
 
-/** Ticking Ready cards for a batch: the board holds the state, the Ready column shows it. */
+/** Selecting Ready cards for a batch: the board holds the state, the Ready column shows it. */
 export interface BatchSelection {
   selecting: boolean;
   selected: readonly string[];
@@ -31,7 +31,7 @@ export function BoardColumn({ board, column, selection }: { board: BoardResponse
           {column.label} · {column.cards.length}
         </h3>
         {offerSelect && (
-          <button type="button" className="column__select" aria-pressed={batching.selecting} onClick={batching.onToggleSelecting}>
+          <button type="button" className="column__select" aria-pressed={batching.selecting} aria-label="Select Ready cards for a batch" onClick={batching.onToggleSelecting}>
             Select
           </button>
         )}

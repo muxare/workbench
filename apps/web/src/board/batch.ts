@@ -18,7 +18,7 @@ import {
   type Card,
 } from "@workbench/shared";
 import { modeLabel } from "./modes.ts";
-import { aiTeammate, cardRef, findTeammate, labelOf } from "./teammates.ts";
+import { cardRef, findTeammate, labelOf } from "./teammates.ts";
 
 /** The open batch a card is in, if any. A card released from a batch (`batchCards`) is in it no longer. */
 export function batchOf(cardId: string, board: BoardResponse): Batch | undefined {
@@ -51,7 +51,12 @@ export function batchChoice(card: Card, board: BoardResponse): BatchChoice {
   return { selectable: true };
 }
 
-/** The ids still selectable, in the order they were ticked; a card that moved or was handed meanwhile drops out. */
+/**
+ * The ids still selectable, in the order they were selected; a card that
+ * moved or was handed meanwhile drops out. The board applies it to its state
+ * each time the board changes, so a card that leaves Ready and comes back is
+ * not selected again on its own.
+ */
 export function keepSelectable(selected: readonly string[], board: BoardResponse): string[] {
   return selected.filter((id) => {
     const card = board.cards.find((c) => c.id === id);
@@ -59,32 +64,44 @@ export function keepSelectable(selected: readonly string[], board: BoardResponse
   });
 }
 
-/** Tick or untick one card, keeping the order the cards were ticked in. */
+/** Select or deselect one card, keeping the order the cards were selected in. */
 export function toggleSelected(selected: readonly string[], id: string): string[] {
   return selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id];
 }
 
-/** What the hand-over control offers for the cards ticked so far. */
-export type HandOver =
-  | { ready: false; hint: string }
-  | { ready: true; actor: string; handedTo: string; hint: string };
+/**
+ * How a tile behaves: it opens the card, or, while selecting and the card can
+ * be selected, the whole tile toggles its checkbox instead of following the link.
+ */
+export function tileAction(pick: { choice: BatchChoice } | undefined): "open" | "toggle" {
+  return pick?.choice.selectable ? "toggle" : "open";
+}
+
+/** What the hand-over control offers for the cards selected so far. */
+export type HandOver = { ready: false; hint: string } | { ready: true; actor: string; hint: string };
 
 /**
- * Whether the ticked cards can be handed to the AI, as whom and to whom.
+ * Whether the selected cards can be handed to the AI, and as whom.
  *
  * There is no sign-in yet, so the person handing over is the cards' owner, as
- * when a person moves or picks a card on its own screen (card #15). When the
- * cards have different owners, it is the owner of the first card ticked, and
- * the hint says so. The AI teammate is the team's first; the API takes the
- * only one when the team has one.
+ * when a person moves or picks a card on its own screen (card #15). Cards of
+ * different owners are refused here rather than recorded as one owner's act.
+ * The request names no AI teammate: the API takes the team's only one and
+ * refuses with its reason when there are several, so the hint names the AI
+ * only when there is exactly one.
  */
 export function handOver(selected: readonly string[], board: BoardResponse): HandOver {
   if (selected.length < 2) {
-    return { ready: false, hint: selected.length === 0 ? "Tick two or more Ready cards to hand them to the AI as one batch." : "Tick one more card: a batch has two or more." };
+    return {
+      ready: false,
+      hint: selected.length === 0 ? "Select two or more Ready cards to hand them to the AI as one batch." : "Select one more card: a batch has two or more.",
+    };
   }
-  const ai = aiTeammate(board);
-  if (!ai) return { ready: false, hint: "The team has no AI teammate to hand the cards to." };
+  const ais = board.teammates.filter((t) => t.kind === "ai");
+  if (ais.length === 0) return { ready: false, hint: "The team has no AI teammate to hand the cards to." };
   const cards = selected.map((id) => board.cards.find((c) => c.id === id)).filter((c): c is Card => c !== undefined);
+  const actor = cards[0]!.owner;
+  if (!cards.every((c) => c.owner === actor)) return { ready: false, hint: "Select cards of one owner, or hand them over separately." };
   const inBatch = new Set(selected);
   for (const c of cards) {
     const outside = unfinishedDependencies(c, board.cards).filter((id) => !inBatch.has(id));
@@ -92,12 +109,19 @@ export function handOver(selected: readonly string[], board: BoardResponse): Han
       return { ready: false, hint: `${cardRef(c.id)} waits on ${outside.map(cardRef).join(", ")}, which is not done and not in the batch.` };
     }
   }
-  const first = cards[0]!;
-  const actor = first.owner;
   const refs = cards.map((c) => cardRef(c.id)).join(", ");
-  const as = labelOf(board, actor);
-  const hint = cards.every((c) => c.owner === actor)
-    ? `Hands ${refs} to ${labelOf(board, ai.id)} as ${as}, their owner.`
-    : `Hands ${refs} to ${labelOf(board, ai.id)} as ${as}, owner of ${cardRef(first.id)}, the first card ticked.`;
-  return { ready: true, actor, handedTo: ai.id, hint };
+  const to = ais.length === 1 ? labelOf(board, ais[0]!.id) : "the AI";
+  return { ready: true, actor, hint: `Hands ${refs} to ${to} as ${labelOf(board, actor)}, their owner.` };
+}
+
+/** An API refusal as the bar shows it: each card id the reason names, as the board names it ("#160"). */
+export function refusalText(reason: string, board: BoardResponse): string {
+  let text = reason;
+  for (const c of [...board.cards].sort((a, b) => b.id.length - a.id.length)) {
+    const ref = cardRef(c.id);
+    if (ref === c.id) continue;
+    const escaped = c.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    text = text.replace(new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`, "g"), ref);
+  }
+  return text;
 }

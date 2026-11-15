@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Batch, BoardResponse } from "@workbench/shared";
-import { batchChoice, batchMarker, handOver, keepSelectable, toggleSelected } from "./batch.ts";
+import { batchChoice, batchMarker, handOver, keepSelectable, refusalText, tileAction, toggleSelected } from "./batch.ts";
 import { AI, BE, card, PO, testBoard, UX } from "./testBoard.ts";
 
 // Invented data: no real client, project or person.
@@ -63,7 +63,7 @@ describe("batchChoice", () => {
 });
 
 describe("toggleSelected and keepSelectable", () => {
-  it("ticks and unticks in the order the cards were ticked", () => {
+  it("selects and deselects in the order the cards were selected", () => {
     expect(toggleSelected([], "c-161")).toEqual(["c-161"]);
     expect(toggleSelected(["c-161"], "c-160")).toEqual(["c-161", "c-160"]);
     expect(toggleSelected(["c-161", "c-160"], "c-161")).toEqual(["c-160"]);
@@ -73,42 +73,66 @@ describe("toggleSelected and keepSelectable", () => {
     const board = batchBoard({ batches: [batch({ card_ids: ["c-162", "c-152"] })] });
     expect(keepSelectable(["c-160", "c-162", "c-165", "c-999"], board)).toEqual(["c-160"]);
   });
+
+  it("does not select a card again when it leaves Ready and comes back", () => {
+    const base = batchBoard();
+    const moved = (state: "backlog" | "ready") => ({ ...base, cards: base.cards.map((c) => (c.id === "c-160" ? { ...c, status: { state } } : c)) });
+    // The board applies keepSelectable to its state on each new board, so the pruned list is what it keeps.
+    const afterBacklog = keepSelectable(["c-160", "c-161"], moved("backlog"));
+    expect(afterBacklog).toEqual(["c-161"]);
+    expect(keepSelectable(afterBacklog, moved("ready"))).toEqual(["c-161"]);
+  });
+});
+
+describe("tileAction", () => {
+  it("opens the card unless it is selecting a card that can be selected", () => {
+    expect(tileAction(undefined)).toBe("open");
+    expect(tileAction({ choice: { selectable: false, reason: "Not in Ready" } })).toBe("open");
+    expect(tileAction({ choice: { selectable: true } })).toBe("toggle");
+  });
 });
 
 describe("handOver", () => {
   const board = batchBoard();
 
   it("needs two or more cards", () => {
-    expect(handOver([], board)).toEqual({ ready: false, hint: "Tick two or more Ready cards to hand them to the AI as one batch." });
-    expect(handOver(["c-160"], board)).toEqual({ ready: false, hint: "Tick one more card: a batch has two or more." });
+    expect(handOver([], board)).toEqual({ ready: false, hint: "Select two or more Ready cards to hand them to the AI as one batch." });
+    expect(handOver(["c-160"], board)).toEqual({ ready: false, hint: "Select one more card: a batch has two or more." });
   });
 
-  it("hands the cards over as their owner when they share one", () => {
-    expect(handOver(["c-160", "c-161"], board)).toEqual({
-      ready: true,
-      actor: UX,
-      handedTo: AI,
-      hint: "Hands #160, #161 to AI as UX, their owner.",
-    });
+  it("hands the cards over as their owner, naming the team's only AI teammate", () => {
+    expect(handOver(["c-160", "c-161"], board)).toEqual({ ready: true, actor: UX, hint: "Hands #160, #161 to AI as UX, their owner." });
   });
 
-  it("hands mixed owners' cards over as the owner of the first card ticked, and says so", () => {
-    expect(handOver(["c-162", "c-160"], board)).toEqual({
-      ready: true,
-      actor: PO,
-      handedTo: AI,
-      hint: "Hands #162, #160 to AI as PO, owner of #162, the first card ticked.",
-    });
+  it("does not name an AI teammate when there are several; the API refuses with its reason", () => {
+    const two = batchBoard({ teammates: [...testBoard().teammates, { kind: "ai", id: "t-ai-2", name: "Second AI (invented)" }] });
+    expect(handOver(["c-160", "c-161"], two)).toEqual({ ready: true, actor: UX, hint: "Hands #160, #161 to the AI as UX, their owner." });
+  });
+
+  it("refuses cards of different owners", () => {
+    expect(handOver(["c-162", "c-160"], board)).toEqual({ ready: false, hint: "Select cards of one owner, or hand them over separately." });
   });
 
   it("counts a dependency inside the batch as covered, and refuses one outside it that is not done", () => {
-    expect(handOver(["c-161", "c-162"], board)).toEqual({ ready: false, hint: "#161 waits on #160, which is not done and not in the batch." });
-    expect(handOver(["c-152", "c-160"], board)).toEqual({ ready: false, hint: "#152 waits on #151, which is not done and not in the batch." });
+    const shared = batchBoard({ cards: batchBoard().cards.map((c) => (c.id === "c-152" || c.id === "c-162" ? { ...c, owner: UX } : c)) });
+    expect(handOver(["c-161", "c-162"], shared)).toEqual({ ready: false, hint: "#161 waits on #160, which is not done and not in the batch." });
+    expect(handOver(["c-152", "c-160"], shared)).toEqual({ ready: false, hint: "#152 waits on #151, which is not done and not in the batch." });
   });
 
   it("needs an AI teammate to hand the cards to", () => {
     const noAi = batchBoard({ teammates: testBoard().teammates.filter((t) => t.kind !== "ai") });
     expect(handOver(["c-160", "c-161"], noAi)).toEqual({ ready: false, hint: "The team has no AI teammate to hand the cards to." });
+  });
+});
+
+describe("refusalText", () => {
+  it("names the cards in an API reason as the board does", () => {
+    const board = batchBoard();
+    expect(refusalText("t-ai may not pick c-163: in fix_bug/manual, asks is 'none'", board)).toBe(
+      "t-ai may not pick #163: in fix_bug/manual, asks is 'none'",
+    );
+    expect(refusalText("c-160 is already in batch 2, which is not finished", board)).toBe("#160 is already in batch 2, which is not finished");
+    expect(refusalText("no card 'c-999'", board)).toBe("no card 'c-999'");
   });
 });
 

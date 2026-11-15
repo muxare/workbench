@@ -11,7 +11,7 @@ import { CycleLog } from "./CycleLog.tsx";
 
 /**
  * The board panel: header with the current cycle and milestone progress, six
- * columns, the cycle log. "Select" on the Ready column starts ticking cards
+ * columns, the cycle log. "Select" on the Ready column starts selecting cards
  * for a batch; the batch bar then sits between the header and the columns.
  */
 export function Board({
@@ -27,18 +27,23 @@ export function Board({
 }) {
   const progress = milestoneProgress(board.cards);
   const [selecting, setSelecting] = useState(false);
-  const [ticked, setTicked] = useState<string[]>([]);
-  // A card that left Ready or joined a batch since it was ticked drops out.
-  const selected = keepSelectable(ticked, board);
+  const [selected, setSelected] = useState<string[]>([]);
+  // Each new board drops the selected cards that left Ready or joined a batch,
+  // so a card that leaves and comes back is not selected again on its own.
+  const [seenBoard, setSeenBoard] = useState(board);
+  if (seenBoard !== board) {
+    setSeenBoard(board);
+    setSelected(keepSelectable(selected, board));
+  }
   const stop = () => {
     setSelecting(false);
-    setTicked([]);
+    setSelected([]);
   };
   const selection: BatchSelection = {
     selecting,
     selected,
     onToggleSelecting: () => (selecting ? stop() : setSelecting(true)),
-    onToggle: (id) => setTicked(toggleSelected(selected, id)),
+    onToggle: (id) => setSelected(toggleSelected(selected, id)),
   };
 
   return (
