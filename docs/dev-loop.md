@@ -75,6 +75,8 @@ The server was built on 2026-11-11 in `apps/mcp` and is registered for Claude Co
 
 ## Running the loop locally
 
+`pnpm wb` runs the commands below for you, and it is the usual way to start the loop since 2026-11-15. `pnpm wb start` starts the API, the forwarder and the web board in that order, each as a detached process that keeps running after the terminal or Claude Code session that started it has closed. Each one runs only once its health check or port answers. `pnpm wb restart api` is the step to take after pulling a merge. It leaves the forwarder running and says how long the API was down, because a delivery in that window is lost. `pnpm wb stop` stops a service's whole process group and then clears anything else still listening on its port, such as a server started by hand or left over from an earlier session. `pnpm wb status` shows what runs and whether the forwarder's hook exists on GitHub, and `pnpm wb logs api -f` follows a log. PIDs and logs are kept in `.run/` at the repository root, which git ignores. The commands live in one table, `packages/dev/src/services.ts`, which has to change whenever the commands below change. What follows is what that table runs, for running the loop by hand.
+
 The loop needs two processes on Mikael's machine, started in this order from the repository root: the API on the workbench's board, then the forwarder that carries GitHub's webhooks to it. The board itself must exist first; `team:start teams/workbench` makes `teams/workbench/board.db` once.
 
 ```sh

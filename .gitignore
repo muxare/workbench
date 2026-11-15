@@ -22,3 +22,6 @@ apps/api/data/
 
 # A real team's board (pnpm --filter @workbench/api team:start teams/<team>)
 teams/*/board.db*
+
+# PIDs and logs of the services pnpm wb runs
+.run/

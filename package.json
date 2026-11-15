@@ -13,6 +13,7 @@
     "test": "pnpm -r test",
     "lint": "eslint .",
     "validate": "node packages/shared/src/validateFunctionsCli.ts",
+    "wb": "node packages/dev/src/wbCli.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm validate"
   },
   "devDependencies": {

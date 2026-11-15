@@ -1,0 +1,9 @@
+{
+  "name": "@workbench/dev",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  }
+}
