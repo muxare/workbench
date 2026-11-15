@@ -26,10 +26,12 @@ export function BoardView({
   board,
   connection,
   onFilterChanged,
+  onBatchHanded,
 }: {
   board: BoardResponse;
   connection: BoardConnection;
   onFilterChanged?: (() => void) | undefined;
+  onBatchHanded?: (() => void) | undefined;
 }) {
   const seats = placeTeammates(board.teammates);
   return (
@@ -48,7 +50,7 @@ export function BoardView({
         <Group board={board} side="top" teammates={seats.top} />
         <Group board={board} side="left" teammates={seats.left} />
         <div className="stage__board">
-          <Board board={board} connection={connection} onFilterChanged={onFilterChanged} />
+          <Board board={board} connection={connection} onFilterChanged={onFilterChanged} onBatchHanded={onBatchHanded} />
         </div>
         <Group board={board} side="right" teammates={seats.right} />
         <Group board={board} side="bottom" teammates={seats.bottom} />

@@ -10,7 +10,11 @@
 // way, so a filter changed in another browser applies here as soon as it
 // streams in. The filter only decides what a log shows; the log kept here
 // holds every event, hidden or not. A `team_named` event renames the board at
-// once. A streamed event whose time falls in the
+// once. A `batch_handed` event adds its batch to the open batches at once and
+// a `batch_planned` event adds the plan, so the batch markers follow without a
+// refetch. As in `deriveBatches`, a card handed in a new batch or moved back
+// to Backlog is released from the batch it was in; a batch's `finished` state depends on card status, which the
+// refetch brings. A streamed event whose time falls in the
 // current cycle's window joins the cycle log too; which cycle is current is
 // the server's call, so a refetch brings a new cycle when one starts.
 import { inCycle, streamEvent, type BoardResponse, type StreamEvent } from "@workbench/shared";
@@ -74,6 +78,42 @@ function applyToFilters(filters: BoardResponse["log_filters"], e: StreamEvent): 
   return { ...filters, [e.log]: e.hidden };
 }
 
+/** The open batches with a `batch_handed` or `batch_planned` event applied, as `deriveBatches` derives them. */
+function applyToBatches(batches: BoardResponse["batches"], e: StreamEvent): BoardResponse["batches"] {
+  const release = (list: BoardResponse["batches"], ids: readonly string[]) =>
+    list.map((b) => {
+      const add = ids.filter((id) => b.card_ids.includes(id) && !b.released_card_ids.includes(id));
+      return add.length === 0 ? b : { ...b, released_card_ids: [...b.released_card_ids, ...add] };
+    });
+  if (e.type === "status_changed") return e.to.state === "backlog" ? release(batches, [e.card_id]) : batches;
+  if (e.type === "batch_handed") {
+    if (batches.some((b) => b.id === e.batch_id)) return batches;
+    return [
+      ...release(batches, e.card_ids),
+      {
+        id: e.batch_id,
+        card_ids: [...e.card_ids],
+        released_card_ids: [],
+        handed_to: e.handed_to,
+        handed_by: e.actor,
+        handed_at: e.at,
+        state: "handed",
+        plan: null,
+      },
+    ];
+  }
+  if (e.type !== "batch_planned") return batches;
+  return batches.map((b) =>
+    b.id === e.batch_id && b.plan === null
+      ? {
+          ...b,
+          state: b.state === "finished" ? b.state : "planned",
+          plan: { waves: e.waves.map((w) => ({ card_ids: [...w.card_ids], note: w.note })), planned_by: e.actor, planned_at: e.at },
+        }
+      : b,
+  );
+}
+
 /** The cycle with the event added to its log, if its time falls in the window. */
 function appendToCycle(current: BoardResponse["cycle"], e: StreamEvent): BoardResponse["cycle"] {
   if (current === null || !inCycle(current.cycle, e.at) || current.log.some((x) => x.id === e.id)) return current;
@@ -89,6 +129,7 @@ function appendToBoard(board: BoardResponse, live: LiveEvent): BoardResponse {
     teammates: applyToTeammates(board.teammates, live.event),
     log_filters: applyToFilters(board.log_filters, live.event),
     team: live.event.type === "team_named" ? live.event.to : board.team,
+    batches: applyToBatches(board.batches, live.event),
     log: log.slice(-BOARD_LOG_LIMIT),
     cycle: appendToCycle(board.cycle, live.event),
     last_seq: live.seq,

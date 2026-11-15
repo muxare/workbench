@@ -712,6 +712,34 @@ a:hover {
   color: var(--needs-input);
 }
 
+/* The column head and, on Ready, the "Select" toggle that starts ticking cards for a batch. */
+.column__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+}
+.column__select {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--delegate);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 99px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.column__select:hover {
+  border-color: var(--delegate);
+}
+.column__select[aria-pressed="true"] {
+  background: var(--delegate-bg);
+  border-color: var(--delegate);
+}
+
 .column__empty {
   margin: 0;
   padding: 2px;
@@ -765,6 +793,67 @@ a:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+}
+
+/* The tile's first line: the id and function, and the batch tick on a Ready card while selecting. */
+.card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6px;
+}
+/* Above the title link, which covers the tile. */
+.card__tick {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--delegate);
+  cursor: pointer;
+}
+.card.is-ticked {
+  border-color: var(--delegate);
+}
+
+/* Ticking Ready cards to hand to the AI as one batch: under the board head, above the columns. */
+.batch-bar {
+  background: var(--delegate-bg);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.batch-bar__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.batch-bar__count {
+  font-size: 11px;
+  color: var(--delegate);
+}
+.batch-bar__hint,
+.batch-bar__error {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.batch-bar__hint {
+  flex: 1 1 240px;
+  color: var(--muted);
+}
+/* As .moves__error: a refused hand-over is not a card waiting on someone, so not --needs-input. */
+.batch-bar__error {
+  font-weight: 600;
+  color: var(--fg);
+}
+.batch-bar__actions {
+  display: flex;
+  gap: 8px;
 }
 
 .card__note {

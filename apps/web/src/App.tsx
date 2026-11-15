@@ -72,5 +72,5 @@ export function App() {
   if (route.view === "card") {
     return <CardDetailView cardId={route.cardId} board={state.board} connection={state.connection} onFilterChanged={state.refresh} />;
   }
-  return <BoardView board={state.board} connection={state.connection} onFilterChanged={state.refresh} />;
+  return <BoardView board={state.board} connection={state.connection} onFilterChanged={state.refresh} onBatchHanded={state.refresh} />;
 }

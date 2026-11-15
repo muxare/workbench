@@ -1,6 +1,7 @@
 // Log lines as the board and card detail show them, and the cycle log under
 // the board: one line per event, newest first. Events about a card, a
-// teammate (a mode or roles change) and the team (a filter, critic gate or name change) share it. It shows
+// teammate (a mode or roles change) and the team (a filter, critic gate or name change, a batch handed
+// to the AI or its plan) share it. It shows
 // the current cycle's log (`board.cycle`), so the cycle log's filter applies.
 import { shownInLog, type BoardResponse, type Cycle, type LogName, type StreamEvent } from "@workbench/shared";
 import { columnLabel } from "./columns.ts";
@@ -41,6 +42,13 @@ export function describeEvent(e: StreamEvent, board: BoardResponse): string {
   if (e.type === "team_named") {
     const now = e.to.headline === undefined ? `'${e.to.name}'` : `'${e.to.name}', headline '${e.to.headline}'`;
     return e.from === null ? `${who} named the team ${now}` : `${who} renamed the team ${now} · was: '${e.from.name}'`;
+  }
+  if (e.type === "batch_handed") {
+    return `${who} handed ${e.card_ids.map(cardRef).join(", ")} to ${labelOf(board, e.handed_to)} as batch ${e.batch_id}`;
+  }
+  if (e.type === "batch_planned") {
+    const waves = e.waves.length === 1 ? "1 wave" : `${String(e.waves.length)} waves`;
+    return `${who} planned batch ${e.batch_id} in ${waves}`;
   }
   const card = cardRef(e.card_id);
   switch (e.type) {
