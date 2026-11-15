@@ -23,6 +23,86 @@
       "owner": "mikael",
       "milestone": "Development loop, stage 2",
       "links": []
+    },
+    {
+      "id": "6",
+      "title": "The AI teammate's board panel lists under \"Now\" cards it only assists on or that wait on a person; list only the cards it is working",
+      "function_id": "fix_bug",
+      "owner": "mikael",
+      "milestone": "Board, after the first runs",
+      "links": []
+    },
+    {
+      "id": "14",
+      "title": "Cards in a column are ordered by id as text, so #10 comes before #6; order them by number",
+      "function_id": "fix_bug",
+      "owner": "mikael",
+      "milestone": "Board, after the first runs",
+      "links": []
+    },
+    {
+      "id": "7",
+      "title": "Show each function's critic gate on the person's profile, and let them turn it on or off there",
+      "function_id": "implement_interactions",
+      "owner": "mikael",
+      "milestone": "Board, after the first runs",
+      "links": []
+    },
+    {
+      "id": "8",
+      "title": "Show on the AI teammate's profile which cards it picked in delegate, where it writes and a person verifies",
+      "function_id": "implement_interactions",
+      "owner": "mikael",
+      "milestone": "Board, after the first runs",
+      "links": []
+    },
+    {
+      "id": "9",
+      "title": "Frame how a person learns that a card waits on them when they are not looking at the board",
+      "function_id": "frame_problem",
+      "owner": "mikael",
+      "milestone": "Hosted workbench",
+      "links": []
+    },
+    {
+      "id": "10",
+      "title": "Define sign-in with GitHub for the hosted workbench: the routes, the session, and how every request names its person and team",
+      "function_id": "define_api_contract",
+      "owner": "mikael",
+      "milestone": "Hosted workbench",
+      "links": []
+    },
+    {
+      "id": "11",
+      "title": "Build sign-in with GitHub in apps/api to the contract on #10",
+      "function_id": "implement_services",
+      "owner": "mikael",
+      "milestone": "Hosted workbench",
+      "links": [{ "relation": "depends_on", "card_id": "10" }]
+    },
+    {
+      "id": "12",
+      "title": "Package the API and the built board as one container image that runs the migrations before it serves",
+      "function_id": "implement_services",
+      "owner": "mikael",
+      "milestone": "Hosted workbench",
+      "links": []
+    },
+    {
+      "id": "13",
+      "title": "Break the move to Azure into cards: hosted libSQL, the image, a deploy workflow on merge to main, and the App's webhook address",
+      "function_id": "write_issues",
+      "owner": "mikael",
+      "milestone": "Hosted workbench",
+      "links": []
+    },
+    {
+      "id": "15",
+      "title": "Let a person move a card to Ready and pick it themselves from the card screen, in the mode they choose",
+      "function_id": "implement_interactions",
+      "owner": "mikael",
+      "milestone": "Board, after the first runs",
+      "links": []
     }
   ]
 }

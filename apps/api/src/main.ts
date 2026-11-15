@@ -1,14 +1,15 @@
 import { mkdirSync } from "node:fs";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
-import { defaultDatabaseUrl, openDb } from "./db/client.ts";
+import { defaultDatabaseUrl, fallbackDatabaseUrl, openDb } from "./db/client.ts";
 import { parseGithubLogins } from "./github/logins.ts";
 import { loadFunctionIds } from "./process.ts";
 import { stubProvider } from "./teammates/stubProvider.ts";
 import { startTeammateTimer, timerInterval } from "./teammates/timer.ts";
 
-if (defaultDatabaseUrl === "file:data/workbench.db") mkdirSync("data", { recursive: true });
-const db = await openDb(defaultDatabaseUrl);
+const databaseUrl = defaultDatabaseUrl();
+if (databaseUrl === fallbackDatabaseUrl) mkdirSync("data", { recursive: true });
+const db = await openDb(databaseUrl);
 // Off by default: set TEAMMATE_INTERVAL_MS (at least 1000) to let the AI
 // teammate TEAMMATE_ID (default invented-ai) take a step on its own.
 const intervalMs = timerInterval(process.env.TEAMMATE_INTERVAL_MS);
