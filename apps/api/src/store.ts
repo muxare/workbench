@@ -9,22 +9,31 @@
 // the team's log filters from the `log_filter_changed` events, and each
 // function's critic gate from the `critic_gate_changed` events, and the
 // team's name from the `team_named` events, in the same way. The filters are a view setting: no query here applies them.
+// Batches of cards handed to the AI are derived from the `batch_handed` and
+// `batch_planned` events and the statuses of their cards.
 import { and, asc, desc, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   card as cardSchema,
   cardEvent,
+  checkPlan,
   cycle as cycleSchema,
+  deriveBatches,
   deriveCriticGates,
   deriveLogFilters,
   deriveProfile,
   deriveRoles,
   deriveTeamName,
   humanTeammate,
+  nextBatchId,
+  openBatches,
   sameEventTypes,
   sameRoles,
   sameTeamName,
   streamEvent,
   teammate as teammateSchema,
+  type Batch,
+  type BatchHandedEvent,
+  type BatchPlannedEvent,
   type Card,
   type CardEvent,
   type CriticGateChangedEvent,
@@ -214,6 +223,80 @@ interface Pending {
   gates: Map<string, boolean>;
   /** What an earlier event in the write set named the team; undefined when none did. */
   team?: TeamName | null;
+  /** The `batch_handed` and `batch_planned` events earlier in the write set. */
+  batches: (BatchHandedEvent | BatchPlannedEvent)[];
+}
+
+const BATCH_TYPES: StreamEventType[] = ["batch_handed", "batch_planned"];
+
+/** Every `batch_handed` and `batch_planned` event, in stream order; served by the (type, seq) index. */
+async function batchEvents(db: Db): Promise<StreamEvent[]> {
+  const rows = await db.select().from(events).where(inArray(events.type, BATCH_TYPES));
+  return rows.sort((a, b) => a.seq - b.seq).map(fromRow);
+}
+
+/** Every batch, in the order it was handed, with its state derived from its cards' statuses now. */
+export async function listBatches(db: Db): Promise<Batch[]> {
+  return deriveBatches(await batchEvents(db), await listCards(db));
+}
+
+/** One batch, or undefined when no batch has that id. */
+export async function getBatch(db: Db, batchId: string): Promise<Batch | undefined> {
+  return (await listBatches(db)).find((b) => b.id === batchId);
+}
+
+/** The batches and cards as they stand after the earlier events of the write, for checking the next one. */
+async function batchesWithPending(db: Db, pending: Pending): Promise<{ batches: Batch[]; cards: Card[] }> {
+  const cards = (await listCards(db)).map((c) => ({ ...c, status: pending.statuses.get(c.id) ?? c.status }));
+  return { batches: deriveBatches([...(await batchEvents(db)), ...pending.batches], cards), cards };
+}
+
+/**
+ * A batch is handed by a person, to an AI teammate, under an id no batch has,
+ * and holds only cards that exist, are Ready, and are in no open batch, so a
+ * card is worked by one batch at a time. Whether the AI may pick each card
+ * under its owner's mode is the API's check (teammates/eligibility.ts), as
+ * for a pick.
+ */
+async function checkBatchHanded(db: Db, event: BatchHandedEvent, pending: Pending): Promise<void> {
+  const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
+  if (!actor) throw new StoreError(`${event.id}: no teammate '${event.actor}'`, "not_found");
+  if (actor.kind !== "human") throw new StoreError(`${event.id}: a batch is handed over by a person, not ${event.actor}`, "forbidden");
+  const [to] = await db.select().from(teammates).where(eq(teammates.id, event.handed_to));
+  if (to?.kind !== "ai") throw new StoreError(`${event.id}: a batch is handed to an AI teammate, and ${event.handed_to} is not one`);
+  const { batches, cards } = await batchesWithPending(db, pending);
+  if (batches.some((b) => b.id === event.batch_id)) {
+    throw new StoreError(`${event.id}: there is already a batch ${event.batch_id}`, "conflict");
+  }
+  const open = openBatches(batches);
+  for (const id of event.card_ids) {
+    const card = cards.find((c) => c.id === id);
+    if (!card) throw new StoreError(`${event.id}: no card '${id}'`, "not_found");
+    if (card.status.state !== "ready") {
+      throw new StoreError(`${event.id}: ${id} is ${card.status.state}; only Ready cards are handed over`, "conflict");
+    }
+    const holder = open.find((b) => b.card_ids.includes(id));
+    if (holder) throw new StoreError(`${event.id}: ${id} is already in batch ${holder.id}, which is not finished`, "conflict");
+  }
+  pending.batches.push(event);
+}
+
+/**
+ * A batch's plan is posted by the AI teammate it was handed to, once, and
+ * must pass `checkPlan`: every card of the batch in exactly one wave, and a
+ * card in a later wave than every card of the batch it depends on.
+ */
+async function checkBatchPlanned(db: Db, event: BatchPlannedEvent, pending: Pending): Promise<void> {
+  const { batches, cards } = await batchesWithPending(db, pending);
+  const batch = batches.find((b) => b.id === event.batch_id);
+  if (!batch) throw new StoreError(`${event.id}: no batch '${event.batch_id}'`, "not_found");
+  if (event.actor !== batch.handed_to) {
+    throw new StoreError(`${event.id}: batch ${batch.id} was handed to ${batch.handed_to}, so ${event.actor} may not plan it`, "forbidden");
+  }
+  if (batch.plan !== null) throw new StoreError(`${event.id}: batch ${batch.id} already has a plan`, "conflict");
+  const verdict = checkPlan(batch.card_ids, event.waves, cards);
+  if (!verdict.ok) throw new StoreError(`${event.id}: the plan for batch ${batch.id} is not valid: ${verdict.reason}`, "conflict");
+  pending.batches.push(event);
 }
 
 /**
@@ -338,8 +421,9 @@ async function checkTeamNamed(db: Db, event: TeamNamedEvent, pending: Pending): 
  * `from` must be the card's current state; an answer must come from a human,
  * because in every protocol `decides` is human; a mode change must pass
  * `checkModeChange`, a roles change `checkRolesChange`, a filter change
- * `checkLogFilterChange`, a critic gate change `checkCriticGateChange`, and a
- * team name change `checkTeamNamed`.
+ * `checkLogFilterChange`, a critic gate change `checkCriticGateChange`, a
+ * team name change `checkTeamNamed`, a handed batch `checkBatchHanded` and a
+ * batch's plan `checkBatchPlanned`.
  * `pending` holds what earlier events in the same write have changed.
  */
 async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise<StreamEvent> {
@@ -356,6 +440,8 @@ async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise
   if (event.type === "log_filter_changed") await checkLogFilterChange(db, event, pending);
   if (event.type === "critic_gate_changed") await checkCriticGateChange(db, event, pending);
   if (event.type === "team_named") await checkTeamNamed(db, event, pending);
+  if (event.type === "batch_handed") await checkBatchHanded(db, event, pending);
+  if (event.type === "batch_planned") await checkBatchPlanned(db, event, pending);
   if (event.type === "answered") {
     const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
     if (actor?.kind !== "human") {
@@ -420,27 +506,50 @@ export function onAppend(db: Db, listener: Listener): () => void {
  * Returns them with their positions in the stream.
  */
 export function appendEvents(db: Db, inputs: readonly StreamEvent[]): Promise<StoredEvent[]> {
+  return serialized(db, () => appendNow(db, inputs));
+}
+
+/**
+ * Hand cards to an AI teammate as the next batch: one `batch_handed` event
+ * under the next plain-number batch id (`nextBatchId`). The id is read from
+ * the stream and the event appended inside one serialized write, so two
+ * batches handed at the same time in this process cannot take the same id.
+ * Across processes on one file, a second writer that read the same id is
+ * refused by `checkBatchHanded` ("there is already a batch"). Answers with
+ * the stored event.
+ */
+export function handBatch(
+  db: Db,
+  input: { id: string; actor: string; at: string; card_ids: string[]; handed_to: string },
+): Promise<BatchHandedEvent> {
   return serialized(db, async () => {
-    if (inputs.length === 0) return [];
-    const pending: Pending = { statuses: new Map(), modes: new Map(), roles: new Map(), filters: new Map(), gates: new Map() };
-    const checked: StreamEvent[] = [];
-    for (const input of inputs) checked.push(await checkEvent(db, input, pending));
-    // One multi-row INSERT is one statement, so SQLite stores all rows or none.
-    const inserted = await db.insert(events).values(checked.map(toRow)).returning({ seq: events.seq, id: events.id });
-    const seqById = new Map(inserted.map((r) => [r.id, r.seq]));
-    const stored = checked.map((event) => ({ seq: seqById.get(event.id) ?? 0, event }));
-    // The events are stored by now; a failing listener must not fail the write.
-    for (const s of stored) {
-      for (const listener of listeners.get(db) ?? []) {
-        try {
-          listener(s);
-        } catch (err) {
-          console.error("onAppend listener failed", err);
-        }
+    const event: BatchHandedEvent = { ...input, type: "batch_handed", batch_id: nextBatchId(await batchEvents(db)) };
+    await appendNow(db, [event]);
+    return event;
+  });
+}
+
+/** `appendEvents` without the queue; only for work already inside `serialized`. */
+async function appendNow(db: Db, inputs: readonly StreamEvent[]): Promise<StoredEvent[]> {
+  if (inputs.length === 0) return [];
+  const pending: Pending = { statuses: new Map(), modes: new Map(), roles: new Map(), filters: new Map(), gates: new Map(), batches: [] };
+  const checked: StreamEvent[] = [];
+  for (const input of inputs) checked.push(await checkEvent(db, input, pending));
+  // One multi-row INSERT is one statement, so SQLite stores all rows or none.
+  const inserted = await db.insert(events).values(checked.map(toRow)).returning({ seq: events.seq, id: events.id });
+  const seqById = new Map(inserted.map((r) => [r.id, r.seq]));
+  const stored = checked.map((event) => ({ seq: seqById.get(event.id) ?? 0, event }));
+  // The events are stored by now; a failing listener must not fail the write.
+  for (const s of stored) {
+    for (const listener of listeners.get(db) ?? []) {
+      try {
+        listener(s);
+      } catch (err) {
+        console.error("onAppend listener failed", err);
       }
     }
-    return stored;
-  });
+  }
+  return stored;
 }
 
 /** Append one event to the stream. Events are never updated or deleted. */

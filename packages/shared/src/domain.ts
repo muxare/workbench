@@ -436,6 +436,53 @@ export const teamNamed = z.object({
 });
 export type TeamNamedEvent = z.infer<typeof teamNamed>;
 
+export const batchId = id;
+
+/**
+ * The cards of one batch: two or more, each once. A batch of one card is a
+ * card picked on its own, so it is not a batch.
+ */
+export const batchCardIds = z
+  .array(cardId)
+  .min(2)
+  .refine((ids) => new Set(ids).size === ids.length, { message: "a card is listed twice" });
+
+/**
+ * One wave of a batch's plan: the cards the AI works side by side, one
+ * worktree subagent each, and a `note` saying why these cards are together
+ * and apart from the others.
+ */
+export const batchWave = z.strictObject({ card_ids: z.array(cardId).min(1), note: z.string().min(1) });
+export type BatchWave = z.infer<typeof batchWave>;
+
+/**
+ * `batch_handed` records a person (`actor`) handing several Ready cards to an
+ * AI teammate (`handed_to`) as one batch, so a session works them in waves
+ * (docs/dev-loop.md, stage 3b). `batch_id` is the next plain number, like a
+ * card's. A batch's state is derived (`deriveBatches` in batch.ts).
+ */
+export const batchHanded = z.object({
+  ...teamEventBase,
+  type: z.literal("batch_handed"),
+  batch_id: batchId,
+  card_ids: batchCardIds,
+  handed_to: teammateId,
+});
+export type BatchHandedEvent = z.infer<typeof batchHanded>;
+
+/**
+ * `batch_planned` records the AI's plan for a batch: `waves` in the order
+ * they are worked. A batch has at most one plan, and the plan has no separate
+ * approval; `checkPlan` in batch.ts says what a valid plan is.
+ */
+export const batchPlanned = z.object({
+  ...teamEventBase,
+  type: z.literal("batch_planned"),
+  batch_id: batchId,
+  waves: z.array(batchWave).min(1),
+});
+export type BatchPlannedEvent = z.infer<typeof batchPlanned>;
+
 /**
  * Every event type in the stream, in schema order: the card and teammate
  * event types read from their schemas, then the team event types. The team
@@ -448,6 +495,8 @@ export const streamEventType = z.enum([
   "log_filter_changed" as const,
   criticGateChanged.shape.type.value,
   teamNamed.shape.type.value,
+  batchHanded.shape.type.value,
+  batchPlanned.shape.type.value,
 ]);
 
 /**
@@ -465,7 +514,8 @@ export const hiddenEventTypes = z
  * types one log hides for the whole team: `hidden` is the whole set it hides
  * from now on, and `was_hidden` the set it hid before. The current filters
  * are derived from these events (`deriveLogFilters`). `critic_gate_changed`
- * and `team_named` are described above (`criticGateChanged`, `teamNamed`).
+ * and `team_named` are described above (`criticGateChanged`, `teamNamed`),
+ * and so are `batch_handed` and `batch_planned` (`batchHanded`, `batchPlanned`).
  */
 export const teamEvent = z.discriminatedUnion("type", [
   z.object({
@@ -477,6 +527,8 @@ export const teamEvent = z.discriminatedUnion("type", [
   }),
   criticGateChanged,
   teamNamed,
+  batchHanded,
+  batchPlanned,
 ]);
 export type TeamEvent = z.infer<typeof teamEvent>;
 export type LogFilterChangedEvent = Extract<TeamEvent, { type: "log_filter_changed" }>;

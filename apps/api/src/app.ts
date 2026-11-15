@@ -28,6 +28,13 @@
 // `POST /api/cards/:id/pick` by an AI teammate also checks the rules its
 // runner follows (teammates/eligibility.ts), with the modes it works in from
 // an agent session.
+// `POST /api/batches` appends a `batch_handed` event: a person hands several
+// Ready cards to the AI teammate as one batch, refused when the AI may not
+// pick a card by the same rules as a pick from an agent session.
+// `POST /api/batches/:id/plan` appends the AI's `batch_planned` event, and
+// `GET /api/batches`, `GET /api/batches/:id` and the board's `batches` are
+// derived from those events and the cards' statuses (docs/dev-loop.md,
+// stage 3b).
 // `POST /api/github/webhook` takes GitHub's webhooks, checks their signature
 // against GITHUB_WEBHOOK_SECRET, and records the card events they map to
 // (github/webhook.ts).
@@ -38,8 +45,17 @@ import { z } from "zod";
 import {
   answerRequest,
   askRequest,
+  batchListState,
   cardEvent,
   cardStatus,
+  checkPlan,
+  handBatchRequest,
+  openBatches,
+  planBatchRequest,
+  type Batch,
+  type BatchDetailResponse,
+  type BatchesResponse,
+  type BatchResponse,
   createCardRequest,
   criticRequired,
   currentCycle,
@@ -91,9 +107,12 @@ import {
   cardLog,
   criticGates,
   cycleLog,
+  getBatch,
   getCard,
   getTeammate,
+  handBatch,
   lastSeq,
+  listBatches,
   listCards,
   listCycles,
   listQuestions,
@@ -228,6 +247,39 @@ export function createApp(deps: AppDeps) {
 
   const base = (cardId: string, actor: string) => ({ id: newId(), card_id: cardId, actor, at: now().toISOString() });
 
+  /** A card as `GET /cards/:id` answers it: with its log, its questions and its function's definition. */
+  async function cardDetail(card: Card, defs: ReadonlyMap<string, FunctionFrontMatter> = definitions()): Promise<CardResponse> {
+    return {
+      card,
+      log: await cardLog(db, card.id),
+      questions: await listQuestions(db, { cardId: card.id }),
+      function: defs.get(card.function_id) ?? null,
+    };
+  }
+
+  async function batchOr404(id: string): Promise<Batch> {
+    const batch = await getBatch(db, id);
+    if (!batch) throw new ApiProblem("not_found", `no batch '${id}'`);
+    return batch;
+  }
+
+  /** The AI teammate a batch goes to: the one named, or the team's only AI teammate. */
+  async function batchTeammate(handedTo: string | undefined): Promise<Teammate> {
+    if (handedTo !== undefined) {
+      const t = await teammateOr422(handedTo, "handed_to");
+      if (t.kind !== "ai") throw new ApiProblem("rule_violation", `handed_to '${t.id}' is not an AI teammate; a batch is handed to the AI`);
+      return t;
+    }
+    const ais = (await listTeammates(db)).filter((t) => t.kind === "ai");
+    if (ais.length !== 1) {
+      throw new ApiProblem(
+        "rule_violation",
+        `the team has ${ais.length === 0 ? "no AI teammate" : `${String(ais.length)} AI teammates`}, so handed_to must name one`,
+      );
+    }
+    return ais[0]!;
+  }
+
   /** The current cycle at the server's clock, with its whole log; null before any cycle has started. */
   async function boardCycle(): Promise<BoardCycle | null> {
     const current = currentCycle(await listCycles(db), now());
@@ -249,19 +301,82 @@ export function createApp(deps: AppDeps) {
         log: await boardLog(db, { limit: BOARD_LOG_LIMIT }),
         log_filters: await logFilters(db),
         cycle: await boardCycle(),
+        batches: openBatches(await listBatches(db)),
         last_seq: await lastSeq(db),
       };
       return c.json(response);
     })
 
     .get("/cards/:id", async (c) => {
-      const card = await cardOr404(c.req.param("id"));
-      const response: CardResponse = {
-        card,
-        log: await cardLog(db, card.id),
-        questions: await listQuestions(db, { cardId: card.id }),
-        function: (deps.definitions ?? loadFunctionDefinitions()).get(card.function_id) ?? null,
-      };
+      const response: CardResponse = await cardDetail(await cardOr404(c.req.param("id")));
+      return c.json(response);
+    })
+
+    .get("/batches", async (c) => {
+      const raw = c.req.query("state");
+      const state = raw === undefined ? undefined : batchListState.safeParse(raw);
+      if (state && !state.success) {
+        throw new ApiProblem("invalid_request", `state must be ${batchListState.options.join(" or ")}, not '${raw ?? ""}'`);
+      }
+      const open = openBatches(await listBatches(db));
+      const response: BatchesResponse = { batches: state ? open.filter((b) => b.state === state.data) : open };
+      return c.json(response);
+    })
+
+    .get("/batches/:id", async (c) => {
+      const batch = await batchOr404(c.req.param("id"));
+      const defs = definitions();
+      const cards: CardResponse[] = [];
+      for (const id of batch.card_ids) cards.push(await cardDetail(await cardOr404(id), defs));
+      const response: BatchDetailResponse = { batch, cards };
+      return c.json(response);
+    })
+
+    .post("/batches", async (c) => {
+      const req = await body(c, handBatchRequest);
+      const actor = await teammateOr422(req.actor, "actor");
+      const handedTo = await batchTeammate(req.handed_to);
+      const batchCards: Card[] = [];
+      for (const id of req.card_ids) batchCards.push(await cardOr404(id));
+      if (actor.kind !== "human") throw new ApiProblem("forbidden", `a batch is handed over by a person, not ${actor.id}`);
+      const defs = definitions();
+      const cards = await listCards(db);
+      const teammates = await listTeammates(db);
+      const open = openBatches(await listBatches(db));
+      for (const card of batchCards) {
+        const holder = open.find((b) => b.card_ids.includes(card.id));
+        if (holder) throw new ApiProblem("conflict", `${card.id} is already in batch ${holder.id}, which is not finished`);
+        // The AI may pick each card by the rules of a pick from an agent
+        // session, with one difference: the plan puts a card after the batch
+        // cards it depends on, so those count as done here. A dependency
+        // outside the batch must be done already.
+        const assumed = cards.map((other) =>
+          other.id !== card.id && req.card_ids.includes(other.id) ? { ...other, status: { state: "done" as const } } : other,
+        );
+        const verdict = checkEligibility(card, await cardLog(db, card.id), defs, teammates, assumed, SESSION_MODES);
+        if (!verdict.eligible) throw new ApiProblem("conflict", `${handedTo.id} may not pick ${verdict.reason}`);
+      }
+      // The store reads the next batch id and appends the event in one serialized write.
+      const event = await handBatch(db, { id: newId(), actor: actor.id, at: now().toISOString(), card_ids: req.card_ids, handed_to: handedTo.id });
+      const response: BatchResponse = { batch: await batchOr404(event.batch_id) };
+      return c.json(response, 201);
+    })
+
+    .post("/batches/:id/plan", async (c) => {
+      const batch = await batchOr404(c.req.param("id"));
+      const req = await body(c, planBatchRequest);
+      await teammateOr422(req.actor, "actor");
+      if (req.actor !== batch.handed_to) {
+        throw new ApiProblem("forbidden", `batch ${batch.id} was handed to ${batch.handed_to}, so ${req.actor} may not plan it`);
+      }
+      if (batch.plan !== null) throw new ApiProblem("conflict", `batch ${batch.id} already has a plan`);
+      const verdict = checkPlan(batch.card_ids, req.waves, await listCards(db));
+      if (!verdict.ok) throw new ApiProblem("conflict", `the plan for batch ${batch.id} is not valid: ${verdict.reason}`);
+      // The store checks the plan again inside the write, so two plans posted at once cannot both land.
+      await appendEvents(db, [
+        { id: newId(), type: "batch_planned", actor: req.actor, at: now().toISOString(), batch_id: batch.id, waves: req.waves },
+      ]);
+      const response: BatchResponse = { batch: await batchOr404(batch.id) };
       return c.json(response);
     })
 

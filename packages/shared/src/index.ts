@@ -4,4 +4,5 @@ export * from "./functionFile.ts";
 export * from "./functionValidator.ts";
 export * from "./chain.ts";
 export * from "./api.ts";
+export * from "./batch.ts";
 export * from "./workspace.ts";
