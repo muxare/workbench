@@ -940,10 +940,20 @@ a:hover {
 .new-card__wide {
   grid-column: 1 / -1;
 }
+/* The board's compact scale, beside its 30px buttons, rather than the 44px form fields of the other screens. */
 .new-card .field input,
 .new-card .field select {
   min-width: 0;
   width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+/* A field the form is missing is not a card waiting on someone, so a neutral border rather than --needs-input. */
+.new-card .field input[aria-invalid="true"],
+.new-card .field select[aria-invalid="true"] {
+  border-color: var(--fg);
 }
 .new-card .new-card__as select {
   width: auto;

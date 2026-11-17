@@ -596,6 +596,10 @@ async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise
   if (isCardEvent(event) && (pending.withdrawn.has(event.card_id) || (await cardWithdrawal(db, event.card_id)))) {
     throw new StoreError(`${event.id}: card ${event.card_id} was withdrawn and takes no further event`, "conflict");
   }
+  // A card is created once, with its row, by `addNumberedCard`; no later write may claim to create it again.
+  if (event.type === "card_created") {
+    throw new StoreError(`${event.id}: card ${event.card_id} exists; a card_created event is written only with its card`, "conflict");
+  }
   if (event.type === "card_withdrawn") await checkCardWithdrawn(db, event, pending);
   if (event.type === "workspace_linked") pending.linked.add(event.card_id);
   if (event.type === "status_changed") {
