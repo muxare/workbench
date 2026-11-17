@@ -252,6 +252,149 @@ describe("link_branch", () => {
   });
 });
 
+describe("list_batches, get_batch and plan_batch", () => {
+  const hand = () => post("/api/batches", { actor: PERSON, card_ids: ["1", "2"] });
+  const inOrder = [
+    { card_ids: ["1"], note: "Invented: the booking rules come first." },
+    { card_ids: ["2"], note: "Invented: the fault report depends on them." },
+  ];
+
+  it("lists no batch until a person hands one, then names the oldest handed one to take", async () => {
+    expect(json(await tools.list_batches({}))).toMatchObject({ acting_as: AI, batches: [], next: "No open batch is handed to you." });
+    await hand();
+    const out = json(await tools.list_batches({}));
+    expect(out.batches).toEqual([
+      expect.objectContaining({ id: "1", state: "handed", card_ids: ["1", "2"], released_card_ids: [], handed_to: AI, handed_by: PERSON, waves: null }),
+    ]);
+    expect(out.next).toMatch(/take batch 1, the oldest one handed to you without a plan/);
+    // The filter narrows the list, not the advice: the handed batch is still the one to take.
+    const planned = json(await tools.list_batches({ state: "planned" }));
+    expect(planned.batches).toEqual([]);
+    expect(planned.next).toMatch(/take batch 1, the oldest one handed to you without a plan/);
+  });
+
+  it("says every batch handed to the AI has a plan once it is planned", async () => {
+    await hand();
+    json(await tools.plan_batch({ batch_id: "1", waves: inOrder }));
+    const out = json(await tools.list_batches({ state: "handed" }));
+    expect(out.batches).toEqual([]);
+    expect(out.next).toBe("Every open batch handed to you has a plan; read one with get_batch to work it.");
+  });
+
+  it("reads a batch with each card's function, mode and dependencies inside and outside the batch", async () => {
+    await hand();
+    const out = json(await tools.get_batch({ batch_id: "1" }));
+    expect(out.batch).toMatchObject({ id: "1", state: "handed", plan: null });
+    expect(out.cards).toEqual([
+      expect.objectContaining({ id: "1", state: "ready", owner: PERSON, mode: "delegate", depends_on_in_batch: [], depends_on_outside: [], branch: "wb/1-invented-build-the-booking-rules", open_questions: [] }),
+      expect.objectContaining({ id: "2", depends_on_in_batch: ["1"], depends_on_outside: [] }),
+    ]);
+    const first = (out.cards as { function: { name: string; outputs: unknown[] }; what_the_ai_does: string }[])[0]!;
+    expect(first.function.name).toBe("implement_services");
+    expect(first.function.outputs.length).toBeGreaterThan(0);
+    expect(first.what_the_ai_does).toMatch(/written by you \(the AI\)/);
+    expect(out.next).toMatch(/plan_batch \(batch_id "1"\)/);
+  });
+
+  it("splits a card's dependencies into those inside the batch and those outside it", async () => {
+    // Card 1 is done, so a batch of 2 and a new card 3 that depends on 1 and 2 may be handed.
+    await appendEvents(db, [{ id: "invented-done", type: "status_changed", card_id: "1", actor: PERSON, at: "2026-11-11T10:00:00Z", from: "ready", to: { state: "done" } }]);
+    const links = [{ relation: "depends_on", card_id: "1" }, { relation: "depends_on", card_id: "2" }];
+    await post("/api/cards", { actor: PERSON, title: "Invented: notify the household", function_id: "implement_services", owner: PERSON, links });
+    await post("/api/cards/3/status", { actor: PERSON, from: "backlog", to: { state: "ready" } });
+    await post("/api/batches", { actor: PERSON, card_ids: ["2", "3"] });
+    const out = json(await tools.get_batch({ batch_id: "1" }));
+    expect(out.cards).toEqual([
+      expect.objectContaining({ id: "2", depends_on_in_batch: [], depends_on_outside: ["1"], may_pick: true }),
+      expect.objectContaining({ id: "3", depends_on_in_batch: ["2"], depends_on_outside: ["1"], may_pick: true }),
+    ]);
+  });
+
+  it("says a card may no longer be picked when its owner changed the mode after the hand-over", async () => {
+    await hand();
+    expect(json(await tools.get_batch({ batch_id: "1" })).cards).toEqual([
+      expect.objectContaining({ id: "1", may_pick: true }),
+      expect.objectContaining({ id: "2", may_pick: true }),
+    ]);
+    await post(`/api/teammates/${PERSON}/modes`, { actor: PERSON, function_id: "implement_services", mode: "manual" });
+    const cards = json(await tools.get_batch({ batch_id: "1" })).cards as { may_pick: boolean; why_not?: string }[];
+    expect(cards.map((c) => c.may_pick)).toEqual([false, false]);
+    expect(cards[0]?.why_not).toMatch(/^1: .*'manual'/);
+  });
+
+  it("counts a dependency in an earlier wave as met once the batch is planned, as pick_card does", async () => {
+    await hand();
+    json(await tools.plan_batch({ batch_id: "1", waves: inOrder }));
+    json(await tools.pick_card({ card_id: "1" }));
+    const cards = json(await tools.get_batch({ batch_id: "1" })).cards as { id: string; may_pick: boolean; why_not?: string }[];
+    expect(cards).toEqual([
+      expect.objectContaining({ id: "1", may_pick: false, why_not: "1: card is in_progress, not ready" }),
+      expect.objectContaining({ id: "2", may_pick: true }),
+    ]);
+    expect(json(await tools.pick_card({ card_id: "2" })).card).toMatchObject({ status: { state: "in_progress" } });
+  });
+
+  it("lists a card moved back to Backlog as released, apart from the batch's cards", async () => {
+    await post("/api/cards", { actor: PERSON, title: "Invented: list the slots", function_id: "implement_services", owner: PERSON, links: [] });
+    await post("/api/cards/3/status", { actor: PERSON, from: "backlog", to: { state: "ready" } });
+    await post("/api/batches", { actor: PERSON, card_ids: ["1", "2", "3"] });
+    await post("/api/cards/3/status", { actor: PERSON, from: "ready", to: { state: "backlog" } });
+    const out = json(await tools.get_batch({ batch_id: "1" }));
+    expect((out.cards as { id: string }[]).map((c) => c.id)).toEqual(["1", "2"]);
+    expect(out.released).toEqual([{ id: "3", title: "Invented: list the slots", state: "backlog" }]);
+    expect(json(await tools.list_batches({})).batches).toEqual([expect.objectContaining({ card_ids: ["1", "2"], released_card_ids: ["3"] })]);
+  });
+
+  it("tells the session to leave a batch handed to another AI teammate", async () => {
+    const other = "invented-ai-2";
+    const otherDb = await openDb(":memory:");
+    await startTeam(otherDb, { ...team, teammates: [...team.teammates, { kind: "ai", id: other, name: "Invented second AI" }] }, "2026-11-11T09:00:00Z");
+    await enterCards(otherDb, cards, loadFunctionIds());
+    const otherApp = createApp({ db: otherDb, functionIds: loadFunctionIds() });
+    const send = async (path: string, payload: unknown) => {
+      const res = await otherApp.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error(`${path}: ${String(res.status)} ${await res.text()}`);
+    };
+    await send("/api/cards/1/status", { actor: PERSON, from: "backlog", to: { state: "ready" } });
+    await send("/api/cards/2/status", { actor: PERSON, from: "backlog", to: { state: "ready" } });
+    await send("/api/batches", { actor: PERSON, card_ids: ["1", "2"], handed_to: other });
+    const fetchFn: Fetch = async (input, init) => otherApp.request(input, init);
+    const asAi = createTools({ client: new WorkbenchClient(BASE, fetchFn), actor: AI });
+    const out = json(await asAi.get_batch({ batch_id: "1" }));
+    expect(out.batch).toMatchObject({ handed_to: other });
+    expect(out.next).toBe(`Batch 1 was handed to ${other}, not ${AI}; leave it to that teammate.`);
+    expect(json(await asAi.list_batches({})).next).toBe("No open batch is handed to you.");
+  });
+
+  it("returns the API's reason for a plan that breaks a rule, records nothing, and takes the fixed plan", async () => {
+    await hand();
+    const refused = await tools.plan_batch({ batch_id: "1", waves: [{ card_ids: ["1", "2"], note: "Invented: together." }] });
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toMatch(/HTTP 409 conflict\): .*2 depends on 1, so it goes in a later wave than 1\. Nothing was recorded\. Fix the plan/);
+    expect(json(await tools.get_batch({ batch_id: "1" })).batch).toMatchObject({ state: "handed", plan: null });
+
+    const out = json(await tools.plan_batch({ batch_id: "1", waves: inOrder }));
+    expect(out.batch).toMatchObject({ state: "planned", plan: { waves: inOrder, planned_by: AI } });
+    expect(json(await tools.list_batches({ state: "planned" })).batches).toEqual([expect.objectContaining({ id: "1", waves: 2 })]);
+
+    const again = await tools.plan_batch({ batch_id: "1", waves: inOrder });
+    expect(again.isError).toBe(true);
+    expect(text(again)).toMatch(/HTTP 409 already_planned\): batch 1 already has a plan\. The batch keeps the plan it has/);
+  });
+
+  it("surfaces an unknown batch and a plan from a teammate the batch was not handed to as tool errors", async () => {
+    const missing = await tools.get_batch({ batch_id: "99" });
+    expect(missing.isError).toBe(true);
+    expect(text(missing)).toMatch(/HTTP 404 not_found/);
+    await hand();
+    const fetchFn: Fetch = async (input, init) => app.request(input, init);
+    const asPerson = createTools({ client: new WorkbenchClient(BASE, fetchFn), actor: PERSON });
+    const refused = await asPerson.plan_batch({ batch_id: "1", waves: inOrder });
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toMatch(/HTTP 403 forbidden\): batch 1 was handed to invented-ai/);
+  });
+});
+
 describe("when the API is down", () => {
   it("says so as a tool error", async () => {
     const down = createTools({

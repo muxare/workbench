@@ -5,6 +5,7 @@
 import {
   aiTeammateProfileResponse,
   apiError,
+  batchResponse,
   boardResponse,
   cardResponse,
   logFiltersResponse,
@@ -13,8 +14,10 @@ import {
   type AiTeammateProfileResponse,
   type AnswerRequest,
   type ApiErrorCode,
+  type BatchResponse,
   type BoardResponse,
   type CardResponse,
+  type HandBatchRequest,
   type LogFiltersResponse,
   type LogName,
   type MoveStatusRequest,
@@ -151,6 +154,16 @@ export async function moveCard(cardId: string, request: MoveStatusRequest): Prom
 /** `POST /api/cards/:id/pick`: move a Ready card to In progress in its owner's mode; `mode`, when given, must be that mode. */
 export async function pickCard(cardId: string, request: PickRequest): Promise<WriteResponse> {
   return parseWrite(await postJson(`/cards/${encodeURIComponent(cardId)}/pick`, request), "the pick");
+}
+
+/**
+ * `POST /api/batches`: a person hands two or more Ready cards to the AI as one
+ * batch. Answers with the batch; the board also hears it over the event stream.
+ */
+export async function handBatch(request: HandBatchRequest): Promise<BatchResponse> {
+  const parsed = batchResponse.safeParse(await postJson("/batches", request));
+  if (!parsed.success) throw new ApiRequestError("bad_response", "the batch from the API does not match the shared schema");
+  return parsed.data;
 }
 
 function parseWrite(body: unknown, what: string): WriteResponse {

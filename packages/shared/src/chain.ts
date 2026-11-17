@@ -19,6 +19,16 @@ export const chainFunction = z.object({
 });
 export type ChainFunction = z.infer<typeof chainFunction>;
 
+/**
+ * The modes the AI teammate works in when it works from an agent session,
+ * such as Claude Code through the MCP server (apps/mcp), and picks a card with
+ * `POST /cards/:id/pick` or takes it in a batch. There it can write as well as
+ * ask, so `delegate` is one of them; `manual` never is, because its protocol
+ * gives the AI no part. It lives here so the API's eligibility check and the
+ * board's batch selection read the same list.
+ */
+export const SESSION_MODES: readonly Mode[] = ["assist", "delegate"];
+
 /** The mode `person` works `definition` in: their choice, or the function's `modes.default`. */
 export function ownerMode(person: HumanTeammate, definition: ChainFunction): Mode {
   return person.process_profile[definition.name] ?? definition.modes.default;

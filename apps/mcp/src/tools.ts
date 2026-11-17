@@ -9,17 +9,31 @@
 // API's reason. The tools only add what an agent needs around those calls:
 // the function definition and the owner's mode next to the card, waiting for
 // an answer, and the branch convention the webhooks read.
+//
+// A batch (docs/dev-loop.md, stage 3b) is several Ready cards a person hands
+// to the AI at once. `list_batches` finds one, `get_batch` reads its cards
+// the way `get_card` shows a card, and `plan_batch` posts the waves the
+// session will work them in; the API checks the plan.
+// `get_batch` also says per card whether the AI may pick it, by the same
+// shared rule (`checkEligibility`) the API's pick uses.
 import {
   askRequest,
+  batchCards,
+  batchListState,
   branchForCard,
   cardIdFromBranch,
+  checkEligibility,
   cardStatus,
   ownerMode,
+  planBatchRequest,
   pullRequestBodyLine,
   reportRequest,
+  SESSION_MODES,
+  type Batch,
   type BoardResponse,
   type Card,
   type CardResponse,
+  type FunctionFrontMatter,
   type Mode,
   type Protocol,
   type Question,
@@ -48,6 +62,7 @@ export interface ToolDeps {
   actor?: string;
 }
 
+const batchIdInput = z.string().min(1).describe("The batch's id on the board, such as \"2\".");
 const cardIdInput = z.string().min(1).describe("The card's id on the board, such as \"4\".");
 const waitInput = z
   .number()
@@ -85,6 +100,16 @@ export const inputs = {
   post_report: z.object({
     card_id: cardIdInput,
     text: reportRequest.shape.text.describe("What was done, what is left and what a reviewer should look at first."),
+  }),
+  list_batches: z.object({
+    state: batchListState.optional().describe("Only open batches in this state: handed (no plan yet) or planned."),
+  }),
+  get_batch: z.object({ batch_id: batchIdInput }),
+  plan_batch: z.object({
+    batch_id: batchIdInput,
+    waves: planBatchRequest.shape.waves.describe(
+      "The waves in the order they are worked. Each wave lists the card_ids worked side by side and a note saying why those cards are together and apart from the others.",
+    ),
   }),
   link_branch: z.object({
     card_id: cardIdInput,
@@ -125,6 +150,71 @@ function protocolNote(mode: Mode, protocol: Protocol | undefined): string {
   const who = { ai: "you (the AI)", human: "the person", both: "you and the person", none: "nobody" } as const;
   const opening = `In ${mode}, the work is written by ${who[protocol.writes]}, questions are asked by ${who[protocol.asks]}, and a person decides.`;
   return protocol.note ? `${opening} ${protocol.note}` : opening;
+}
+
+/** The owner's mode for a card, its protocol and what that protocol lets the AI do, as `get_card` and `get_batch` show them. */
+function modeView(detail: CardResponse, board: BoardResponse) {
+  const mode = cardMode(detail.card, board, detail.function);
+  return {
+    mode,
+    protocol: mode && detail.function ? (detail.function.protocols[mode] ?? null) : null,
+    what_the_ai_does: mode && detail.function ? protocolNote(mode, detail.function.protocols[mode]) : null,
+  };
+}
+
+/**
+ * A batch card as planning needs it: what `get_card` says about the card and
+ * its mode, its dependencies split into those inside the batch (which order
+ * the waves) and those outside (already done when the batch was handed), the
+ * function's outputs, which hint at what the work touches, the questions
+ * still open, and whether the AI may pick it. The full definition and the log
+ * are left to `get_card`.
+ *
+ * `may_pick` is the API's rule for a pick from an agent session, given the
+ * open batches handed to the same AI, so a mode changed after the hand-over
+ * shows here. Once the batch is planned, that is exactly what `pick_card`
+ * meets now: a dependency in an earlier wave counts as met once it is picked,
+ * one outside the batch must be done. Before a plan, the batch's other cards count as done,
+ * as when the batch was handed, because the plan is what will order them.
+ */
+function batchCardView(detail: CardResponse, board: BoardResponse, batch: Batch, definitions: ReadonlyMap<string, FunctionFrontMatter>) {
+  const inBatch = batchCards(batch);
+  const dependsOn = detail.card.links.filter((l) => l.relation === "depends_on").map((l) => l.card_id);
+  const { mode, what_the_ai_does } = modeView(detail, board);
+  const cards =
+    batch.plan === null
+      ? board.cards.map((c) => (c.id !== detail.card.id && inBatch.includes(c.id) ? { ...c, status: { state: "done" as const } } : c))
+      : board.cards;
+  const batches = board.batches.filter((b) => b.handed_to === batch.handed_to);
+  const verdict = checkEligibility(detail.card, detail.log, definitions, board.teammates, cards, SESSION_MODES, batches);
+  return {
+    id: detail.card.id,
+    title: detail.card.title,
+    state: detail.card.status.state,
+    owner: detail.card.owner,
+    ...(detail.card.milestone === undefined ? {} : { milestone: detail.card.milestone }),
+    function: detail.function
+      ? { name: detail.function.name, title: detail.function.title, summary: detail.function.summary, outputs: detail.function.outputs }
+      : { name: detail.card.function_id, title: null, summary: null, outputs: [] },
+    mode,
+    what_the_ai_does,
+    may_pick: verdict.eligible,
+    ...(verdict.eligible ? {} : { why_not: verdict.reason }),
+    depends_on_in_batch: dependsOn.filter((id) => inBatch.includes(id)),
+    depends_on_outside: dependsOn.filter((id) => !inBatch.includes(id)),
+    branch: branchForCard(detail.card) ?? null,
+    open_questions: detail.questions.filter((q) => q.answer === undefined).map(questionView),
+  };
+}
+
+/** What the session does next with a batch, by its state. */
+function batchNext(batch: Batch, actingAs: string): string {
+  if (batch.handed_to !== actingAs) return `Batch ${batch.id} was handed to ${batch.handed_to}, not ${actingAs}; leave it to that teammate.`;
+  if (batch.state === "handed") return `Sort the cards into waves and post them with plan_batch (batch_id "${batch.id}").`;
+  if (batch.state === "planned") {
+    return "Work the plan wave by wave: pick each card of a wave with pick_card, one subagent per card. A card that depends on a card in an earlier wave may be picked once that card is picked; stack its branch on the earlier card's branch.";
+  }
+  return `Every card of batch ${batch.id} is in review or done.`;
 }
 
 function questionView(q: Question) {
@@ -194,12 +284,9 @@ export function createTools(deps: ToolDeps): Tools {
     get_card: (input) =>
       guarded(async () => {
         const [detail, board] = await Promise.all([client.card(input.card_id), client.board()]);
-        const mode = cardMode(detail.card, board, detail.function);
         return ok({
           card: detail.card,
-          mode,
-          protocol: mode && detail.function ? (detail.function.protocols[mode] ?? null) : null,
-          what_the_ai_does: mode && detail.function ? protocolNote(mode, detail.function.protocols[mode]) : null,
+          ...modeView(detail, board),
           branch: branchForCard(detail.card) ?? null,
           pull_request_body_line: pullRequestBodyLine(detail.card.id),
           questions: detail.questions.map(questionView),
@@ -260,6 +347,67 @@ export function createTools(deps: ToolDeps): Tools {
       guarded(async () => {
         const out = await client.report(input.card_id, { actor: await self(), text: input.text });
         return ok({ card: out.card, events: out.events });
+      }),
+
+    list_batches: (input) =>
+      guarded(async () => {
+        // The board carries the open batches, oldest first, as GET /api/batches does.
+        const board = await client.board();
+        const actingAs = await self(board);
+        const mine = board.batches.filter((b) => b.handed_to === actingAs);
+        const oldestHanded = mine.find((b) => b.state === "handed");
+        const shown = board.batches.filter((b) => input.state === undefined || b.state === input.state);
+        return ok({
+          acting_as: actingAs,
+          batches: shown.map((b) => ({
+            id: b.id,
+            state: b.state,
+            card_ids: batchCards(b),
+            released_card_ids: b.released_card_ids,
+            handed_to: b.handed_to,
+            handed_by: b.handed_by,
+            handed_at: b.handed_at,
+            waves: b.plan?.waves.length ?? null,
+          })),
+          next: oldestHanded
+            ? `Unless a batch was named, take batch ${oldestHanded.id}, the oldest one handed to you without a plan: read it with get_batch and plan it with plan_batch.`
+            : mine.length > 0
+              ? "Every open batch handed to you has a plan; read one with get_batch to work it."
+              : "No open batch is handed to you.",
+        });
+      }),
+
+    get_batch: (input) =>
+      guarded(async () => {
+        const [detail, board] = await Promise.all([client.batch(input.batch_id), client.board()]);
+        const actingAs = await self(board);
+        const definitions = new Map(detail.cards.flatMap((c) => (c.function ? [[c.function.name, c.function] as const] : [])));
+        // The API answers only the cards still in the batch; a released card is listed apart, from the board, and is not planned.
+        return ok({
+          batch: detail.batch,
+          cards: detail.cards.map((c) => batchCardView(c, board, detail.batch, definitions)),
+          released: detail.batch.released_card_ids.map((id) => {
+            const card = board.cards.find((c) => c.id === id);
+            return { id, title: card?.title ?? null, state: card?.status.state ?? null };
+          }),
+          next: batchNext(detail.batch, actingAs),
+        });
+      }),
+
+    plan_batch: (input) =>
+      guarded(async () => {
+        try {
+          const out = await client.planBatch(input.batch_id, { actor: await self(), waves: input.waves });
+          return ok({ batch: out.batch, next: batchNext(out.batch, out.batch.handed_to) });
+        } catch (err) {
+          if (err instanceof ApiRefusal && err.status === 409) {
+            const retry = err.code === "already_planned"
+              ? "The batch keeps the plan it has; read it with get_batch and work it."
+              : "Nothing was recorded. Fix the plan and call plan_batch again.";
+            return fail(`The workbench refused this plan (HTTP 409 ${err.code}): ${err.message}. ${retry}`);
+          }
+          throw err;
+        }
       }),
 
     link_branch: (input) =>

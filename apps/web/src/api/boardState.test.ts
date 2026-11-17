@@ -216,6 +216,68 @@ describe("a team_named event", () => {
   });
 });
 
+describe("batch events", () => {
+  const handed = (seq: number): LiveEvent => ({
+    seq,
+    event: { id: `h${seq}`, type: "batch_handed", actor: "fe-1", at: "2026-11-09T10:00:00.000Z", batch_id: "1", card_ids: ["c-16", "c-17"], handed_to: "ai-1" },
+  });
+  const planned = (seq: number): LiveEvent => ({
+    seq,
+    event: {
+      id: `p${seq}`,
+      type: "batch_planned",
+      actor: "ai-1",
+      at: "2026-11-09T10:05:00.000Z",
+      batch_id: "1",
+      waves: [
+        { card_ids: ["c-16"], note: "Invented: first." },
+        { card_ids: ["c-17"], note: "Invented: after #16." },
+      ],
+    },
+  });
+
+  it("adds a handed batch to the open batches at once, without a plan", () => {
+    const next = mergeEvent(liveBoard(board(3)), handed(4));
+    expect(next.board.batches).toEqual([
+      { id: "1", card_ids: ["c-16", "c-17"], released_card_ids: [], handed_to: "ai-1", handed_by: "fe-1", handed_at: "2026-11-09T10:00:00.000Z", state: "handed", plan: null },
+    ]);
+    expect(next.board.log.map((e) => e.id)).toEqual(["h4"]);
+  });
+
+  it("adds the plan to its batch, and only the first plan counts", () => {
+    const next = mergeEvent(mergeEvent(liveBoard(board(3)), handed(4)), planned(5));
+    expect(next.board.batches[0]?.state).toBe("planned");
+    expect(next.board.batches[0]?.plan).toEqual({
+      waves: [
+        { card_ids: ["c-16"], note: "Invented: first." },
+        { card_ids: ["c-17"], note: "Invented: after #16." },
+      ],
+      planned_by: "ai-1",
+      planned_at: "2026-11-09T10:05:00.000Z",
+    });
+    const again = mergeEvent(next, { ...planned(6), event: { ...planned(6).event, id: "p6-again", at: "2026-11-09T11:00:00.000Z" } });
+    expect(again.board.batches[0]?.plan?.planned_at).toBe("2026-11-09T10:05:00.000Z");
+  });
+
+  it("releases a card moved back to Backlog from its batch", () => {
+    const back: LiveEvent = {
+      seq: 5,
+      event: { id: "s5", type: "status_changed", card_id: "c-17", actor: "fe-1", at: "2026-11-09T10:10:00.000Z", from: "ready", to: { state: "backlog" } },
+    };
+    const next = mergeEvent(mergeEvent(liveBoard(board(3)), handed(4)), back);
+    expect(next.board.batches[0]?.released_card_ids).toEqual(["c-17"]);
+  });
+
+  it("ignores a plan for a batch the board does not hold", () => {
+    expect(mergeEvent(liveBoard(board(3)), planned(4)).board.batches).toEqual([]);
+  });
+
+  it("is applied again over a refetch that started before it", () => {
+    const state = mergeEvent(liveBoard(board(3)), handed(4));
+    expect(applyRefetch(state, board(3)).board.batches.map((b) => b.id)).toEqual(["1"]);
+  });
+});
+
 describe("refetch coalescing", () => {
   it("starts one fetch for a burst and owes exactly one more", () => {
     let s = idleRefetch;

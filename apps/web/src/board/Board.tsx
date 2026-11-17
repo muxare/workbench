@@ -1,22 +1,51 @@
+import { useState } from "react";
 import type { BoardResponse } from "@workbench/shared";
 import type { BoardConnection } from "../api/useBoard.ts";
-import { BoardColumn } from "./BoardColumn.tsx";
+import { BatchBar } from "./BatchBar.tsx";
+import { keepSelectable, toggleSelected } from "./batch.ts";
+import { BoardColumn, type BatchSelection } from "./BoardColumn.tsx";
 import { milestoneProgress } from "./cardView.ts";
 import { groupIntoColumns } from "./columns.ts";
 import { ConnectionIndicator } from "./ConnectionIndicator.tsx";
 import { CycleLog } from "./CycleLog.tsx";
 
-/** The board panel: header with the current cycle and milestone progress, six columns, the cycle log. */
+/**
+ * The board panel: header with the current cycle and milestone progress, six
+ * columns, the cycle log. "Select" on the Ready column starts selecting cards
+ * for a batch; the batch bar then sits between the header and the columns.
+ */
 export function Board({
   board,
   connection,
   onFilterChanged,
+  onBatchHanded,
 }: {
   board: BoardResponse;
   connection: BoardConnection;
   onFilterChanged?: (() => void) | undefined;
+  onBatchHanded?: (() => void) | undefined;
 }) {
   const progress = milestoneProgress(board.cards);
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  // Each new board drops the selected cards that left Ready or joined a batch,
+  // so a card that leaves and comes back is not selected again on its own.
+  const [seenBoard, setSeenBoard] = useState(board);
+  if (seenBoard !== board) {
+    setSeenBoard(board);
+    setSelected(keepSelectable(selected, board));
+  }
+  const stop = () => {
+    setSelecting(false);
+    setSelected([]);
+  };
+  const selection: BatchSelection = {
+    selecting,
+    selected,
+    onToggleSelecting: () => (selecting ? stop() : setSelecting(true)),
+    onToggle: (id) => setSelected(toggleSelected(selected, id)),
+  };
+
   return (
     <section className="board" aria-label="Team board">
       <header className="board__head">
@@ -38,9 +67,10 @@ export function Board({
           <ConnectionIndicator connection={connection} />
         </div>
       </header>
+      {selecting && <BatchBar board={board} selected={selected} onDone={stop} onHanded={onBatchHanded} />}
       <div className="board__columns">
         {groupIntoColumns(board.cards).map((col) => (
-          <BoardColumn key={col.status} board={board} column={col} />
+          <BoardColumn key={col.status} board={board} column={col} selection={selection} />
         ))}
       </div>
       <CycleLog board={board} onFilterChanged={onFilterChanged} />
