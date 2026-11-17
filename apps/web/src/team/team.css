@@ -109,35 +109,28 @@
 /*
  * People and roles (TeamEdit.tsx): the "Changing as" picker, a row per
  * person with their roles, and the form that adds a person. No artboard draws
- * these; they reuse the profile's panel, the board's avatars and the card
- * screen's `.field` and `.button`, with the log filter's select.
+ * these; they reuse the profile's panel and h2, the board's avatars, and the
+ * shared `.field` (with `.field--inline` for the selects) and `.button` in
+ * ../styles.css. Checkbox rows follow the Profile artboard's checkboxes: 44px
+ * rows, a 10px gap and the box aligned to the first line. Every control in the
+ * panel is at least 44px tall and shows the team table's focus ring.
  */
 
 .team-edit {
   gap: 16px;
 }
 
-.team-edit__as {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
+.team-edit .button {
+  min-height: 44px;
 }
 
-.team-edit select,
-.team-edit__field input {
-  font: inherit;
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--fg);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 6px 10px;
-  min-height: 36px;
+.team-edit .button:focus-visible,
+.team-edit__check input:focus-visible,
+.team-edit__who:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
 }
-.team-edit__field input[aria-invalid="true"],
+
 .team-edit__roles[aria-invalid="true"] .team-edit__checks {
   border-color: var(--needs-input);
 }
@@ -158,10 +151,12 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  min-height: 44px;
   color: var(--fg);
   text-decoration: none;
   font-size: 14px;
   font-weight: 600;
+  border-radius: 8px;
 }
 .team-edit__who:hover .team-edit__name {
   text-decoration: underline;
@@ -193,30 +188,26 @@
 .team-edit__checks {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 16px;
+  gap: 0 16px;
   border: 1px solid transparent;
   border-radius: 8px;
 }
 
 .team-edit__check {
   display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 0;
   font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
 }
 .team-edit__check input {
   width: 18px;
   height: 18px;
-  margin: 0;
-}
-
-.team-edit__main {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
+  margin: 2px 0 0;
+  flex-shrink: 0;
 }
 
 .team-edit__hint {
@@ -230,18 +221,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
-}
-
-.team-edit .button--quiet {
-  background: var(--surface);
-  color: var(--fg);
-  border-color: var(--line);
-}
-.team-edit .button:disabled {
-  cursor: default;
-  background: var(--line-soft);
-  border-color: var(--line);
-  color: var(--muted);
 }
 
 .team-edit__status {
@@ -263,9 +242,11 @@
   border-top: 1px solid var(--line-soft);
 }
 
+/* A sub-level under the panel's 17px/700 h2: smaller, the same weight. */
 .team-edit__subhead {
   margin: 0;
   font-size: 15px;
+  font-weight: 700;
 }
 
 .team-edit__fields {

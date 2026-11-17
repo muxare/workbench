@@ -12,10 +12,10 @@ import {
   changingAsChoices,
   editedRoles,
   emptyAddForm,
+  followHeldRoles,
   hasProblems,
   roleOptions,
   rolesFailure,
-  sameRoleList,
 } from "./teamEdit.ts";
 
 const team: TeamResponse = teamResponse.parse({
@@ -106,10 +106,27 @@ describe("editedRoles", () => {
     expect(editedRoles(["fe"], new Set(), "fe")).toEqual([]);
   });
 
-  it("compares lists in order, since the first is the main role", () => {
-    expect(sameRoleList(["fe", "ux"], ["fe", "ux"])).toBe(true);
-    expect(sameRoleList(["fe", "ux"], ["ux", "fe"])).toBe(false);
-    expect(sameRoleList(["fe"], ["fe", "ux"])).toBe(false);
+});
+
+describe("followHeldRoles", () => {
+  it("follows new roles when there is no unsaved change", () => {
+    expect(followHeldRoles(person, ["fe"], ["fe", "ux"], ["fe"])).toEqual({ draft: ["fe", "ux"], notice: undefined });
+  });
+
+  it("follows a save, whose answer is what the draft held", () => {
+    expect(followHeldRoles(person, ["fe"], ["ux", "fe"], ["ux", "fe"])).toEqual({ draft: ["ux", "fe"], notice: undefined });
+  });
+
+  it("keeps an unsaved change when someone else changes the roles, and says so", () => {
+    const next = followHeldRoles(person, ["fe"], ["fe", "be"], ["fe", "ux"]);
+    expect(next.draft).toEqual(["fe", "ux"]);
+    expect(next.notice).toBe(
+      "Someone changed Invented developer's roles meanwhile; they now hold Frontend developer, Backend developer. Your unsaved change is kept: Save replaces theirs, Undo shows them.",
+    );
+  });
+
+  it("leaves the draft alone when the roles did not change", () => {
+    expect(followHeldRoles(person, ["fe"], ["fe"], ["fe", "ux"])).toEqual({ draft: ["fe", "ux"], notice: undefined });
   });
 });
 
@@ -158,7 +175,7 @@ describe("failure messages", () => {
 
   it("says someone else changed the roles on a 409, and shows the API's reason otherwise", () => {
     expect(rolesFailure(new ApiRequestError("conflict", "inv-fe holds fe, ux, not fe", 409), person)).toBe(
-      "someone changed Invented developer's roles in the meantime; they now show as they stand",
+      "someone changed Invented developer's roles in the meantime",
     );
     expect(rolesFailure(new ApiRequestError("server_error", "the API answered 500", 500), person)).toBe("the API answered 500");
     expect(rolesFailure(new Error("boom"), person)).toBe("the roles could not be saved");

@@ -11,6 +11,7 @@ import {
   type StreamEventType,
 } from "@workbench/shared";
 import { ApiRequestError } from "../api/client.ts";
+import { defaultActor } from "./teammates.ts";
 
 export interface FilterOption {
   type: StreamEventType;
@@ -83,6 +84,5 @@ export function filterEditors(board: BoardResponse): HumanTeammate[] {
  * no sign-in, so the control says who it changes the filter as.
  */
 export function defaultFilterEditor(board: BoardResponse): string | undefined {
-  const people = filterEditors(board);
-  return (people.find((p) => p.roles.includes("po")) ?? people[0])?.id;
+  return defaultActor(filterEditors(board));
 }

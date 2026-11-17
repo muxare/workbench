@@ -17,7 +17,7 @@ function reasonOf(err: unknown): string {
   return err instanceof Error ? err.message : "the team could not be loaded";
 }
 
-export function useTeam(liveKey?: string): { state: TeamState; refresh: () => void } {
+export function useTeam(liveKey?: string): { state: TeamState; refresh: () => Promise<boolean> } {
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   const [team, setTeam] = useState<TeamResponse | undefined>();
@@ -41,19 +41,22 @@ export function useTeam(liveKey?: string): { state: TeamState; refresh: () => vo
   }, [attempt]);
 
   // Reload in place, keeping the team shown meanwhile. An answer for a request
-  // older than one already shown is dropped.
+  // older than one already shown is dropped. Resolves to whether the reload
+  // reached the API, so a caller can say when the screen may be out of date.
   const reloads = useRef(new Set<AbortController>());
-  const refresh = useCallback(() => {
+  const refresh = useCallback((): Promise<boolean> => {
     const abort = new AbortController();
     reloads.current.add(abort);
     const ticket = order.current.start();
-    fetchTeam(abort.signal)
+    return fetchTeam(abort.signal)
       .then(
         (fresh) => {
           if (order.current.settle(ticket)) setTeam(fresh);
+          return true;
         },
         () => {
           // Keep the team shown; the next change on the stream tries again.
+          return false;
         },
       )
       .finally(() => reloads.current.delete(abort));
@@ -69,7 +72,7 @@ export function useTeam(liveKey?: string): { state: TeamState; refresh: () => vo
   useEffect(() => {
     const next = followLiveKey(seenKey.current, liveKey);
     seenKey.current = next.seen;
-    if (next.reload) refresh();
+    if (next.reload) void refresh();
   }, [liveKey, refresh]);
 
   if (loadError !== undefined) return { state: { phase: "error", reason: loadError, retry }, refresh };

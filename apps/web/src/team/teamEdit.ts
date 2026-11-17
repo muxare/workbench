@@ -3,10 +3,10 @@
 // refused write. The roles are the shared `teammateRole` list; how many steps
 // each one owns is counted from the team's steps, which the API reads from
 // process/functions, so nothing here names a function.
-import { newTeammateId, teammateIdFromName, teammateRole } from "@workbench/shared";
+import { newTeammateId, sameRoles, teammateIdFromName, teammateRole } from "@workbench/shared";
 import type { AddTeammateRequest, HumanTeammate, TeamResponse, TeammateRole } from "@workbench/shared";
 import { ApiRequestError } from "../api/client.ts";
-import { roleTitle, shortLabel } from "../board/teammates.ts";
+import { defaultActor, roleTitle, shortLabel } from "../board/teammates.ts";
 
 /** The people a change can be made as: every person on the team, in the API's order. */
 export function changingAsChoices(team: TeamResponse): { id: string; label: string }[] {
@@ -22,7 +22,7 @@ export function changingAsChoices(team: TeamResponse): { id: string; label: stri
 export function changingAs(team: TeamResponse, remembered: string | undefined): string | undefined {
   const people = team.people.map((p) => p.teammate);
   if (remembered !== undefined && people.some((p) => p.id === remembered)) return remembered;
-  return (people.find((p) => p.roles.includes("po")) ?? people[0])?.id;
+  return defaultActor(people);
 }
 
 export interface RoleOption {
@@ -55,9 +55,26 @@ export function editedRoles(held: readonly TeammateRole[], checked: ReadonlySet<
   return first === undefined ? [] : [first, ...ordered.filter((r) => r !== first)];
 }
 
-/** Whether two role lists are the same, in the same order (the first is the main role). */
-export function sameRoleList(a: readonly TeammateRole[], b: readonly TeammateRole[]): boolean {
-  return a.length === b.length && a.every((r, i) => r === b[i]);
+/**
+ * What a person's roles editor shows when the roles it was showing (`was`)
+ * become `now`, after a save or someone else's change. A draft with no
+ * unsaved change follows the new roles. An unsaved change is kept rather than
+ * lost, with a notice naming the roles the person now holds; saving it then
+ * replaces those, knowingly, and Undo shows them.
+ */
+export function followHeldRoles(
+  person: HumanTeammate,
+  was: readonly TeammateRole[],
+  now: readonly TeammateRole[],
+  draft: readonly TeammateRole[],
+): { draft: TeammateRole[]; notice: string | undefined } {
+  if (sameRoles(was, now)) return { draft: [...draft], notice: undefined };
+  if (sameRoles(draft, was) || sameRoles(draft, now)) return { draft: [...now], notice: undefined };
+  const list = now.map((r) => roleTitle[r]).join(", ");
+  return {
+    draft: [...draft],
+    notice: `Someone changed ${person.name}'s roles meanwhile; they now hold ${list}. Your unsaved change is kept: Save replaces theirs, Undo shows them.`,
+  };
 }
 
 /** What the add form holds. An empty `id` means the id the name suggests. */
@@ -124,7 +141,7 @@ export function addFailure(err: unknown): string {
 /** Why a roles change failed, for "Not saved: …". A 409 means someone changed the roles first. */
 export function rolesFailure(err: unknown, person: HumanTeammate): string {
   if (err instanceof ApiRequestError) {
-    if (err.code === "conflict") return `someone changed ${person.name}'s roles in the meantime; they now show as they stand`;
+    if (err.code === "conflict") return `someone changed ${person.name}'s roles in the meantime`;
     return err.reason;
   }
   return "the roles could not be saved";
