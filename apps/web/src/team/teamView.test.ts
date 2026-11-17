@@ -4,7 +4,7 @@ import { teamResponse, type StreamEvent, type TeamResponse } from "@workbench/sh
 import { BOARD_LOG_LIMIT } from "../api/boardState.ts";
 import { testBoard, UX } from "../board/testBoard.ts";
 import { followLiveKey } from "../profile/liveKey.ts";
-import { aiPickCount, emptyReason, teamColumns, teamLiveKey, teamRows, teamScreen, type TeamState } from "./teamView.ts";
+import { aiPickCount, emptyReason, responseOrder, teamColumns, teamLiveKey, teamRows, teamScreen, type TeamState } from "./teamView.ts";
 
 const team: TeamResponse = teamResponse.parse({
   steps: [
@@ -91,8 +91,42 @@ describe("teamRows", () => {
 });
 
 describe("aiPickCount", () => {
-  it("counts the cells the AI may pick of all cells with a mode", () => {
-    expect(aiPickCount(team)).toEqual({ may: 1, total: 3 });
+  it("counts distinct steps the AI may pick for at least one person, of the distinct steps anyone works", () => {
+    // shape_widget: may for inv-fe, not for inv ux/1; design_widget: not. Three cells, two steps.
+    expect(aiPickCount(team)).toEqual({ may: 1, total: 2 });
+  });
+
+  it("does not count a step no person works", () => {
+    const one: TeamResponse = { ...team, people: team.people.slice(0, 1) };
+    expect(aiPickCount(one)).toEqual({ may: 1, total: 1 });
+    expect(aiPickCount({ ...team, people: [] })).toEqual({ may: 0, total: 0 });
+  });
+});
+
+describe("responseOrder", () => {
+  it("shows answers that arrive in order", () => {
+    const order = responseOrder();
+    const first = order.start();
+    const second = order.start();
+    expect(order.settle(first)).toBe(true);
+    expect(order.settle(second)).toBe(true);
+  });
+
+  it("drops an older answer that arrives after a newer one", () => {
+    const order = responseOrder();
+    const initial = order.start();
+    const reload = order.start();
+    expect(order.settle(reload)).toBe(true);
+    expect(order.settle(initial)).toBe(false);
+  });
+
+  it("shows a later request after an earlier one was dropped", () => {
+    const order = responseOrder();
+    const a = order.start();
+    const b = order.start();
+    order.settle(b);
+    order.settle(a);
+    expect(order.settle(order.start())).toBe(true);
   });
 });
 

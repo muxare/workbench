@@ -102,10 +102,33 @@ export function teamRows(team: TeamResponse): TeamRow[] {
   }));
 }
 
-/** How many cells the AI may pick on its own, of all cells with a mode. */
+/**
+ * How many steps the AI may pick on its own for at least one person, of the
+ * steps anyone works (those in at least one person's chain).
+ */
 export function aiPickCount(team: TeamResponse): { may: number; total: number } {
   const all = team.people.flatMap((p) => p.cells);
-  return { may: all.filter((c) => c.ai_may_pick).length, total: all.length };
+  const worked = new Set(all.map((c) => c.function_id));
+  const may = new Set(all.filter((c) => c.ai_may_pick).map((c) => c.function_id));
+  return { may: may.size, total: worked.size };
+}
+
+/**
+ * Keeps out-of-order answers from overwriting newer ones: each request takes a
+ * ticket with `start`, and `settle` says whether its answer may be shown,
+ * which is only when no later request has been shown already.
+ */
+export function responseOrder(): { start: () => number; settle: (ticket: number) => boolean } {
+  let issued = 0;
+  let shown = 0;
+  return {
+    start: () => (issued += 1),
+    settle: (ticket) => {
+      if (ticket <= shown) return false;
+      shown = ticket;
+      return true;
+    },
+  };
 }
 
 /**

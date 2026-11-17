@@ -38,7 +38,7 @@ function Header() {
         <h1>How the team works with AI</h1>
         <p>Every person against every step: the mode each one works it in, and whether the AI may pick its cards on its own. Open a cell to change it on that person's profile.</p>
       </div>
-      <Legend />
+      <Legend modesOnly />
     </header>
   );
 }
@@ -95,7 +95,7 @@ export function TeamView({ liveKey }: { liveKey?: string | undefined }) {
         <div className="profile__panel-head">
           <h2 id="team-heading">Steps and people</h2>
           <span className="profile__note">
-            The AI may pick on its own in <b>{picks.may}</b> of {picks.total} steps people work.
+            The AI may pick on its own on <b>{picks.may}</b> of the {picks.total} steps people work, for at least one person.
           </span>
         </div>
         <div className="team__scroll">
