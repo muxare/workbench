@@ -27,6 +27,8 @@ import {
   teammate,
   teammateId,
   teammateRoles,
+  withdrawableStatus,
+  withdrawalReason,
   type CardStatus,
 } from "./domain.ts";
 
@@ -113,6 +115,21 @@ export const moveStatusRequest = z.strictObject({
 });
 export type MoveStatusRequest = z.infer<typeof moveStatusRequest>;
 
+/**
+ * `POST /cards/:id/withdraw`: a person takes a card off the board, which
+ * appends one `card_withdrawn` event. `from` must be the card's current
+ * state, so a withdrawal made from an out-of-date view is refused, and a card
+ * is withdrawn only from Backlog, Ready, or In progress with no branch linked.
+ * The card leaves the board's columns and any open batch, takes no further
+ * move, pick, question or report, and stays readable at `GET /cards/:id` with
+ * its whole log. Refusals: 400 for a bad body (an empty reason, or a `from`
+ * that is not withdrawable); 404 for an unknown card; 422 for an unknown
+ * actor, or a card in progress with a branch linked; 403 when the actor is not
+ * a person; 409 when the card is not in `from` or is already withdrawn.
+ */
+export const withdrawRequest = z.strictObject({ actor: teammateId, reason: withdrawalReason, from: withdrawableStatus });
+export type WithdrawRequest = z.infer<typeof withdrawRequest>;
+
 /** A question rebuilt from its `asked` and `answered` events. */
 export const questionView = question;
 
@@ -127,6 +144,8 @@ export type BoardCycle = z.infer<typeof boardCycle>;
 
 /**
  * `GET /board`. `last_seq` is where to start the event stream (`GET /events?after=`).
+ * `cards` is the cards on the board: a withdrawn card is left out, though its
+ * events stay in the logs and the card is still read at `GET /cards/:id`.
  * The log is the board log: card, teammate and team events alike, unfiltered.
  * Each teammate's `process_profile` is derived from their `mode_changed`
  * events. `log_filters` is the team's filter for each log, derived from the

@@ -268,6 +268,15 @@ describe("batch events", () => {
     expect(next.board.batches[0]?.released_card_ids).toEqual(["c-17"]);
   });
 
+  it("releases a withdrawn card from its batch", () => {
+    const withdrawn: LiveEvent = {
+      seq: 5,
+      event: { id: "w5", type: "card_withdrawn", card_id: "c-16", actor: "fe-1", at: "2026-11-09T10:10:00.000Z", reason: "Invented: not needed", from: "ready" },
+    };
+    const next = mergeEvent(mergeEvent(liveBoard(board(3)), handed(4)), withdrawn);
+    expect(next.board.batches[0]?.released_card_ids).toEqual(["c-16"]);
+  });
+
   it("ignores a plan for a batch the board does not hold", () => {
     expect(mergeEvent(liveBoard(board(3)), planned(4)).board.batches).toEqual([]);
   });

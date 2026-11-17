@@ -34,7 +34,8 @@ export type BatchPlan = z.infer<typeof batchPlan>;
  * A batch as derived from the stream: who handed which cards to whom, its
  * plan once posted, and its state. `card_ids` are the cards as handed;
  * `released_card_ids` are those that have left the batch since, because a
- * person moved the card back to Backlog or handed it again in a later batch.
+ * person moved the card back to Backlog, withdrew it, or handed it again in a
+ * later batch.
  * A released card no longer counts towards the batch's state or its plan.
  */
 export const batch = z.object({
@@ -64,8 +65,9 @@ const FINISHED_CARD_STATES = new Set<string>(["review", "done"]);
 /**
  * Every batch in the stream, in the order it was handed, with its state
  * derived from `cards`. A card leaves (is released from) a batch when a
- * `status_changed` event moves it to Backlog, or when a later `batch_handed`
- * includes it, so a card is in at most one batch at a time. A batch is
+ * `status_changed` event moves it to Backlog, when a `card_withdrawn` event
+ * takes it off the board, or when a later `batch_handed` includes it, so a
+ * card is in at most one batch at a time. A batch is
  * finished once every card still in it is in Review or Done, which includes
  * a batch with no cards left, and it stays finished: a card sent back from
  * Review later (changes requested) is worked on its own, and may be handed
@@ -102,11 +104,12 @@ export function deriveBatches(events: readonly StreamEvent[], cards: readonly Ca
       });
     }
     if (e.type === "status_changed" && e.to.state === "backlog") release(e.card_id);
+    if (e.type === "card_withdrawn") release(e.card_id);
     if (e.type === "batch_planned") {
       const b = byId.get(e.batch_id);
       if (b && b.plan === null) b.plan = { waves: e.waves.map((w) => ({ card_ids: [...w.card_ids], note: w.note })), planned_by: e.actor, planned_at: e.at };
     }
-    if (e.type === "status_changed" || e.type === "batch_handed") {
+    if (e.type === "status_changed" || e.type === "batch_handed" || e.type === "card_withdrawn") {
       for (const b of byId.values()) if (!finished.has(b.id) && done(b)) finished.add(b.id);
     }
   }

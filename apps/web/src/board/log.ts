@@ -87,6 +87,8 @@ export function describeEvent(e: StreamEvent, board: BoardResponse): string {
       const on = e.pull_request === undefined ? who : `${who} on pull request #${String(e.pull_request)}`;
       return `${card} stayed ${columnLabel(e.state)}, not moved to ${columnLabel(e.to)} · ${on}: ${e.reason}`;
     }
+    case "card_withdrawn":
+      return `${who} withdrew ${card} from ${columnLabel(e.from)}: ${e.reason}`;
   }
 }
 

@@ -79,6 +79,7 @@ export function checkEligibility(
 ): Eligibility {
   const refuse = (reason: string): Eligibility => ({ eligible: false, card, reason: `${card.id}: ${reason}` });
 
+  if (card.withdrawn) return refuse("card was withdrawn");
   if (card.status.state !== "ready") return refuse(`card is ${card.status.state}, not ready`);
   const blockers = unmetDependencies(card, cards, batches);
   if (blockers.length > 0) return refuse(`depends on ${blockers.join(", ")}, which is not done`);

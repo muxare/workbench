@@ -20,6 +20,7 @@ import {
   cardStatus,
   cycleLog,
   eventsAfter,
+  getCard,
   getTeammate,
   listCards,
   listCycles,
@@ -410,6 +411,87 @@ describe("cards", () => {
       await addCard(db, { id, title: `Invented card ${id}`, function_id: "frame_problem", owner: "t-human", links: [] }, functionIds);
     }
     expect((await listCards(db)).map((c) => c.id)).toEqual(["6", "9", "10", "100", "k1", "k2"]);
+  });
+});
+
+describe("withdrawing a card", () => {
+  const withdrawn = (id: string, cardId: string, from: string, actor = "t-human", reason = "Invented: no longer needed"): StreamEvent =>
+    ({ id, type: "card_withdrawn", card_id: cardId, actor, at: at(50), reason, from }) as StreamEvent;
+  const move = (id: string, cardId: string, from: string, to: string): StreamEvent =>
+    ({ id, type: "status_changed", card_id: cardId, actor: "t-human", at: at(45), from, to: { state: to } }) as StreamEvent;
+
+  it("keeps the card's status, takes it off the board's list, and keeps it readable with its log", async () => {
+    await appendEvent(db, withdrawn("w1", "k2", "ready"));
+    expect(await getCard(db, "k2")).toMatchObject({
+      status: { state: "ready" },
+      withdrawn: { by: "t-human", at: at(50), reason: "Invented: no longer needed", from: "ready" },
+    });
+    expect(await cardStatus(db, "k2")).toEqual({ state: "ready" });
+    expect((await listCards(db)).map((c) => c.id)).toEqual(["k1"]);
+    expect((await listCards(db, { includeWithdrawn: true })).map((c) => [c.id, c.withdrawn?.from])).toEqual([
+      ["k1", undefined],
+      ["k2", "ready"],
+    ]);
+    expect(ids(await cardLog(db, "k2"))).toEqual(["v3", "w1"]);
+    expect(await getCard(db, "k1")).not.toHaveProperty("withdrawn");
+  });
+
+  it("withdraws from Backlog, and from In progress with no branch linked", async () => {
+    await addCard(db, { id: "k3", title: "Invented card three", function_id: "frame_problem", owner: "t-human", links: [] }, functionIds);
+    await appendEvents(db, [move("s1", "k2", "ready", "in_progress"), withdrawn("w1", "k2", "in_progress"), withdrawn("w2", "k3", "backlog")]);
+    expect((await getCard(db, "k2"))?.withdrawn?.from).toBe("in_progress");
+    expect((await getCard(db, "k3"))?.withdrawn?.from).toBe("backlog");
+  });
+
+  it("refuses a card in progress with a branch linked", async () => {
+    await appendEvents(db, [
+      move("s1", "k2", "ready", "in_progress"),
+      {
+        id: "l1",
+        type: "workspace_linked",
+        card_id: "k2",
+        actor: "t-human",
+        at: at(46),
+        workspace: "github",
+        repository: "invented/repo",
+        branch: "wb/k2-invented",
+        url: "https://github.com/invented/repo/tree/wb/k2-invented",
+      },
+    ]);
+    await expect(appendEvent(db, withdrawn("w1", "k2", "in_progress"))).rejects.toMatchObject({
+      code: "rule_violation",
+      message: expect.stringMatching(/branch linked/),
+    });
+    expect(await getCard(db, "k2")).not.toHaveProperty("withdrawn");
+  });
+
+  it("refuses Needs input, Review and Done as `from`, an empty reason, a stale `from`, an AI and an unknown card", async () => {
+    await expect(appendEvent(db, withdrawn("w1", "k1", "needs_input"))).rejects.toThrow();
+    await expect(appendEvent(db, withdrawn("w1", "k2", "review"))).rejects.toThrow();
+    await expect(appendEvent(db, withdrawn("w1", "k2", "done"))).rejects.toThrow();
+    await expect(appendEvent(db, withdrawn("w1", "k2", "ready", "t-human", "   "))).rejects.toThrow();
+    await expect(appendEvent(db, withdrawn("w1", "k2", "backlog"))).rejects.toMatchObject({ code: "conflict" });
+    await expect(appendEvent(db, withdrawn("w1", "k2", "ready", "t-ai"))).rejects.toMatchObject({ code: "forbidden" });
+    await expect(appendEvent(db, withdrawn("w1", "k9", "backlog"))).rejects.toMatchObject({ code: "not_found" });
+    expect(await getCard(db, "k2")).not.toHaveProperty("withdrawn");
+  });
+
+  it("refuses any later event on the card, in a later write or later in the same one", async () => {
+    await expect(appendEvents(db, [withdrawn("w1", "k2", "ready"), move("s1", "k2", "ready", "backlog")])).rejects.toMatchObject({
+      code: "conflict",
+      message: expect.stringMatching(/withdrawn/),
+    });
+    expect(ids(await cardLog(db, "k2"))).toEqual(["v3"]);
+    await appendEvent(db, withdrawn("w1", "k2", "ready"));
+    const later: StreamEvent[] = [
+      move("s1", "k2", "ready", "in_progress"),
+      { id: "p1", type: "picked", card_id: "k2", actor: "t-ai", at: at(55), mode: "assist" },
+      { id: "a1", type: "asked", card_id: "k2", actor: "t-ai", at: at(55), question_id: "q9", asked_of: "t-human", text: "Invented?", why_it_blocks: "Invented." },
+      { id: "r1", type: "report_posted", card_id: "k2", actor: "t-ai", at: at(55), text: "Invented report." },
+      withdrawn("w2", "k2", "ready"),
+    ];
+    for (const e of later) await expect(appendEvent(db, e)).rejects.toMatchObject({ code: "conflict" });
+    expect(ids(await cardLog(db, "k2"))).toEqual(["v3", "w1"]);
   });
 });
 

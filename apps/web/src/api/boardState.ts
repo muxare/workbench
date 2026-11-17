@@ -12,8 +12,8 @@
 // holds every event, hidden or not. A `team_named` event renames the board at
 // once. A `batch_handed` event adds its batch to the open batches at once and
 // a `batch_planned` event adds the plan, so the batch markers follow without a
-// refetch. As in `deriveBatches`, a card handed in a new batch or moved back
-// to Backlog is released from the batch it was in; a batch's `finished` state depends on card status, which the
+// refetch. As in `deriveBatches`, a card handed in a new batch, moved back
+// to Backlog or withdrawn is released from the batch it was in; a batch's `finished` state depends on card status, which the
 // refetch brings. A streamed event whose time falls in the
 // current cycle's window joins the cycle log too; which cycle is current is
 // the server's call, so a refetch brings a new cycle when one starts.
@@ -86,6 +86,7 @@ function applyToBatches(batches: BoardResponse["batches"], e: StreamEvent): Boar
       return add.length === 0 ? b : { ...b, released_card_ids: [...b.released_card_ids, ...add] };
     });
   if (e.type === "status_changed") return e.to.state === "backlog" ? release(batches, [e.card_id]) : batches;
+  if (e.type === "card_withdrawn") return release(batches, [e.card_id]);
   if (e.type === "batch_handed") {
     if (batches.some((b) => b.id === e.batch_id)) return batches;
     return [
