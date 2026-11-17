@@ -97,6 +97,14 @@ describe("teammateNotes", () => {
     // The person who writes the assisted card still has it, and the one waiting, under Now.
     expect(texts(teammateNotes(BE, withThem))[0]).toBe("Now: #151 · #160 · #161");
   });
+  it("keeps a card under the AI's Now when its pick has left the board log, by the function's default mode", () => {
+    // BE chose no mode for implement_services, whose default is delegate, where the AI writes.
+    const picked = card("c-162", { function_id: "implement_services", owner: BE, status: { state: "in_progress" } });
+    const withIt = testBoard({ cards: [...board.cards, picked] });
+    expect(withIt.teammates.find((t) => t.id === BE)).toMatchObject({ process_profile: { define_api_contract: "assist" } });
+    expect(withIt.log.some((e) => e.type === "picked" && e.card_id === "c-162")).toBe(false);
+    expect(texts(teammateNotes(AI, withIt))).toEqual(["Now: #162", "Waiting on BE for #151"]);
+  });
   it("tells an owner what to verify and what they finished", () => {
     expect(texts(teammateNotes(PO, board))).toEqual(["Next: verify #145"]);
     expect(texts(teammateNotes(UX, board))).toEqual(["Now: #142", "Just finished #138"]);
