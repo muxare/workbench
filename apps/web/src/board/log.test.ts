@@ -27,6 +27,20 @@ describe("describeEvent", () => {
     ).toBe("BE answered on #151: Invented: a cursor.");
   });
 
+  it("describes a batch handed to the AI and its plan", () => {
+    const base = { actor: "t-be", at: "2026-11-06T09:50:00Z", batch_id: "1" };
+    expect(describeEvent({ ...base, id: "h", type: "batch_handed", card_ids: ["c-16", "c-17"], handed_to: "t-ai" }, board)).toBe(
+      "BE handed #16, #17 to AI as batch 1",
+    );
+    const wave = (id: string) => ({ card_ids: [id], note: "Invented note." });
+    expect(describeEvent({ ...base, id: "p", type: "batch_planned", actor: "t-ai", waves: [wave("c-16"), wave("c-17")] }, board)).toBe(
+      "AI planned batch 1 in 2 waves",
+    );
+    expect(
+      describeEvent({ ...base, id: "q", type: "batch_planned", actor: "t-ai", waves: [{ card_ids: ["c-16", "c-17"], note: "Invented." }] }, board),
+    ).toBe("AI planned batch 1 in 1 wave");
+  });
+
   it("describes a question relayed outside the team and the wait on it", () => {
     const external = { artifact: "domain_rules", source: "Invented: caretaker's fault records" };
     const base = { card_id: "c-151", actor: "t-ai", at: "2026-11-06T09:50:00Z" };

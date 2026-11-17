@@ -2,10 +2,13 @@
 // apps/web so neither side copies them. Field names are snake_case, like the
 // domain schemas. There is no sign-in yet, so every write names its `actor`.
 import { z } from "zod";
+import { batch, batchState } from "./batch.ts";
 import { chainFunction } from "./chain.ts";
 import { functionFrontMatter, functionRole } from "./functionFile.ts";
 import {
   aiTeammate,
+  batchCardIds,
+  batchWave,
   card,
   cardEvent,
   cardLink,
@@ -136,6 +139,8 @@ export type BoardCycle = z.infer<typeof boardCycle>;
  * doing so as `mode_changed` and `roles_changed` events stream in.
  * `team` is the team's name and headline from its `team_named` events, or
  * null when the team has never been named.
+ * `batches` is the open batches (not finished), oldest first, as on
+ * `GET /batches`.
  */
 export const boardResponse = z.object({
   team: teamName.nullable(),
@@ -146,6 +151,7 @@ export const boardResponse = z.object({
   log: z.array(streamEvent),
   log_filters: logFilters,
   cycle: boardCycle.nullable(),
+  batches: z.array(batch),
   last_seq: z.number().int().nonnegative(),
 });
 export type BoardResponse = z.infer<typeof boardResponse>;
@@ -197,6 +203,52 @@ export const cardResponse = z.object({
   function: functionFrontMatter.nullable(),
 });
 export type CardResponse = z.infer<typeof cardResponse>;
+
+/**
+ * `POST /batches`: a person hands two or more Ready cards to an AI teammate
+ * as one batch, which appends one `batch_handed` event and answers 201 with
+ * the batch. `handed_to` may be left out when the team has exactly one AI
+ * teammate. Refusals: 400 for a bad body; 404 for an unknown card; 422 for
+ * an unknown actor or `handed_to`, or a `handed_to` that is not an AI
+ * teammate; 403 when the actor is not a person; 409 when a card is not
+ * Ready, depends on a card outside the batch that is not done, is already in
+ * an open batch, or is one the AI may not pick under its owner's mode.
+ */
+export const handBatchRequest = z.strictObject({ actor: teammateId, card_ids: batchCardIds, handed_to: teammateId.optional() });
+export type HandBatchRequest = z.infer<typeof handBatchRequest>;
+
+/**
+ * `POST /batches/:id/plan`: the AI teammate the batch was handed to posts its
+ * plan, which appends one `batch_planned` event and answers with the batch.
+ * Refusals: 400 for a bad body; 404 for an unknown batch; 422 for an unknown
+ * actor; 403 when the actor is not the teammate the batch was handed to; 409
+ * `already_planned` when the batch already has a plan; 409 `conflict` when
+ * the batch is finished or the plan is invalid (`checkPlan`), with the
+ * reason. A card that has left the batch (`released_card_ids`) is not in the
+ * plan.
+ */
+export const planBatchRequest = z.strictObject({ actor: teammateId, waves: z.array(batchWave).min(1) });
+export type PlanBatchRequest = z.infer<typeof planBatchRequest>;
+
+/** `GET /batches?state=`: only the open batches in that state. */
+export const batchListState = batchState.exclude(["finished"]);
+export type BatchListState = z.infer<typeof batchListState>;
+
+/** `POST /batches` and `POST /batches/:id/plan`: the batch as it now stands. */
+export const batchResponse = z.object({ batch });
+export type BatchResponse = z.infer<typeof batchResponse>;
+
+/** `GET /batches`: the open batches, oldest first, optionally only those in one state. */
+export const batchesResponse = z.object({ batches: z.array(batch) });
+export type BatchesResponse = z.infer<typeof batchesResponse>;
+
+/**
+ * `GET /batches/:id`: the batch, finished or not, and each of its cards in
+ * batch order as `GET /cards/:id` answers it: the card with its status and
+ * links, its log, its questions and its function's definition.
+ */
+export const batchDetailResponse = z.object({ batch, cards: z.array(cardResponse) });
+export type BatchDetailResponse = z.infer<typeof batchDetailResponse>;
 
 /** Every write: the card as it now stands and the events the write appended, in order. */
 export const writeResponse = z.object({ card, events: z.array(cardEvent) });
@@ -344,12 +396,16 @@ export type TeammateResponse = z.infer<typeof teammateResponse>;
  * Why the API refused a request. `unauthorized` (401) is a GitHub webhook
  * whose signature does not match; `unavailable` (503) is the webhook endpoint
  * when no secret is configured, so it cannot check any signature.
+ * `already_planned` (409) is `POST /batches/:id/plan` on a batch that has a
+ * plan, kept apart from `conflict` so a client can tell "someone planned it
+ * already" from "this plan is invalid" without reading `reason`.
  */
 export const apiErrorCode = z.enum([
   "invalid_request",
   "unauthorized",
   "not_found",
   "conflict",
+  "already_planned",
   "forbidden",
   "rule_violation",
   "unavailable",

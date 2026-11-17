@@ -103,6 +103,7 @@ export function testBoard(over: Partial<BoardResponse> = {}): BoardResponse {
     log,
     log_filters: defaultLogFilters(),
     cycle: { cycle: CYCLE, ended: false, log },
+    batches: [],
     last_seq: log.length,
     ...over,
   };

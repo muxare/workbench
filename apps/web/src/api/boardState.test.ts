@@ -19,7 +19,7 @@ function report(id: string): CardEvent {
 }
 
 function board(lastSeq: number, log: CardEvent[] = []): BoardResponse {
-  return { team: null, cards: [], teammates: [], functions: [], open_questions: [], log, log_filters: defaultLogFilters(), cycle: null, last_seq: lastSeq };
+  return { team: null, cards: [], teammates: [], functions: [], open_questions: [], log, log_filters: defaultLogFilters(), cycle: null, batches: [], last_seq: lastSeq };
 }
 
 const live = (seq: number, id = `e${seq}`): LiveEvent => ({ seq, event: report(id) });

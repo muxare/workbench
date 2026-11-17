@@ -78,7 +78,12 @@
       "function_id": "implement_services",
       "owner": "mikael",
       "milestone": "Hosted workbench",
-      "links": [{ "relation": "depends_on", "card_id": "10" }]
+      "links": [
+        {
+          "relation": "depends_on",
+          "card_id": "10"
+        }
+      ]
     },
     {
       "id": "12",
@@ -102,6 +107,48 @@
       "function_id": "implement_interactions",
       "owner": "mikael",
       "milestone": "Board, after the first runs",
+      "links": []
+    },
+    {
+      "id": "16",
+      "title": "Record a batch of cards handed to the AI and the AI's plan for it as team events, and serve batches from the API",
+      "function_id": "implement_services",
+      "owner": "mikael",
+      "milestone": "Development loop, stage 3b",
+      "links": []
+    },
+    {
+      "id": "17",
+      "title": "Let a person select several Ready cards on the board and hand them to the AI as a batch, and show open batches on the board",
+      "function_id": "implement_interactions",
+      "owner": "mikael",
+      "milestone": "Development loop, stage 3b",
+      "links": [
+        {
+          "relation": "depends_on",
+          "card_id": "16"
+        }
+      ]
+    },
+    {
+      "id": "18",
+      "title": "Add list_batches, get_batch and plan_batch to the MCP server",
+      "function_id": "implement_services",
+      "owner": "mikael",
+      "milestone": "Development loop, stage 3b",
+      "links": [
+        {
+          "relation": "depends_on",
+          "card_id": "16"
+        }
+      ]
+    },
+    {
+      "id": "19",
+      "title": "Write the work-batch skill: plan a batch into waves and work each wave with one worktree subagent per card",
+      "function_id": "implement_services",
+      "owner": "mikael",
+      "milestone": "Development loop, stage 3b",
       "links": []
     }
   ]

@@ -107,7 +107,7 @@ export async function buildAiProfile(db: Db, self: AiTeammate, options: AiProfil
     listCards(db),
     boardLog(db),
     listQuestions(db),
-    eligibleCards(db, definitions),
+    eligibleCards(db, definitions, self.id),
   ]);
   // The AI's picks and its own events are card events; mode changes (teammate events) are made by people.
   const cardEvents = log.filter(isCardEvent);
