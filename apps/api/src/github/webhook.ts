@@ -8,7 +8,9 @@
 // - `pull_request` opened (not as a draft), ready_for_review or
 //   review_requested (a reviewer asked, or asked again): `review_requested`,
 //   and a card in progress moves to review if the sender may move it. A card
-//   in any other lane but review stays where it is, with `move_skipped`.
+//   in any other lane but review stays where it is, with `move_skipped`; so
+//   does one in `needs_input`, which moves on only when its question is
+//   answered.
 // - `workflow_run` completed for the workflow `check` on a pull request:
 //   `check_ran` with `check: "structural"`, passed on `success`, failed on
 //   `failure`, `timed_out`, `startup_failure` and `action_required`. Every
@@ -16,7 +18,8 @@
 // - `pull_request_review` submitted by a person as approved: `approved`, with
 //   the commit reviewed; as changes requested: `changes_requested`, and a card
 //   in review moves back to in progress, whoever the person is; a card in
-//   any other lane but in progress stays, with `move_skipped`. A
+//   progress or in `needs_input` (in progress, waiting on an answer) stays
+//   and skipped nothing; a card in any other lane stays, with `move_skipped`. A
 //   commented review, which GitHub sends for every inline comment and reply,
 //   records nothing, from anyone.
 // - `pull_request_review` submitted by an AI teammate is the AI critic, which
@@ -320,8 +323,13 @@ async function planPullRequest(ctx: WebhookContext, p: PullRequestPayload): Prom
   const actor = who.teammate.id;
   const events: Draft[] = [{ type: "review_requested", actor, pull_request: pr.number, title: pr.title, url: pr.html_url }];
   const state = card.status.state;
-  // A card already in review has nothing to move; one in any other lane but in progress drifted from the work.
+  // A card already in review has nothing to move; one in any other lane but in progress drifted from the work. A
+  // card waiting on an answer is in progress, but the board moves it on only by the answer, so a pull request
+  // opened before then is a skip too, as `pnpm wb lanes` reports it.
   if (state === "review") return { kind: "record", cardId: card.id, events };
+  if (state === "needs_input") {
+    return withSkip(card, actor, pr.number, events, "review", "a card waiting on an answer moves to review only once the question is answered");
+  }
   if (state !== "in_progress") return withSkip(card, actor, pr.number, events, "review", "a card moves to review only from in progress");
   return withMove(ctx, card, who.teammate, pr.number, events, "in_progress", "review");
 }
@@ -443,8 +451,9 @@ async function planReview(ctx: WebhookContext, p: PullRequestReviewPayload): Pro
     events.push(changes);
   }
   const state = card.status.state;
-  // A card already back in progress has nothing to move; one in any other lane but review drifted from the work.
-  if (state === "in_progress") return { kind: "record", cardId: card.id, events };
+  // A card already in progress, or in progress and waiting on an answer (`needs_input`), has nothing to move and
+  // skipped nothing; one in any other lane but review drifted from the work.
+  if (state === "in_progress" || state === "needs_input") return { kind: "record", cardId: card.id, events };
   if (state !== "review") return withSkip(card, actor, pr.number, events, "in_progress", "a card moves back to in progress only from review");
   return withMove(ctx, card, who.teammate, pr.number, events, "review", "in_progress");
 }

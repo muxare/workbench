@@ -2,6 +2,8 @@
 // board from the running API, and the repository's pull requests and branches
 // from the `gh` CLI. A report, so it always exits 0: an API that is not
 // running, or a GitHub it cannot read, is said and not treated as a failure.
+// The whole run has a time limit (`LANES_TIMEOUT_MS`), because the SessionStart
+// hook waits for it: past the limit it says it timed out and exits 0.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { findDrift, formatDrift, logsNeeded, type BoardCard, type GhPullRequest, type LogEvent } from "./lanes.ts";
@@ -10,6 +12,8 @@ import { hookRepo, services } from "./services.ts";
 const run = promisify(execFile);
 const GH_TIMEOUT_MS = 8_000;
 const HTTP_TIMEOUT_MS = 3_000;
+/** The whole run's limit, well inside the SessionStart hook's own watchdog on it. */
+export const LANES_TIMEOUT_MS = 12_000;
 
 /**
  * The API `pnpm wb` starts listens on the port in the services table, as `wb
@@ -42,11 +46,33 @@ async function readGithub(): Promise<{ prs: GhPullRequest[]; branches: string[] 
   return { prs: JSON.parse(prs) as GhPullRequest[], branches: branches.split("\n").filter(Boolean) };
 }
 
-export async function lanes(json: boolean): Promise<void> {
-  const base = apiUrl();
-  const say = (message: string, extra: Record<string, unknown>) => {
+type Say = (message: string, extra: Record<string, unknown>) => void;
+
+/**
+ * The report, unless it takes longer than `limitMs`: then it says it timed out
+ * and exits 0 at once, so a `gh` or HTTP call still running cannot hold the
+ * process open.
+ */
+export async function lanes(json: boolean, limitMs: number = LANES_TIMEOUT_MS): Promise<void> {
+  const say: Say = (message, extra) => {
     console.log(json ? JSON.stringify({ ...extra, message }) : message);
   };
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<"timed_out">((resolve) => {
+    timer = setTimeout(() => resolve("timed_out"), limitMs);
+  });
+  try {
+    if ((await Promise.race([report(json, say), timedOut])) === "timed_out") {
+      say(`lanes: timed out after ${String(limitMs / 1000)} s reading the board and GitHub, so there is no report.`, { timed_out: true });
+      process.exit(0);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function report(json: boolean, say: Say): Promise<void> {
+  const base = apiUrl();
 
   let cards: BoardCard[];
   try {
@@ -65,15 +91,18 @@ export async function lanes(json: boolean): Promise<void> {
     return;
   }
 
+  // Fetched together, so many cards to check cost one HTTP timeout, not one each.
   const logs = new Map<string, LogEvent[]>();
-  for (const id of logsNeeded(cards, github.prs, github.branches)) {
-    try {
-      logs.set(id, ((await getJson(`${base}/api/cards/${encodeURIComponent(id)}`)) as { log: LogEvent[] }).log);
-    } catch {
-      // Without its log the card is held to `review` alone; the line it gets says what to look at.
-    }
-  }
+  await Promise.all(
+    logsNeeded(cards, github.prs, github.branches).map(async (id) => {
+      try {
+        logs.set(id, ((await getJson(`${base}/api/cards/${encodeURIComponent(id)}`)) as { log: LogEvent[] }).log);
+      } catch {
+        // Without its log the card is held to `review` alone; the line it gets says what to look at.
+      }
+    }),
+  );
 
-  const report = findDrift(cards, github.prs, github.branches, logs);
-  console.log(json ? JSON.stringify(report, null, 2) : formatDrift(report));
+  const drift = findDrift(cards, github.prs, github.branches, logs);
+  console.log(json ? JSON.stringify(drift, null, 2) : formatDrift(drift));
 }

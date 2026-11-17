@@ -56,6 +56,21 @@ async function moveCard2(...states: ("ready" | "in_progress" | "review" | "done"
   await appendEvents(db, events);
 }
 
+/** Put card 2, in progress, in needs_input: it waits on Mikael's answer to an invented question. */
+async function askOnCard2() {
+  await appendEvents(db, [
+    {
+      id: "invented-ask",
+      type: "status_changed",
+      card_id: "2",
+      actor: "ai",
+      at: "2026-11-11T10:00:00Z",
+      from: "in_progress",
+      to: { state: "needs_input", waiting_on: "mikael", question_id: "invented-q1" },
+    },
+  ]);
+}
+
 /** Mikael's mode for implement_services, the function of cards 1 and 2; its default is delegate. */
 async function setMode(to: "manual" | "assist" | "delegate") {
   await appendEvents(db, [
@@ -338,6 +353,18 @@ describe("pull_request opened or ready for review", () => {
     expect((await cardStatus(db, "2")).state).toBe("ready");
   });
 
+  it("asks for review on a card waiting on an answer, and records the move to review it skipped", async () => {
+    // The board moves a card in needs_input on only by the answer, so the pull request ran ahead of the board.
+    await moveCard2("ready", "in_progress");
+    await askOnCard2();
+    const body = await recorded("pull_request", fixture("pull_request.opened"));
+    expect(body.events).toMatchObject([
+      { type: "review_requested", pull_request: 3 },
+      { type: "move_skipped", to: "review", state: "needs_input", reason: "a card waiting on an answer moves to review only once the question is answered" },
+    ]);
+    expect((await cardStatus(db, "2")).state).toBe("needs_input");
+  });
+
   it("asks for review on a card already in review, and skips nothing", async () => {
     await moveCard2("ready", "in_progress", "review");
     const body = await recorded("pull_request", fixture("pull_request.review_requested"));
@@ -496,6 +523,23 @@ describe("pull_request_review", () => {
       { type: "changes_requested", actor: "ai", pull_request: 3 },
     ]);
     expect(body.reason).toBeUndefined();
+  });
+
+  it("records changes requested on a card waiting on an answer, by a person or the AI critic, and skips nothing", async () => {
+    // needs_input is in progress, waiting on an answer: there is no move back to make, as for a card in progress.
+    await moveCard2("ready", "in_progress");
+    await askOnCard2();
+    const byPerson = await recorded("pull_request_review", fixture("pull_request_review.changes_requested"));
+    expect(types(byPerson.events)).toEqual(["changes_requested"]);
+    expect(byPerson.reason).toBeUndefined();
+    const byCritic = await recorded("pull_request_review", criticReview("changes_requested"));
+    expect(byCritic.events).toMatchObject([
+      { type: "check_ran", actor: "ai", check: "consistency", passed: false, pull_request: 3 },
+      { type: "changes_requested", actor: "ai", pull_request: 3 },
+    ]);
+    expect(byCritic.reason).toBeUndefined();
+    expect(types(await cardLog(db, "2"))).not.toContain("move_skipped");
+    expect((await cardStatus(db, "2")).state).toBe("needs_input");
   });
 
   it("records the move back it skipped on changes requested for a card not in review", async () => {

@@ -6,8 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git push *)",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/card-lane-on-push.mjs",
+            "command": "sh \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/push-guard.sh",
             "timeout": 10
           }
         ]

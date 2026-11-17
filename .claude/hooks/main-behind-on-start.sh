@@ -14,7 +14,11 @@
 # board's lanes with GitHub (docs/dev-loop.md, "Running the loop locally").
 # When it reports drift, the report joins additionalContext and systemMessage
 # says how many cards drifted. A stopped API, a missing gh or pnpm, a main
-# without the command, or any error: the report is left out.
+# without the command, or any error: the report is left out. Lanes limits
+# itself to about 12 s, and runs here under a watchdog of LANES_TIMEOUT
+# seconds as well, so the notice about main always gets out within the
+# hook's 30 s timeout (fetch 8 s + lanes 15 s): a lanes run that is too slow
+# is killed and its report left out, never the notice.
 #
 # Up to date, no drift, offline, or anything unexpected: no output. Always
 # exits 0.
@@ -23,6 +27,7 @@
 # matchers, additionalContext, systemMessage).
 
 FETCH_TIMEOUT=8
+LANES_TIMEOUT=15
 
 input=$(cat)
 
@@ -150,7 +155,28 @@ behind_json=$(main_behind)
 
 # The lanes report prints only a summary line when nothing drifted, or when
 # it has no board or GitHub to compare, so more than one line means drift.
-lanes=$(cd "$repo" 2>/dev/null && pnpm -s wb lanes 2>/dev/null </dev/null) || lanes=""
+# Lanes runs with a watchdog like the fetch's, its output in a temporary
+# file so that a killed run, or a child it leaves behind, holds no pipe the
+# hook waits on.
+lanes=""
+lanes_out=$(mktemp "${TMPDIR:-/tmp}/wb-lanes.XXXXXX" 2>/dev/null) || lanes_out=""
+if [ -n "$lanes_out" ]; then
+  (cd "$repo" && exec pnpm -s wb lanes) >"$lanes_out" 2>/dev/null </dev/null &
+  lanes_pid=$!
+  (
+    sleep "$LANES_TIMEOUT" &
+    sleep_pid=$!
+    trap 'kill "$sleep_pid"; exit 0' TERM
+    wait "$sleep_pid"
+    kill "$lanes_pid"
+  ) >/dev/null 2>&1 </dev/null &
+  watch_pid=$!
+  wait "$lanes_pid" 2>/dev/null
+  lanes_status=$?
+  { kill "$watch_pid"; wait "$watch_pid"; } 2>/dev/null
+  [ "$lanes_status" -eq 0 ] && lanes=$(cat "$lanes_out" 2>/dev/null)
+  rm -f "$lanes_out"
+fi
 [ "$(printf '%s\n' "$lanes" | grep -c .)" -gt 1 ] || lanes=""
 [ -n "$behind_json" ] || [ -n "$lanes" ] || exit 0
 
