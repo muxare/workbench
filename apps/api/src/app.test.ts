@@ -25,7 +25,7 @@ import { inventedSeedAt } from "./seed/invented.ts";
 /** The invented seed as loaded on 2026-11-07, so Sprint 4 runs from 2026-11-05 to 2026-11-19. */
 const inventedSeed = inventedSeedAt(new Date("2026-11-07T08:00:00Z"));
 import { withProfile } from "./seed/withProfile.ts";
-import { addCard, addTeammate, appendEvent, cardStatus, lastSeq, listCards, seed, seedEvents, type SeedData } from "./store.ts";
+import { addCard, addTeammate, appendEvent, cardStatus, lastSeq, listCards, onAppend, seed, seedEvents, type SeedData } from "./store.ts";
 
 /** Every event the seed stores, the people's joining events first, so positions in the stream match. */
 const seeded = seedEvents(inventedSeed);
@@ -239,6 +239,35 @@ describe("POST /api/cards", () => {
 
   it("rejects a function that process/ does not have, with 422", async () => {
     await expectProblem(await post("/api/cards", { ...card, function_id: "invented_missing" }), 422, "rule_violation", /invented_missing/);
+  });
+
+  it("records a card_created event by the actor, which the stream carries and the card log shows first", async () => {
+    const before = await lastSeq(db);
+    const heard: string[] = [];
+    const stop = onAppend(db, (s) => heard.push(`${String(s.seq)} ${s.event.type}`));
+    const id = await created(post("/api/cards", { ...card, milestone: "Invented milestone" }));
+    stop();
+    expect(await lastSeq(db)).toBe(before + 1);
+    expect(heard).toEqual([`${String(before + 1)} card_created`]);
+    const res = await app.request(`/api/cards/${id}`);
+    const detail = (await res.json()) as { log: unknown[] };
+    expect(detail.log[0]).toMatchObject({
+      type: "card_created",
+      card_id: id,
+      actor: PO,
+      title: card.title,
+      function_id: "frame_problem",
+      owner: UX,
+      milestone: "Invented milestone",
+    });
+  });
+
+  it("refuses an actor who is not on the team, and records neither the card nor an event", async () => {
+    const before = await lastSeq(db);
+    const cards = (await listCards(db)).length;
+    await expectProblem(await post("/api/cards", { ...card, actor: "invented-nobody" }), 422, "rule_violation", /invented-nobody/);
+    expect(await lastSeq(db)).toBe(before);
+    expect((await listCards(db)).length).toBe(cards);
   });
 });
 

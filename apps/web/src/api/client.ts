@@ -8,6 +8,7 @@ import {
   batchResponse,
   boardResponse,
   cardResponse,
+  createCardResponse,
   criticGatesResponse,
   logFiltersResponse,
   teammateProfileResponse,
@@ -23,6 +24,8 @@ import {
   type BatchResponse,
   type BoardResponse,
   type CardResponse,
+  type CreateCardRequest,
+  type CreateCardResponse,
   type CriticGatesResponse,
   type HandBatchRequest,
   type LogFiltersResponse,
@@ -153,6 +156,17 @@ export async function fetchBoard(signal?: AbortSignal): Promise<BoardResponse> {
 export async function fetchCard(cardId: string, signal?: AbortSignal): Promise<CardResponse> {
   const parsed = cardResponse.safeParse(await getJson(`/cards/${encodeURIComponent(cardId)}`, signal));
   if (!parsed.success) throw new ApiRequestError("bad_response", "the card from the API does not match the shared schema");
+  return parsed.data;
+}
+
+/**
+ * `POST /api/cards`: a person puts a new card on the board in Backlog, under
+ * the next number. Answers with the card; the board also hears its
+ * `card_created` event over the stream.
+ */
+export async function createCard(request: CreateCardRequest): Promise<CreateCardResponse> {
+  const parsed = createCardResponse.safeParse(await postJson("/cards", request));
+  if (!parsed.success) throw new ApiRequestError("bad_response", "the new card from the API does not match the shared schema");
   return parsed.data;
 }
 

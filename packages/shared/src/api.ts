@@ -63,6 +63,13 @@ export const createCardRequest = z.strictObject({
 export type CreateCardRequest = z.input<typeof createCardRequest>;
 
 /**
+ * The answer to `POST /cards` (201): the new card as it stands, in Backlog.
+ * The board also hears its `card_created` event over the stream.
+ */
+export const createCardResponse = z.object({ card });
+export type CreateCardResponse = z.infer<typeof createCardResponse>;
+
+/**
  * `POST /cards/:id/pick`: move a `ready` card to `in_progress`. The mode is
  * the one the card's owner set for its function; `mode`, when given, must
  * match it.

@@ -3,27 +3,31 @@ import type { BoardResponse } from "@workbench/shared";
 import type { BoardConnection } from "../api/useBoard.ts";
 import { BatchBar } from "./BatchBar.tsx";
 import { keepSelectable, toggleSelected } from "./batch.ts";
-import { BoardColumn, type BatchSelection } from "./BoardColumn.tsx";
+import { BoardColumn, type BatchSelection, type NewCardToggle } from "./BoardColumn.tsx";
 import { milestoneProgress } from "./cardView.ts";
 import { groupIntoColumns } from "./columns.ts";
 import { ConnectionIndicator } from "./ConnectionIndicator.tsx";
 import { CycleLog } from "./CycleLog.tsx";
+import { NewCard } from "./NewCard.tsx";
 
 /**
  * The board panel: header with the current cycle and milestone progress, six
  * columns, the cycle log. "Select" on the Ready column starts selecting cards
  * for a batch; the batch bar then sits between the header and the columns.
+ * "New card" on the Backlog column opens the new card form in the same place.
  */
 export function Board({
   board,
   connection,
   onFilterChanged,
   onBatchHanded,
+  onCardCreated,
 }: {
   board: BoardResponse;
   connection: BoardConnection;
   onFilterChanged?: (() => void) | undefined;
   onBatchHanded?: (() => void) | undefined;
+  onCardCreated?: (() => void) | undefined;
 }) {
   const progress = milestoneProgress(board.cards);
   const [selecting, setSelecting] = useState(false);
@@ -45,6 +49,8 @@ export function Board({
     onToggleSelecting: () => (selecting ? stop() : setSelecting(true)),
     onToggle: (id) => setSelected(toggleSelected(selected, id)),
   };
+  const [creating, setCreating] = useState(false);
+  const newCard: NewCardToggle = { open: creating, onToggle: () => setCreating(!creating) };
 
   return (
     <section className="board" aria-label="Team board">
@@ -67,10 +73,11 @@ export function Board({
           <ConnectionIndicator connection={connection} />
         </div>
       </header>
+      {creating && <NewCard board={board} onClose={() => setCreating(false)} onCreated={onCardCreated} />}
       {selecting && <BatchBar board={board} selected={selected} onDone={stop} onHanded={onBatchHanded} />}
       <div className="board__columns">
         {groupIntoColumns(board.cards).map((col) => (
-          <BoardColumn key={col.status} board={board} column={col} selection={selection} />
+          <BoardColumn key={col.status} board={board} column={col} selection={selection} newCard={newCard} />
         ))}
       </div>
       <CycleLog board={board} onFilterChanged={onFilterChanged} />

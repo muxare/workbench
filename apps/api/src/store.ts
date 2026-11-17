@@ -904,36 +904,74 @@ export async function addCard(db: Db, input: CardRecord, functionIds: ReadonlySe
  * Add a card under the next number: one more than the highest card id on the
  * board that is a plain number ("1", "2", …), or "1" when there is none. Ids
  * that are not plain numbers, such as an old UUID or "invented-101", are
- * ignored. The number is read and the row written in one INSERT … SELECT.
- * Within one server process, which holds one connection, two creates at the
- * same time cannot take the same number. Across processes on one file (the
- * server and `team:cards`, say) two writers can read the same MAX; then the
- * primary key stops a duplicate, and the losing writer may instead fail with
- * SQLITE_BUSY, since no busy_timeout is set. Answers with the new card's id.
+ * ignored. Answers with the new card's id.
+ *
+ * With `created`, the card's `card_created` event is recorded too, made by
+ * `created.actor` at `created.at`: the row and the event are written in one
+ * batch, which is one transaction, so the stream never names a card that is
+ * not there and a card made this way is never without its first event. The
+ * actor must be on the team and not have left; the owner must not have left.
+ *
+ * The number is read and the row written inside the store's serialized
+ * writes, so within one server process, which holds one connection, two
+ * creates at the same time cannot take the same number. Across processes on
+ * one file (the server and `team:cards`, say) two writers can read the same
+ * MAX; then the primary key stops a duplicate and the losing write, event
+ * included, is rolled back, or it fails with SQLITE_BUSY, since no
+ * busy_timeout is set.
  */
 export async function addNumberedCard(
   db: Db,
   input: Omit<CardRecord, "id">,
   functionIds: ReadonlySet<string>,
-  options: { actor?: string } = {},
+  options: { created?: { actor: string; at: string; eventId: string } } = {},
 ): Promise<string> {
   const c = cardRecord.omit({ id: true }).parse(input);
   if (!functionIds.has(c.function_id)) {
     throw new StoreError(`no function '${c.function_id}' in process/functions`, "unknown_function");
   }
+  const { created } = options;
   return serialized(db, async () => {
-    if (options.actor !== undefined && (await hasLeft(db, options.actor))) {
-      throw new StoreError(`${options.actor} has left the team and changes nothing on it`, "forbidden");
+    if (created !== undefined) {
+      const [actor] = await db.select({ id: teammates.id }).from(teammates).where(eq(teammates.id, created.actor));
+      if (!actor) throw new StoreError(`no teammate '${created.actor}'`, "not_found");
+      if (await hasLeft(db, created.actor)) {
+        throw new StoreError(`${created.actor} has left the team and changes nothing on it`, "forbidden");
+      }
     }
     await checkOwnerOnTeam(db, c.owner, "the card");
-    const row = await db.get<{ id: string }>(sql`
-      INSERT INTO ${cards} (id, title, function_id, owner, milestone, links)
-      SELECT CAST(COALESCE(MAX(CAST(id AS INTEGER)), 0) + 1 AS TEXT),
-        ${c.title}, ${c.function_id}, ${c.owner}, ${c.milestone ?? null}, ${JSON.stringify(c.links)}
+    const next = await db.get<{ id: string }>(sql`
+      SELECT CAST(COALESCE(MAX(CAST(id AS INTEGER)), 0) + 1 AS TEXT) AS id
       FROM ${cards}
-      WHERE id GLOB '[1-9]*' AND id NOT GLOB '*[^0-9]*'
-      RETURNING id`);
-    return row.id;
+      WHERE id GLOB '[1-9]*' AND id NOT GLOB '*[^0-9]*'`);
+    const id = next.id;
+    const row = db.insert(cards).values({
+      id,
+      title: c.title,
+      functionId: c.function_id,
+      owner: c.owner,
+      milestone: c.milestone ?? null,
+      links: c.links,
+    });
+    if (created === undefined) {
+      await row;
+      return id;
+    }
+    const event = streamEvent.parse({
+      id: created.eventId,
+      type: "card_created",
+      card_id: id,
+      actor: created.actor,
+      at: created.at,
+      title: c.title,
+      function_id: c.function_id,
+      owner: c.owner,
+      ...(c.milestone === undefined ? {} : { milestone: c.milestone }),
+    });
+    // One batch is one transaction: the row and its first event are stored together or not at all.
+    const [, inserted] = await db.batch([row, db.insert(events).values(toRow(event)).returning({ seq: events.seq })]);
+    notify(db, [{ seq: inserted[0]?.seq ?? 0, event }]);
+    return id;
   });
 }
 

@@ -899,6 +899,79 @@ a:hover {
   gap: 8px;
 }
 
+/*
+ * The new card form under the board's header, opened by "New card" on the
+ * Backlog column. It sits where the batch bar does and takes its panel; the
+ * fields are the shared .field, the buttons the board's compact ones.
+ */
+.new-card {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.new-card__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.new-card__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+.new-card__as {
+  margin-left: auto;
+  font-size: 12.5px;
+}
+.new-card__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 12px;
+}
+.new-card__fields .field {
+  font-size: 12.5px;
+  min-width: 0;
+}
+.new-card__wide {
+  grid-column: 1 / -1;
+}
+.new-card .field input,
+.new-card .field select {
+  min-width: 0;
+  width: 100%;
+}
+.new-card .new-card__as select {
+  width: auto;
+}
+.new-card__hint,
+.new-card__error {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.new-card__hint {
+  flex: 1 1 240px;
+  color: var(--muted);
+}
+.new-card__hint a {
+  color: var(--fg);
+  font-weight: 600;
+}
+/* As .batch-bar__error: a refused card is not a card waiting on someone, so not --needs-input. */
+.new-card__error {
+  font-weight: 600;
+  color: var(--fg);
+}
+.new-card__actions {
+  display: flex;
+  gap: 8px;
+}
+
 .card__note {
   font-size: 11px;
   /* An artifact id such as domain_rules is one unbreakable token in a narrow column. */

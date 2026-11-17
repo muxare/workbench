@@ -308,8 +308,21 @@ const commitSha = z.string().min(1);
  * between the board and the work is on the record and can be counted.
  * `card_withdrawn` says a person took the card off the board for `reason`,
  * from the state `from`; the card takes no event after it (added 2026-11-17).
+ * `card_created` says `actor` put the card on the board in Backlog, with the
+ * title, function, owner and milestone it was created with; it is the card's
+ * first event when the card was created through `POST /cards` (added
+ * 2026-11-17). Cards entered before then, or through the seed and
+ * `team:cards`, have none.
  */
 export const cardEvent = z.discriminatedUnion("type", [
+  z.object({
+    ...cardEventBase,
+    type: z.literal("card_created"),
+    title: z.string().min(1),
+    function_id: functionId,
+    owner: teammateId,
+    milestone: z.string().min(1).optional(),
+  }),
   z.object({ ...cardEventBase, type: z.literal("picked"), mode }),
   z.object({
     ...cardEventBase,

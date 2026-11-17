@@ -277,7 +277,7 @@ describe("leaving the team", () => {
     const card = { id: "k9", title: "Invented card", function_id: "frame_problem", owner: "t-gone", links: [] };
     await expect(addCard(db, card, functionIds)).rejects.toThrow(/owner 't-gone' has left the team/);
     await expect(addNumberedCard(db, card, functionIds)).rejects.toThrow(/has left the team/);
-    await expect(addNumberedCard(db, { ...card, owner: "t-human" }, functionIds, { actor: "t-gone" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(addNumberedCard(db, { ...card, owner: "t-human" }, functionIds, { created: { actor: "t-gone", at: at(58), eventId: "created-gone" } })).rejects.toMatchObject({ code: "forbidden" });
     expect((await listCards(db)).map((c) => c.id)).toEqual(["k1", "k2"]);
   });
 
