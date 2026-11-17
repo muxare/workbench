@@ -61,14 +61,14 @@ const teammates: TeammateRecord[] = [
 const feModes = profileEvents(FE, fePerson.process_profile, "2026-11-01T09:00:00Z");
 
 describe("buildProfile", () => {
-  const profile = buildProfile(fePerson, definitions);
+  const profile = buildProfile(fePerson, definitions, {});
 
   it("lists the person's role's functions first, then the other functions in their profile", () => {
     expect(profile.steps.map((s) => s.function_id)).toEqual(["shape_widget", "polish_widget", "plan_sprint"]);
   });
 
   it("lists the functions of every role a person holds, in file order", () => {
-    const both = buildProfile({ ...fePerson, roles: ["ux", "fe"] }, definitions);
+    const both = buildProfile({ ...fePerson, roles: ["ux", "fe"] }, definitions, {});
     expect(both.steps.map((s) => s.function_id)).toEqual(["shape_widget", "polish_widget", "design_widget", "plan_sprint"]);
   });
 
@@ -97,7 +97,17 @@ describe("buildProfile", () => {
 
     const silent = new Map(definitions);
     silent.set("shape_widget", fn("shape_widget", "fe", ["manual", "assist"], "assist", { opens: "human", asks: "none", writes: "human", decides: "human" }));
-    expect(buildProfile(fePerson, silent).steps.find((s) => s.function_id === "shape_widget")?.ai_may_pick).toBe(false);
+    expect(buildProfile(fePerson, silent, {}).steps.find((s) => s.function_id === "shape_widget")?.ai_may_pick).toBe(false);
+  });
+
+  it("carries each step's critic gate, off for a function no one has set", () => {
+    expect(profile.steps.map((s) => s.critic_required)).toEqual([false, false, false]);
+    const gated = buildProfile(fePerson, definitions, { polish_widget: true, plan_sprint: false, design_widget: true });
+    expect(Object.fromEntries(gated.steps.map((s) => [s.function_id, s.critic_required]))).toEqual({
+      shape_widget: false,
+      polish_widget: true,
+      plan_sprint: false,
+    });
   });
 
   it("lists profile entries with no function file as unknown", () => {
@@ -155,7 +165,7 @@ describe("profile routes", () => {
   it("GET derives the person's modes from their mode_changed events", async () => {
     const body = teammateProfileResponse.parse(await (await app.request(`/api/teammates/${FE}/profile`)).json());
     expect(body.teammate.process_profile).toEqual(fePerson.process_profile);
-    expect(body).toEqual(buildProfile(fePerson, definitions));
+    expect(body).toEqual(buildProfile(fePerson, definitions, {}));
   });
 
   it("POST /api/teammates/:id/modes appends a mode_changed event, answers with the new profile, and reaches the stream", async () => {
@@ -205,6 +215,31 @@ describe("profile routes", () => {
     const body = teammateProfileResponse.parse(await (await setMode(FE, { actor: FE, function_id: "shape_widget", mode: "assist" })).json());
     expect(body.steps.find((s) => s.function_id === "shape_widget")).toMatchObject({ mode: "assist", mode_is_default: false });
     expect(await lastSeq(db)).toBe(before + 1);
+  });
+
+  const setGate = (functionId: string, payload: unknown) =>
+    app.request(`/api/functions/${functionId}/critic-gate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+  it("GET carries the team's critic gate on each step, as set by critic_gate_changed", async () => {
+    const gate = (body: { steps: { function_id: string; critic_required: boolean }[] }) =>
+      Object.fromEntries(body.steps.map((s) => [s.function_id, s.critic_required]));
+    const before = teammateProfileResponse.parse(await (await app.request(`/api/teammates/${FE}/profile`)).json());
+    expect(gate(before)).toEqual({ shape_widget: false, polish_widget: false, plan_sprint: false });
+
+    // Another person turns it on; it is a team setting, so FE's profile shows it too.
+    expect((await setGate("polish_widget", { actor: UX, required: true, was_required: false })).status).toBe(200);
+    const after = teammateProfileResponse.parse(await (await app.request(`/api/teammates/${FE}/profile`)).json());
+    expect(gate(after)).toEqual({ shape_widget: false, polish_widget: true, plan_sprint: false });
+  });
+
+  it("POST /modes answers with the critic gates as they stand", async () => {
+    await setGate("shape_widget", { actor: FE, required: true, was_required: false });
+    const body = teammateProfileResponse.parse(await (await setMode(FE, { actor: FE, function_id: "shape_widget", mode: "delegate" })).json());
+    expect(body.steps.find((s) => s.function_id === "shape_widget")).toMatchObject({ mode: "delegate", critic_required: true });
   });
 
   it("POST keeps the change out of every card log", async () => {

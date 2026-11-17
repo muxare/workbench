@@ -1,12 +1,17 @@
 // A person's profile from the API, and setting the mode of one step. A change
 // is shown once the API has stored it and answered with the new profile; the
 // step's buttons are busy meanwhile, so a failed change never looks saved.
-// A change made anywhere else arrives as a `mode_changed` event on the board's
-// stream; `liveKey` (profileLiveKey) then changes and the profile is reloaded.
+// Each step's critic gate, a team setting, is set the same way: shown once the
+// API has stored it, with `was_required` from this view so a stale view is
+// refused with 409, after which the profile is reloaded to show the gate as it
+// stands. A change made anywhere else arrives as a `mode_changed` or
+// `critic_gate_changed` event on the board's stream; `liveKey`
+// (profileLiveKey) then changes and the profile is reloaded.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Mode, TeammateProfileResponse } from "@workbench/shared";
-import { ApiRequestError, fetchProfile, setMode } from "../api/client.ts";
+import { ApiRequestError, fetchProfile, setCriticGate, setMode } from "../api/client.ts";
 import { followLiveKey } from "./liveKey.ts";
+import { criticGateFailure, withCriticGates } from "./profileView.ts";
 
 export type ProfileState =
   | { phase: "loading" }
@@ -19,6 +24,11 @@ export type ProfileState =
       /** Why the last change failed, and on which step. */
       failure: { functionId: string; reason: string } | undefined;
       choose: (functionId: string, mode: Mode) => void;
+      /** The step whose critic gate change is being stored, if any. */
+      gateSaving: string | undefined;
+      /** Why the last critic gate change failed, and on which step. */
+      gateFailure: { functionId: string; reason: string } | undefined;
+      setGate: (functionId: string, required: boolean) => void;
     };
 
 function reasonOf(err: unknown, fallback: string): string {
@@ -34,12 +44,20 @@ export function useProfile(teammateId: string, onChanged: (() => void) | undefin
   const [loadError, setLoadError] = useState<string | undefined>();
   const [saving, setSaving] = useState<string | undefined>();
   const [failure, setFailure] = useState<{ functionId: string; reason: string } | undefined>();
+  const [gateSaving, setGateSaving] = useState<string | undefined>();
+  const [gateFailure, setGateFailure] = useState<{ functionId: string; reason: string } | undefined>();
+  // The profile as shown, so a gate change sends the setting this view showed as `was_required`.
+  const shown = useRef(profile);
+  useEffect(() => {
+    shown.current = profile;
+  });
 
   useEffect(() => {
     const abort = new AbortController();
     setProfile(undefined);
     setLoadError(undefined);
     setFailure(undefined);
+    setGateFailure(undefined);
     fetchProfile(teammateId, abort.signal).then(setProfile, (err: unknown) => {
       if (!abort.signal.aborted) setLoadError(reasonOf(err, "the profile could not be loaded"));
     });
@@ -79,7 +97,33 @@ export function useProfile(teammateId: string, onChanged: (() => void) | undefin
     [teammateId, onChanged],
   );
 
+  const setGate = useCallback(
+    (functionId: string, required: boolean) => {
+      const step = shown.current?.steps.find((s) => s.function_id === functionId);
+      if (!step) return;
+      setGateSaving(functionId);
+      setGateFailure(undefined);
+      // There is no sign-in yet, so the person whose profile this is makes the change.
+      setCriticGate(functionId, { actor: teammateId, required, was_required: step.critic_required }).then(
+        (answer) => {
+          setProfile((p) => (p ? withCriticGates(p, answer.critic_gates) : p));
+          setGateSaving(undefined);
+          onChanged?.();
+        },
+        (err: unknown) => {
+          setGateSaving(undefined);
+          setGateFailure({ functionId, reason: criticGateFailure(err) });
+          // Reload in place so the switch shows the gate as it stands, whoever changed it.
+          fetchProfile(teammateId).then(setProfile, () => {
+            // Keep the profile shown; the failure already says the change was not saved.
+          });
+        },
+      );
+    },
+    [teammateId, onChanged],
+  );
+
   if (loadError !== undefined) return { phase: "error", reason: loadError, retry };
   if (!profile) return { phase: "loading" };
-  return { phase: "ready", profile, saving, failure, choose };
+  return { phase: "ready", profile, saving, failure, choose, gateSaving, gateFailure, setGate };
 }

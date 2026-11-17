@@ -8,6 +8,7 @@ import {
   batchResponse,
   boardResponse,
   cardResponse,
+  criticGatesResponse,
   logFiltersResponse,
   teammateProfileResponse,
   writeResponse,
@@ -17,11 +18,13 @@ import {
   type BatchResponse,
   type BoardResponse,
   type CardResponse,
+  type CriticGatesResponse,
   type HandBatchRequest,
   type LogFiltersResponse,
   type LogName,
   type MoveStatusRequest,
   type PickRequest,
+  type SetCriticGateRequest,
   type SetLogFilterRequest,
   type SetModeRequest,
   type TeammateProfileResponse,
@@ -180,5 +183,17 @@ function parseWrite(body: unknown, what: string): WriteResponse {
 export async function setLogFilter(log: LogName, request: SetLogFilterRequest): Promise<LogFiltersResponse> {
   const parsed = logFiltersResponse.safeParse(await postJson(`/logs/${encodeURIComponent(log)}/filter`, request));
   if (!parsed.success) throw new ApiRequestError("bad_response", "the log filters from the API do not match the shared schema");
+  return parsed.data;
+}
+
+/**
+ * `POST /api/functions/:id/critic-gate`: a person sets whether the AI critic
+ * must pass before a person's approval moves a card of the function to done,
+ * for the whole team. Answers with every gate someone has set; the change also
+ * reaches every board over the event stream.
+ */
+export async function setCriticGate(functionId: string, request: SetCriticGateRequest): Promise<CriticGatesResponse> {
+  const parsed = criticGatesResponse.safeParse(await postJson(`/functions/${encodeURIComponent(functionId)}/critic-gate`, request));
+  if (!parsed.success) throw new ApiRequestError("bad_response", "the critic gates from the API do not match the shared schema");
   return parsed.data;
 }
