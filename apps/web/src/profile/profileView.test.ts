@@ -3,7 +3,18 @@
 import { describe, expect, it } from "vitest";
 import type { Mode, ProfileStep, TeammateProfileResponse } from "@workbench/shared";
 import { ApiRequestError } from "../api/client.ts";
-import { aiPickSteps, criticGateFailure, criticGateHint, modeButtons, modeShares, stepSubline, withCriticGates } from "./profileView.ts";
+import {
+  aiPickSteps,
+  answerApplies,
+  criticGateFailure,
+  criticGateHint,
+  endSaving,
+  modeButtons,
+  modeShares,
+  startSaving,
+  stepSubline,
+  withCriticGates,
+} from "./profileView.ts";
 
 function step(functionId: string, mode: Mode, over: Partial<ProfileStep> = {}): ProfileStep {
   return {
@@ -80,6 +91,25 @@ describe("withCriticGates", () => {
       ["c", false],
     ]);
     expect(profile.steps[0]?.critic_required).toBe(true);
+  });
+});
+
+describe("startSaving and endSaving", () => {
+  it("track each step's save on its own, so one answer ends only its own save", () => {
+    const both = startSaving(startSaving(new Set(), "a"), "b");
+    expect([...both]).toEqual(["a", "b"]);
+    const afterA = endSaving(both, "a");
+    expect([...afterA]).toEqual(["b"]);
+    expect([...both]).toEqual(["a", "b"]);
+    expect(endSaving(afterA, "a")).toBe(afterA);
+    expect([...endSaving(afterA, "b")]).toEqual([]);
+  });
+});
+
+describe("answerApplies", () => {
+  it("shows an answer only on the profile it was fetched for", () => {
+    expect(answerApplies("invented-a", "invented-a")).toBe(true);
+    expect(answerApplies("invented-a", "invented-b")).toBe(false);
   });
 });
 

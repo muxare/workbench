@@ -87,7 +87,7 @@ export function ProfileView({
 }: {
   teammateId: string;
   onChanged: (() => void) | undefined;
-  /** Changes when the board's stream brings a mode change for this person (`profileLiveKey`). */
+  /** Changes when the board's stream brings a mode change for this person or a critic gate change for any function (`profileLiveKey`). */
   liveKey?: string | undefined;
 }) {
   const state = useProfile(teammateId, onChanged, liveKey);
@@ -168,7 +168,7 @@ export function ProfileView({
                   saving={saving === step.function_id}
                   failure={failure?.functionId === step.function_id ? failure.reason : undefined}
                   choose={(mode) => choose(step.function_id, mode)}
-                  gateSaving={gateSaving === step.function_id}
+                  gateSaving={gateSaving.has(step.function_id)}
                   gateFailure={gateFailure?.functionId === step.function_id ? gateFailure.reason : undefined}
                   setGate={(required) => setGate(step.function_id, required)}
                 />
