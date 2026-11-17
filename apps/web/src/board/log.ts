@@ -80,6 +80,10 @@ export function describeEvent(e: StreamEvent, board: BoardResponse): string {
       return `${who} approved ${card} · pull request #${String(e.pull_request)}`;
     case "changes_requested":
       return `${who} requested changes on ${card} · pull request #${String(e.pull_request)}`;
+    case "move_skipped": {
+      const on = e.pull_request === undefined ? who : `${who} on pull request #${String(e.pull_request)}`;
+      return `${card} stayed ${columnLabel(e.state)}, not moved to ${columnLabel(e.to)} · ${on}: ${e.reason}`;
+    }
   }
 }
 

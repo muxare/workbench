@@ -74,6 +74,12 @@ describe("describeEvent", () => {
     expect(describeEvent({ ...base, type: "changes_requested", pull_request: 7, url: pr }, board)).toBe(
       "BE requested changes on #151 · pull request #7",
     );
+    expect(
+      describeEvent({ ...base, type: "move_skipped", to: "review", state: "ready", reason: "a card moves to review only from in progress", pull_request: 7 }, board),
+    ).toBe("#151 stayed Ready, not moved to Review · BE on pull request #7: a card moves to review only from in progress");
+    expect(describeEvent({ ...base, type: "move_skipped", to: "done", state: "review", reason: "nobody approved it on the board" }, board)).toBe(
+      "#151 stayed Review, not moved to Done · BE: nobody approved it on the board",
+    );
   });
 
   it("describes a mode change, which has no card", () => {

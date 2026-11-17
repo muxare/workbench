@@ -17,6 +17,12 @@ describe("filterOptions", () => {
     expect(options.map((o) => o.type)).toEqual(cardEventType.options);
     expect(options.filter((o) => !o.shown).map((o) => o.type)).toEqual(["asked"]);
   });
+
+  it("offers a skipped move in every log, so the team can hide or count the drift", () => {
+    for (const log of ["card", "board", "cycle", "teammate"] as const) {
+      expect(filterOptions(log, []).map((o) => o.type)).toContain("move_skipped");
+    }
+  });
 });
 
 describe("toggleHidden", () => {
