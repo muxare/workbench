@@ -19,6 +19,8 @@
 // `GET /api/teammates/:id/profile` reads the person's chain of steps from
 // process/functions on each request, with each step's critic gate; for an AI
 // teammate it answers a separate, derived profile (aiProfile.ts).
+// `GET /api/team` answers every person against every step, each cell built by
+// the same code as that person's profile (team.ts).
 // `GET /api/board` also carries the current cycle (`currentCycle` at the
 // server's clock) and its cycle log, for the panel under the board, and each
 // function's name, role and default mode from process/functions, so a panel
@@ -78,6 +80,7 @@ import {
   type HumanTeammate,
   type TeammateResponse,
   type TeammateProfileResponse,
+  type TeamResponse,
   type AiTeammateProfileResponse,
   type ApiError,
   type ApiErrorCode,
@@ -99,6 +102,7 @@ import type { Db } from "./db/client.ts";
 import { loadExternalArtifacts, loadFunctionDefinitions } from "./process.ts";
 import { buildAiProfile, cardsInHand } from "./aiProfile.ts";
 import { buildProfile } from "./profile.ts";
+import { buildTeam } from "./team.ts";
 import { eventStream, startingPoint } from "./sse.ts";
 import { validSignature } from "./github/signature.ts";
 import { handleDelivery, WebhookPayloadError } from "./github/webhook.ts";
@@ -543,6 +547,11 @@ export function createApp(deps: AppDeps) {
       return c.json(
         await write(card.id, [{ ...base(card.id, req.actor), type: "status_changed", from: req.from, to: req.to }]),
       );
+    })
+
+    .get("/team", async (c) => {
+      const response: TeamResponse = buildTeam(await listTeammates(db), definitions());
+      return c.json(response);
     })
 
     .get("/teammates/:id/profile", async (c) => {

@@ -311,6 +311,31 @@ export const teammateProfileResponse = z.object({
 export type TeammateProfileResponse = z.infer<typeof teammateProfileResponse>;
 
 /**
+ * One person's cell on `GET /team` for one step of their chain: the parts of
+ * their profile's step (`profileStep`) the team screen shows, computed by the
+ * same code as `GET /teammates/:id/profile`, so the two never disagree.
+ */
+export const teamCell = profileStep.pick({ function_id: true, mode: true, mode_is_default: true, ai_may_pick: true });
+export type TeamCell = z.infer<typeof teamCell>;
+
+/** One person on `GET /team`, with a cell for every step of their chain, in chain order. */
+export const teamPerson = z.object({ teammate: humanTeammate, cells: z.array(teamCell) });
+export type TeamPerson = z.infer<typeof teamPerson>;
+
+/** A step on `GET /team`: what process/functions says about one function. */
+export const teamStep = profileStep.pick({ function_id: true, role: true, title: true, summary: true });
+export type TeamStep = z.infer<typeof teamStep>;
+
+/**
+ * `GET /team`: every person against every step. `steps` is every function in
+ * process/functions, in file order. `people` is every person (AI teammates
+ * have no modes of their own), each with a cell for the steps in their chain;
+ * a step outside a person's chain has no cell for them.
+ */
+export const teamResponse = z.object({ steps: z.array(teamStep), people: z.array(teamPerson) });
+export type TeamResponse = z.infer<typeof teamResponse>;
+
+/**
  * How one person's mode for a step decides whether the AI teammate may work
  * it. `mode` is the person's mode for the function (their choice, or the
  * function's default); `reason` says why the AI may not pick, and is null when
