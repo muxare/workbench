@@ -377,6 +377,13 @@ describe("cards", () => {
     const card = { id: "k9", title: "Invented", function_id: "no_such_function", owner: "t-human", links: [] };
     await expect(addCard(db, card, functionIds)).rejects.toThrow(/no function 'no_such_function'/);
   });
+
+  it("lists numbered cards by number, and cards with other ids after them by text", async () => {
+    for (const id of ["10", "6", "100", "9"]) {
+      await addCard(db, { id, title: `Invented card ${id}`, function_id: "frame_problem", owner: "t-human", links: [] }, functionIds);
+    }
+    expect((await listCards(db)).map((c) => c.id)).toEqual(["6", "9", "10", "100", "k1", "k2"]);
+  });
 });
 
 describe("invented seed", () => {
