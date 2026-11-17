@@ -92,3 +92,39 @@ With your go-ahead, the session pushes the branch and opens the pull request as 
 ## What counts as success
 
 The run has worked when the card's log at `#/cards/<n>` reads, in order: created by Mikael, moved to Ready by Felix, picked by the AI in Felix's mode, a question to Felix and his answer, a question from Felix to Uxi and Uxi's answer; and the board showed each change without a reload. Anything else is worth writing down: a move refused with a reason you did not expect, a panel that shows the card under the wrong person, or a step that needed a reload.
+
+## Cheat sheet
+
+The whole run in order, for use at the keyboard. Paste the shell lines into one terminal, so that `$A` and `$B` keep the card numbers. Replace each `<…>` title with a small real task first.
+
+```sh
+API=localhost:3000/api; J='content-type: application/json'
+
+# 1. Felix's modes: assist on one step, delegate on the other.
+curl -s $API/teammates/felix-svensson/modes -H "$J" -d '{"actor":"felix-svensson","function_id":"implement_interactions","mode":"assist"}'
+curl -s $API/teammates/felix-svensson/modes -H "$J" -d '{"actor":"felix-svensson","function_id":"refine_ui_spec","mode":"delegate"}'
+
+# 2. Two cards for Felix, created by Mikael as PO.
+A=$(curl -s $API/cards -H "$J" -d '{"actor":"mikael","owner":"felix-svensson","function_id":"implement_interactions","title":"<task A>"}' | jq -r .card.id)
+B=$(curl -s $API/cards -H "$J" -d '{"actor":"mikael","owner":"felix-svensson","function_id":"refine_ui_spec","title":"<task B>"}' | jq -r .card.id)
+echo "A=#$A B=#$B"
+```
+
+3. In the browser, open `#/cards/<A>` and `#/cards/<B>` and click "Move to Ready" on each. You are Felix.
+
+```sh
+# 4. The AI picks card A by itself (stub, no model). Check first that no other assist card is Ready.
+curl -s -X POST $API/teammates/ai/run
+```
+
+5. On card A, answer the AI's question. You are Felix.
+
+```sh
+# 6. Felix asks Uxi on card A.
+curl -s $API/cards/$A/questions -H "$J" -d '{"actor":"felix-svensson","asked_of":"uxi-larsson","text":"Which empty state do we show?","why_it_blocks":"The screen has no design for zero bookings"}'
+```
+
+7. On card A, answer the question. You are Uxi.
+8. In Claude Code, prompt: "Pick card #<B> on the workbench board and work it."
+9. On card B, answer the session's question when it comes. You are Felix.
+10. When the session reports, either give the go-ahead to push and open the pull request, or stop there.
