@@ -801,9 +801,17 @@ export async function listQuestions(db: Db, options: { cardId?: string } = {}): 
   return [...byId.values()];
 }
 
-/** Every card with its status derived from the event stream. */
+/**
+ * Every card with its status derived from the event stream. Numbered cards
+ * come first, by number, so #6 comes before #10; cards with any other id
+ * follow, by text. "Numbered" is the same test `addNumberedCard` uses.
+ */
 export async function listCards(db: Db): Promise<Card[]> {
-  const rows = await db.select().from(cards).orderBy(asc(cards.id));
+  const numbered = sql`(${cards.id} GLOB '[1-9]*' AND ${cards.id} NOT GLOB '*[^0-9]*')`;
+  const rows = await db
+    .select()
+    .from(cards)
+    .orderBy(desc(numbered), sql`CASE WHEN ${numbered} THEN CAST(${cards.id} AS INTEGER) END`, asc(cards.id));
   const changes = await db
     .select()
     .from(events)
