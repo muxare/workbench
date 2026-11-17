@@ -273,7 +273,9 @@ const commitSha = z.string().min(1);
  * `approved` and `changes_requested` a person's review of it. A card reaches
  * `done` from a merge only after an `approved` by a person. The AI critic's
  * review of a pull request is a `check_ran` with `check: "consistency"` and
- * the pull request's number.
+ * the pull request's number. `move_skipped` says a delivery would have moved
+ * the card but the card's lane or a rule kept it where it was, so the drift
+ * between the board and the work is on the record and can be counted.
  */
 export const cardEvent = z.discriminatedUnion("type", [
   z.object({ ...cardEventBase, type: z.literal("picked"), mode }),
@@ -348,6 +350,18 @@ export const cardEvent = z.discriminatedUnion("type", [
     url,
     /** The review's text, when the reviewer wrote one. */
     text: z.string().min(1).optional(),
+  }),
+  z.object({
+    ...cardEventBase,
+    type: z.literal("move_skipped"),
+    /** The lane the delivery would have moved the card to. */
+    to: cardStatus,
+    /** The lane the card was in, and stayed in. */
+    state: cardStatus,
+    /** Why the move did not apply: the rule or the lane that kept the card, as the webhook's answer gives it. */
+    reason: z.string().min(1),
+    /** The pull request the delivery was about, when it was about one. */
+    pull_request: pullRequestNumber.optional(),
   }),
 ]);
 export type CardEvent = z.infer<typeof cardEvent>;

@@ -7,14 +7,16 @@
 //   that branch, and `work_pushed` when the push carries commits.
 // - `pull_request` opened (not as a draft), ready_for_review or
 //   review_requested (a reviewer asked, or asked again): `review_requested`,
-//   and a card in progress moves to review if the sender may move it.
+//   and a card in progress moves to review if the sender may move it. A card
+//   in any other lane but review stays where it is, with `move_skipped`.
 // - `workflow_run` completed for the workflow `check` on a pull request:
 //   `check_ran` with `check: "structural"`, passed on `success`, failed on
 //   `failure`, `timed_out`, `startup_failure` and `action_required`. Every
 //   other conclusion, and runs on `main`, are skipped.
 // - `pull_request_review` submitted by a person as approved: `approved`, with
 //   the commit reviewed; as changes requested: `changes_requested`, and a card
-//   in review moves back to in progress, whoever the person is. A
+//   in review moves back to in progress, whoever the person is; a card in
+//   any other lane but in progress stays, with `move_skipped`. A
 //   commented review, which GitHub sends for every inline comment and reply,
 //   records nothing, from anyone.
 // - `pull_request_review` submitted by an AI teammate is the AI critic, which
@@ -25,7 +27,9 @@
 //   but only when the latest verdict on that pull request is an `approved` by
 //   a person on the merged head commit, and, where the card's function
 //   requires it (`critic_gate_changed`), the AI critic passed on that commit
-//   before that approval.
+//   before that approval. A merge refused for any of these records
+//   `move_skipped` alone and answers `refused`; a merge of a card already
+//   done records nothing.
 //
 // Who may move a card to review follows the mode the card was picked in, or
 // else the owner's mode for the card's function (`mayMoveCard`): the owner
@@ -33,13 +37,19 @@
 // a card back on changes requested, whatever the mode; the AI by the same rule
 // as the move to review (`maySendCardBack`). A delivery whose sender may not move the card
 // still records its events, and the answer's `reason` says why the card
-// stayed where it was.
+// stayed where it was; the delivery then records `move_skipped` too.
+//
+// `move_skipped` says, with the lane the card would have moved to, the lane it
+// stayed in and the reason, that GitHub's work and the board drifted apart,
+// so the team can count where the flow breaks. Its `reason` is the cause the
+// answer's `reason` ends with. It has its own id per delivery
+// (`skippedEventIdFor`), so a refused merge is still evaluated again on
+// redelivery, and records its skip only once.
 //
 // Everything else, and anything that names no card on the board or comes from
 // a GitHub account that is not a teammate, is ignored: nothing is recorded,
-// and the answer still says why. A delivery that would break a rule, or whose
-// card moved while it was being handled, is refused the same way. Events are
-// stored, not the payloads.
+// and the answer still says why. A delivery whose card moved while it was
+// being handled is refused the same way. Events are stored, not the payloads.
 import type { Card, CardEvent, FunctionFrontMatter, Teammate, WebhookResponse } from "@workbench/shared";
 import { cardEvent, cardIdFromBody, cardIdFromBranch, criticRequired, mayMoveCard, maySendCardBack } from "@workbench/shared";
 import type { z } from "zod";
@@ -89,10 +99,17 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 /** A card event before it has an id, a card and a time. */
 type Draft = DistributiveOmit<CardEvent, "id" | "card_id" | "at">;
 
+/** A `move_skipped` before it has an id, a card and a time. */
+type Skip = Extract<Draft, { type: "move_skipped" }>;
+
+/**
+ * What a delivery does. `skipped` is the move the delivery would have made and
+ * did not; with it, the answer's `reason` says why, ending with its reason.
+ */
 type Plan =
   | { kind: "ignore"; reason: string; cardId?: string }
-  | { kind: "refuse"; reason: string; cardId: string }
-  | { kind: "record"; cardId: string; events: Draft[]; reason?: string };
+  | { kind: "refuse"; reason: string; cardId: string; skipped?: Skip }
+  | { kind: "record"; cardId: string; events: Draft[]; skipped?: { draft: Skip; reason: string } };
 
 const ignore = (reason: string, cardId?: string): Plan => ({ kind: "ignore", reason, ...(cardId === undefined ? {} : { cardId }) });
 
@@ -103,6 +120,16 @@ const ignore = (reason: string, cardId?: string): Plan => ({ kind: "ignore", rea
  */
 export function eventIdFor(deliveryId: string, index: number): string {
   return `github-${deliveryId}-${String(index)}`;
+}
+
+/**
+ * The id of the `move_skipped` a delivery records. It is apart from the
+ * numbered ids, so a merge refused with only this event is not taken for a
+ * recorded delivery: a redelivery is evaluated again, as for any refusal, and
+ * records the skip only if it was not recorded before.
+ */
+export function skippedEventIdFor(deliveryId: string): string {
+  return `github-${deliveryId}-skipped`;
 }
 
 function cardIdForPullRequest(pr: { body: string | null; head: { ref: string } }): string | undefined {
@@ -130,16 +157,22 @@ export async function handleDelivery(ctx: WebhookContext, delivery: Delivery): P
     return answer("duplicate", { reason: `delivery ${delivery.id} is already recorded` });
   }
   const plan = await planDelivery(ctx, delivery);
-  if (plan.kind !== "record") {
-    return answer(plan.kind === "ignore" ? "ignored" : "refused", {
-      reason: plan.reason,
-      ...(plan.cardId === undefined ? {} : { card_id: plan.cardId }),
-    });
+  if (plan.kind === "ignore") {
+    return answer("ignored", { reason: plan.reason, ...(plan.cardId === undefined ? {} : { card_id: plan.cardId }) });
+  }
+  const skippedId = skippedEventIdFor(delivery.id);
+  if (plan.kind === "refuse") {
+    const refused = { card_id: plan.cardId, reason: plan.reason };
+    if (plan.skipped === undefined || (await hasEvent(ctx.db, skippedId))) return answer("refused", refused);
+    const skip = cardEvent.parse({ ...plan.skipped, id: skippedId, card_id: plan.cardId, at: ctx.now().toISOString() });
+    await appendEvents(ctx.db, [skip]);
+    return answer("refused", { ...refused, events: [skip] });
   }
   const at = ctx.now().toISOString();
-  const events = plan.events.map((draft, i) =>
-    cardEvent.parse({ ...draft, id: eventIdFor(delivery.id, i), card_id: plan.cardId, at }),
-  );
+  const events = [
+    ...plan.events.map((draft, i) => ({ ...draft, id: eventIdFor(delivery.id, i) })),
+    ...(plan.skipped === undefined ? [] : [{ ...plan.skipped.draft, id: skippedId }]),
+  ].map((draft) => cardEvent.parse({ ...draft, card_id: plan.cardId, at }));
   try {
     await appendEvents(ctx.db, events);
   } catch (err) {
@@ -150,7 +183,7 @@ export async function handleDelivery(ctx: WebhookContext, delivery: Delivery): P
     }
     throw err;
   }
-  return answer("recorded", { card_id: plan.cardId, events, ...(plan.reason === undefined ? {} : { reason: plan.reason }) });
+  return answer("recorded", { card_id: plan.cardId, events, ...(plan.skipped === undefined ? {} : { reason: plan.skipped.reason }) });
 }
 
 async function planDelivery(ctx: WebhookContext, delivery: Delivery): Promise<Plan> {
@@ -194,13 +227,38 @@ async function teammateFor(ctx: WebhookContext, login: string, cardId: string) {
 }
 
 /**
- * The move `to` that `mover` makes on `card`, if the rule for that move lets
- * them, with the plan's events; otherwise the events alone, and the reason the
- * card stays. The move to review follows the card's mode (`mayMoveCard`); the
- * move back to in progress lets any person, and the AI by the same rule
- * (`maySendCardBack`).
+ * The plan's events with a `move_skipped`: the card stays where it is instead
+ * of moving `to`, for `why`, and the answer says so.
  */
-async function withMove(ctx: WebhookContext, card: Card, mover: Teammate, events: Draft[], from: Card["status"]["state"], to: "review" | "in_progress"): Promise<Plan> {
+function withSkip(card: Card, actor: string, pullRequest: number, events: Draft[], to: Card["status"]["state"], why: string): Plan {
+  const state = card.status.state;
+  return {
+    kind: "record",
+    cardId: card.id,
+    events,
+    skipped: {
+      draft: { type: "move_skipped", actor, to, state, reason: why, pull_request: pullRequest },
+      reason: `card ${card.id} stays ${state}: ${why}`,
+    },
+  };
+}
+
+/**
+ * The move `to` that `mover` makes on `card`, if the rule for that move lets
+ * them, with the plan's events; otherwise the events and a `move_skipped`
+ * with the reason the card stays. The move to review follows the card's mode
+ * (`mayMoveCard`); the move back to in progress lets any person, and the AI by
+ * the same rule (`maySendCardBack`).
+ */
+async function withMove(
+  ctx: WebhookContext,
+  card: Card,
+  mover: Teammate,
+  pullRequest: number,
+  events: Draft[],
+  from: Card["status"]["state"],
+  to: "review" | "in_progress",
+): Promise<Plan> {
   const owner = await getTeammate(ctx.db, card.owner);
   const definition = ctx.definitions.get(card.function_id);
   // The card is worked in the mode it was picked in; a profile change after the pick does not change who may move it.
@@ -212,9 +270,7 @@ async function withMove(ctx: WebhookContext, card: Card, mover: Teammate, events
       : definition === undefined
         ? { allowed: false as const, reason: `no function '${card.function_id}' in process/functions` }
         : (to === "review" ? mayMoveCard : maySendCardBack)(mover, owner, definition, pickedMode);
-  if (!verdict.allowed) {
-    return { kind: "record", cardId: card.id, events, reason: `card ${card.id} stays ${from}: ${verdict.reason}` };
-  }
+  if (!verdict.allowed) return withSkip(card, mover.id, pullRequest, events, to, verdict.reason);
   return { kind: "record", cardId: card.id, events: [...events, { type: "status_changed", actor: mover.id, from, to: { state: to } }] };
 }
 
@@ -263,8 +319,11 @@ async function planPullRequest(ctx: WebhookContext, p: PullRequestPayload): Prom
   if (!who.teammate) return who.plan;
   const actor = who.teammate.id;
   const events: Draft[] = [{ type: "review_requested", actor, pull_request: pr.number, title: pr.title, url: pr.html_url }];
-  if (card.status.state !== "in_progress") return { kind: "record", cardId: card.id, events };
-  return withMove(ctx, card, who.teammate, events, "in_progress", "review");
+  const state = card.status.state;
+  // A card already in review has nothing to move; one in any other lane but in progress drifted from the work.
+  if (state === "review") return { kind: "record", cardId: card.id, events };
+  if (state !== "in_progress") return withSkip(card, actor, pr.number, events, "review", "a card moves to review only from in progress");
+  return withMove(ctx, card, who.teammate, pr.number, events, "in_progress", "review");
 }
 
 /**
@@ -280,45 +339,54 @@ async function planPullRequest(ctx: WebhookContext, p: PullRequestPayload): Prom
  * critic's verdict on that pull request must be a pass on the same head, recorded before the
  * person's approval, so the person approved with the critic's findings in
  * hand. The merge itself is not a move the mode governs: done is reached
- * by a person's decision, and whoever merges only carries it out.
+ * by a person's decision, and whoever merges only carries it out. A refused
+ * merge records only a `move_skipped` by whoever merged, and answers
+ * `refused` with the same reason as before.
  */
 async function planMerge(ctx: WebhookContext, p: PullRequestPayload, card: Card): Promise<Plan> {
   const pr = p.pull_request;
   const cardId = card.id;
   const state = card.status.state;
   if (state === "done") return ignore(`card ${cardId} is already done`, cardId);
-  if (state !== "review") {
+  const refusal = await mergeRefusal(ctx, pr, card);
+  const who = await teammateFor(ctx, pr.merged_by?.login ?? p.sender.login, cardId);
+  if (refusal !== undefined) {
+    const merged = `pull request #${String(pr.number)} was merged, but card ${cardId}`;
+    const reason = state === "review" ? `${merged} stays ${state}: ${refusal}` : `${merged} is ${state}; ${refusal}`;
+    // A merge by an account that is not a teammate has no actor for the skip, so it records nothing, as any delivery from it.
+    if (!who.teammate) return { kind: "refuse", cardId, reason };
     return {
       kind: "refuse",
       cardId,
-      reason: `pull request #${String(pr.number)} was merged, but card ${cardId} is ${state}; a card moves to done only from review`,
+      reason,
+      skipped: { type: "move_skipped", actor: who.teammate.id, to: "done", state, reason: refusal, pull_request: pr.number },
     };
   }
-  const log = await cardLog(ctx.db, cardId);
+  if (!who.teammate) return who.plan;
+  return { kind: "record", cardId, events: [{ type: "status_changed", actor: who.teammate.id, from: state, to: { state: "done" } }] };
+}
+
+/** Why a merge may not move `card` to done (see `planMerge`), or undefined when it may. */
+async function mergeRefusal(ctx: WebhookContext, pr: PullRequestPayload["pull_request"], card: Card): Promise<string | undefined> {
+  if (card.status.state !== "review") return "a card moves to done only from review";
+  const log = await cardLog(ctx.db, card.id);
   const verdicts = log.filter(
     (e): e is Extract<CardEvent, { type: "approved" | "changes_requested" }> =>
       (e.type === "approved" || e.type === "changes_requested") && e.pull_request === pr.number,
   );
   const latest = verdicts.at(-1);
-  const refuse = (why: string): Plan => ({
-    kind: "refuse",
-    cardId,
-    reason: `pull request #${String(pr.number)} was merged, but card ${cardId} stays ${state}: ${why}`,
-  });
-  if (latest === undefined) return refuse("nobody approved it on the board");
-  if (latest.type === "changes_requested") return refuse("the latest review requested changes");
+  if (latest === undefined) return "nobody approved it on the board";
+  if (latest.type === "changes_requested") return "the latest review requested changes";
   const approver = await getTeammate(ctx.db, latest.actor);
-  if (approver?.kind !== "human") return refuse(`it was approved by ${latest.actor}, who is not a person`);
+  if (approver?.kind !== "human") return `it was approved by ${latest.actor}, who is not a person`;
   const head = pr.head.sha;
-  if (latest.commit_sha !== head) {
-    return refuse(`the approval is for ${latest.commit_sha ?? "an unknown commit"}, not the merged head ${head}`);
-  }
+  if (latest.commit_sha !== head) return `the approval is for ${latest.commit_sha ?? "an unknown commit"}, not the merged head ${head}`;
   if (criticRequired(await criticGates(ctx.db), card.function_id)) {
     const critic = log.filter((e) => e.type === "check_ran" && e.check === "consistency" && e.pull_request === pr.number).at(-1);
     const gate = `${card.function_id} requires the AI critic to pass before a person approves`;
-    if (critic?.type !== "check_ran") return refuse(`${gate}, and it has not reviewed the pull request`);
-    if (!critic.passed) return refuse(`${gate}, and its latest review failed`);
-    if (critic.commit_sha !== head) return refuse(`${gate}, and its pass is for ${critic.commit_sha ?? "an unknown commit"}, not the merged head ${head}`);
+    if (critic?.type !== "check_ran") return `${gate}, and it has not reviewed the pull request`;
+    if (!critic.passed) return `${gate}, and its latest review failed`;
+    if (critic.commit_sha !== head) return `${gate}, and its pass is for ${critic.commit_sha ?? "an unknown commit"}, not the merged head ${head}`;
     // A repeated pass on the same head after the approval (a re-run, a reopen) does not undo the earlier pass.
     const approvedAt = log.indexOf(latest);
     const passedBefore = log.some(
@@ -330,11 +398,9 @@ async function planMerge(ctx: WebhookContext, p: PullRequestPayload, card: Card)
         e.passed &&
         e.commit_sha === head,
     );
-    if (!passedBefore) return refuse(`${gate}, and it passed only after the approval`);
+    if (!passedBefore) return `${gate}, and it passed only after the approval`;
   }
-  const who = await teammateFor(ctx, pr.merged_by?.login ?? p.sender.login, cardId);
-  if (!who.teammate) return who.plan;
-  return { kind: "record", cardId, events: [{ type: "status_changed", actor: who.teammate.id, from: state, to: { state: "done" } }] };
+  return undefined;
 }
 
 async function planReview(ctx: WebhookContext, p: PullRequestReviewPayload): Promise<Plan> {
@@ -376,8 +442,11 @@ async function planReview(ctx: WebhookContext, p: PullRequestReviewPayload): Pro
   } else {
     events.push(changes);
   }
-  if (card.status.state !== "review") return { kind: "record", cardId: card.id, events };
-  return withMove(ctx, card, who.teammate, events, "review", "in_progress");
+  const state = card.status.state;
+  // A card already back in progress has nothing to move; one in any other lane but review drifted from the work.
+  if (state === "in_progress") return { kind: "record", cardId: card.id, events };
+  if (state !== "review") return withSkip(card, actor, pr.number, events, "in_progress", "a card moves back to in progress only from review");
+  return withMove(ctx, card, who.teammate, pr.number, events, "review", "in_progress");
 }
 
 /**
