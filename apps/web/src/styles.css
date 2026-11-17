@@ -113,6 +113,13 @@ a:hover {
   color: var(--muted);
 }
 
+/* A link from the board's header to another screen, such as the team. */
+.page__nav-link {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
 .state-message {
   background: var(--surface);
   border: 1px solid var(--line);

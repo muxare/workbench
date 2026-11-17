@@ -1,7 +1,7 @@
 import type { Mode, ProfileStep } from "@workbench/shared";
 import { modeMeaning } from "../board/modes.ts";
 import { roleTitle, shortLabel } from "../board/teammates.ts";
-import { boardHref } from "../route.ts";
+import { boardHref, teamHref } from "../route.ts";
 import { aiPickSteps, criticGateHint, modeButtons, modeShares, stepSubline } from "./profileView.ts";
 import { useProfile } from "./useProfile.ts";
 import "./profile.css";
@@ -130,7 +130,7 @@ export function ProfileView({
         </span>
         <div className="profile__intro">
           <nav className="profile__crumbs" aria-label="Breadcrumb">
-            <a href={boardHref}>Team board</a> › Team ›{" "}
+            <a href={boardHref}>Team board</a> › <a href={teamHref}>Team</a> ›{" "}
             <span title={teammate.name}>{teammate.roles.map((r) => roleTitle[r]).join(" · ")}</span>
           </nav>
           <h1>How I work with AI</h1>

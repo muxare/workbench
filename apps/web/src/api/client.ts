@@ -11,6 +11,7 @@ import {
   criticGatesResponse,
   logFiltersResponse,
   teammateProfileResponse,
+  teamResponse,
   writeResponse,
   type AiTeammateProfileResponse,
   type AnswerRequest,
@@ -28,6 +29,7 @@ import {
   type SetLogFilterRequest,
   type SetModeRequest,
   type TeammateProfileResponse,
+  type TeamResponse,
   type WriteResponse,
 } from "@workbench/shared";
 
@@ -124,6 +126,13 @@ export async function fetchProfileKind(teammateId: string, signal?: AbortSignal)
 function parseProfile(body: unknown): TeammateProfileResponse {
   const parsed = teammateProfileResponse.safeParse(body);
   if (!parsed.success) throw new ApiRequestError("bad_response", "the profile from the API does not match the shared schema");
+  return parsed.data;
+}
+
+/** `GET /api/team`: every step from process/ and every person with their mode for each step of their chain. */
+export async function fetchTeam(signal?: AbortSignal): Promise<TeamResponse> {
+  const parsed = teamResponse.safeParse(await getJson("/team", signal));
+  if (!parsed.success) throw new ApiRequestError("bad_response", "the team from the API does not match the shared schema");
   return parsed.data;
 }
 
