@@ -31,6 +31,15 @@ describe("parse", () => {
     expect(names(parse(["start", "-f"]))).toBe("-f only goes with logs");
   });
 
+  it("takes lanes with --json and nothing else, and --json only there", () => {
+    const plain = parse(["lanes"]);
+    expect("error" in plain ? plain.error : [plain.command, plain.json]).toEqual(["lanes", false]);
+    const json = parse(["lanes", "--json"]);
+    expect("error" in json ? json.error : json.json).toBe(true);
+    expect(names(parse(["lanes", "api"]))).toContain("lanes takes no services");
+    expect(names(parse(["status", "--json"]))).toBe("--json only goes with lanes");
+  });
+
   it("names each service once in the table", () => {
     expect(new Set(services.map((s) => s.name)).size).toBe(services.length);
   });

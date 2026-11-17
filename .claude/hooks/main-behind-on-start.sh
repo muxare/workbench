@@ -9,12 +9,25 @@
 # Either way it prints JSON whose hookSpecificOutput.additionalContext tells
 # Claude what was merged, whether app code changed, and to finish the
 # after-merge routine in AGENTS.md; systemMessage tells the person.
-# Up to date, offline, or anything unexpected: no output. Always exits 0.
+#
+# Then it runs `pnpm -s wb lanes` in the main checkout, which compares the
+# board's lanes with GitHub (docs/dev-loop.md, "Running the loop locally").
+# When it reports drift, the report joins additionalContext and systemMessage
+# says how many cards drifted. A stopped API, a missing gh or pnpm, a main
+# without the command, or any error: the report is left out. Lanes limits
+# itself to about 12 s, and runs here under a watchdog of LANES_TIMEOUT
+# seconds as well, so the notice about main always gets out within the
+# hook's 30 s timeout (fetch 8 s + lanes 15 s): a lanes run that is too slow
+# is killed and its report left out, never the notice.
+#
+# Up to date, no drift, offline, or anything unexpected: no output. Always
+# exits 0.
 #
 # Reference: https://code.claude.com/docs/en/hooks (SessionStart input,
 # matchers, additionalContext, systemMessage).
 
 FETCH_TIMEOUT=8
+LANES_TIMEOUT=15
 
 input=$(cat)
 
@@ -42,6 +55,10 @@ done
 # session started.
 repo=$(git -C "$start" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
 [ -n "$repo" ] && [ -d "$repo" ] || exit 0
+
+# Everything about main runs in this function, called in a subshell below, so
+# each early `exit 0` ends only this part and the lanes report still runs.
+main_behind() {
 git -C "$repo" rev-parse --verify --quiet refs/heads/main >/dev/null || exit 0
 
 # Fetch with a watchdog, since macOS has no timeout(1). All output goes to
@@ -133,4 +150,50 @@ console.log(JSON.stringify({
   hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: lines.join("\n") },
 }));
 ' 2>/dev/null
+}
+behind_json=$(main_behind)
+
+# The lanes report prints only a summary line when nothing drifted, or when
+# it has no board or GitHub to compare, so more than one line means drift.
+# Lanes runs with a watchdog like the fetch's, its output in a temporary
+# file so that a killed run, or a child it leaves behind, holds no pipe the
+# hook waits on.
+lanes=""
+lanes_out=$(mktemp "${TMPDIR:-/tmp}/wb-lanes.XXXXXX" 2>/dev/null) || lanes_out=""
+if [ -n "$lanes_out" ]; then
+  (cd "$repo" && exec pnpm -s wb lanes) >"$lanes_out" 2>/dev/null </dev/null &
+  lanes_pid=$!
+  (
+    sleep "$LANES_TIMEOUT" &
+    sleep_pid=$!
+    trap 'kill "$sleep_pid"; exit 0' TERM
+    wait "$sleep_pid"
+    kill "$lanes_pid"
+  ) >/dev/null 2>&1 </dev/null &
+  watch_pid=$!
+  wait "$lanes_pid" 2>/dev/null
+  lanes_status=$?
+  { kill "$watch_pid"; wait "$watch_pid"; } 2>/dev/null
+  [ "$lanes_status" -eq 0 ] && lanes=$(cat "$lanes_out" 2>/dev/null)
+  rm -f "$lanes_out"
+fi
+[ "$(printf '%s\n' "$lanes" | grep -c .)" -gt 1 ] || lanes=""
+[ -n "$behind_json" ] || [ -n "$lanes" ] || exit 0
+
+BEHIND_JSON="$behind_json" LANES="$lanes" node -e '
+const env = process.env;
+let out = { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: "" } };
+if (env.BEHIND_JSON) out = JSON.parse(env.BEHIND_JSON);
+if (env.LANES) {
+  const lines = env.LANES.split("\n").filter(Boolean);
+  const drifted = lines.length - 1;
+  const text = "The board has drifted from GitHub; `pnpm wb lanes` reports:\n" + lines.join("\n") +
+    "\nTell Mikael, and move the cards only where he asks.";
+  const ctx = out.hookSpecificOutput.additionalContext;
+  out.hookSpecificOutput.additionalContext = ctx ? ctx + "\n\n" + text : text;
+  const short = drifted + " card" + (drifted === 1 ? "" : "s") + " on the board drifted from GitHub; see `pnpm wb lanes`.";
+  out.systemMessage = out.systemMessage ? out.systemMessage + " " + short : short;
+}
+console.log(JSON.stringify(out));
+' 2>/dev/null || { [ -z "$behind_json" ] || printf '%s\n' "$behind_json"; }
 exit 0

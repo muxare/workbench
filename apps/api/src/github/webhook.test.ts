@@ -10,7 +10,7 @@ import { loadFunctionIds } from "../process.ts";
 import { addCard, addTeammate, appendEvents, cardLog, cardStatus } from "../store.ts";
 import { formatGithubLogins, parseGithubLogins } from "./logins.ts";
 import { signBody, validSignature } from "./signature.ts";
-import { eventIdFor } from "./webhook.ts";
+import { eventIdFor, skippedEventIdFor } from "./webhook.ts";
 
 const SECRET = "invented-webhook-secret";
 const NOW = "2026-11-11T12:00:00.000Z";
@@ -54,6 +54,21 @@ async function moveCard2(...states: ("ready" | "in_progress" | "review" | "done"
     from = to;
   }
   await appendEvents(db, events);
+}
+
+/** Put card 2, in progress, in needs_input: it waits on Mikael's answer to an invented question. */
+async function askOnCard2() {
+  await appendEvents(db, [
+    {
+      id: "invented-ask",
+      type: "status_changed",
+      card_id: "2",
+      actor: "ai",
+      at: "2026-11-11T10:00:00Z",
+      from: "in_progress",
+      to: { state: "needs_input", waiting_on: "mikael", question_id: "invented-q1" },
+    },
+  ]);
 }
 
 /** Mikael's mode for implement_services, the function of cards 1 and 2; its default is delegate. */
@@ -316,10 +331,54 @@ describe("pull_request opened or ready for review", () => {
     expect((await cardStatus(db, "2")).state).toBe("ready");
   });
 
-  it("asks for review without a move when the card is not in progress", async () => {
+  it("asks for review on a card still Ready, and records the move to review it skipped", async () => {
+    // Cards #17 and #18 on 2026-11-17: the pull request opened while nobody had picked the card.
+    await moveCard2("ready");
     const body = await recorded("pull_request", fixture("pull_request.opened"));
+    expect(body.events).toEqual([
+      expect.objectContaining({ type: "review_requested", id: eventIdFor("invented-delivery-" + String(deliveries), 0) }),
+      {
+        id: skippedEventIdFor("invented-delivery-" + String(deliveries)),
+        type: "move_skipped",
+        card_id: "2",
+        actor: "ai",
+        at: NOW,
+        to: "review",
+        state: "ready",
+        reason: "a card moves to review only from in progress",
+        pull_request: 3,
+      },
+    ]);
+    expect(body.reason).toBe("card 2 stays ready: a card moves to review only from in progress");
+    expect((await cardStatus(db, "2")).state).toBe("ready");
+  });
+
+  it("asks for review on a card waiting on an answer, and records the move to review it skipped", async () => {
+    // The board moves a card in needs_input on only by the answer, so the pull request ran ahead of the board.
+    await moveCard2("ready", "in_progress");
+    await askOnCard2();
+    const body = await recorded("pull_request", fixture("pull_request.opened"));
+    expect(body.events).toMatchObject([
+      { type: "review_requested", pull_request: 3 },
+      { type: "move_skipped", to: "review", state: "needs_input", reason: "a card waiting on an answer moves to review only once the question is answered" },
+    ]);
+    expect((await cardStatus(db, "2")).state).toBe("needs_input");
+  });
+
+  it("asks for review on a card already in review, and skips nothing", async () => {
+    await moveCard2("ready", "in_progress", "review");
+    const body = await recorded("pull_request", fixture("pull_request.review_requested"));
     expect(types(body.events)).toEqual(["review_requested"]);
-    expect((await cardStatus(db, "2")).state).toBe("backlog");
+    expect(body.reason).toBeUndefined();
+  });
+
+  it("records a skipped move once when the delivery comes again", async () => {
+    await moveCard2("ready");
+    const first = await outcome(await deliver("pull_request", fixture("pull_request.opened"), { delivery: "invented-guid" }));
+    expect(first.events.map((e) => e.id)).toEqual([eventIdFor("invented-guid", 0), skippedEventIdFor("invented-guid")]);
+    const again = await outcome(await deliver("pull_request", fixture("pull_request.opened"), { delivery: "invented-guid" }));
+    expect(again.outcome).toBe("duplicate");
+    expect(types(await cardLog(db, "2")).filter((t) => t === "move_skipped")).toHaveLength(1);
   });
 
   it("finds the card from the body when the branch does not name it", async () => {
@@ -457,11 +516,41 @@ describe("pull_request_review", () => {
   });
 
   it("records the AI critic's changes request as a failed consistency check and a changes request", async () => {
+    await moveCard2("ready", "in_progress");
     const body = await recorded("pull_request_review", criticReview("changes_requested"));
     expect(body.events).toMatchObject([
       { type: "check_ran", actor: "ai", check: "consistency", passed: false, pull_request: 3, commit_sha: "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d" },
       { type: "changes_requested", actor: "ai", pull_request: 3 },
     ]);
+    expect(body.reason).toBeUndefined();
+  });
+
+  it("records changes requested on a card waiting on an answer, by a person or the AI critic, and skips nothing", async () => {
+    // needs_input is in progress, waiting on an answer: there is no move back to make, as for a card in progress.
+    await moveCard2("ready", "in_progress");
+    await askOnCard2();
+    const byPerson = await recorded("pull_request_review", fixture("pull_request_review.changes_requested"));
+    expect(types(byPerson.events)).toEqual(["changes_requested"]);
+    expect(byPerson.reason).toBeUndefined();
+    const byCritic = await recorded("pull_request_review", criticReview("changes_requested"));
+    expect(byCritic.events).toMatchObject([
+      { type: "check_ran", actor: "ai", check: "consistency", passed: false, pull_request: 3 },
+      { type: "changes_requested", actor: "ai", pull_request: 3 },
+    ]);
+    expect(byCritic.reason).toBeUndefined();
+    expect(types(await cardLog(db, "2"))).not.toContain("move_skipped");
+    expect((await cardStatus(db, "2")).state).toBe("needs_input");
+  });
+
+  it("records the move back it skipped on changes requested for a card not in review", async () => {
+    await moveCard2("ready");
+    const body = await recorded("pull_request_review", fixture("pull_request_review.changes_requested"));
+    expect(body.events).toMatchObject([
+      { type: "changes_requested", actor: "mikael" },
+      { type: "move_skipped", actor: "mikael", to: "in_progress", state: "ready", reason: "a card moves back to in progress only from review", pull_request: 3 },
+    ]);
+    expect(body.reason).toBe("card 2 stays ready: a card moves back to in progress only from review");
+    expect((await cardStatus(db, "2")).state).toBe("ready");
   });
 });
 
@@ -476,8 +565,11 @@ describe("who moves the card follows the owner's mode", () => {
       await setMode(m);
       await moveCard2("ready", "in_progress");
       const body = await recorded("pull_request", fixture("pull_request.opened"));
-      expect(types(body.events)).toEqual(["review_requested"]);
+      expect(types(body.events)).toEqual(["review_requested", "move_skipped"]);
       expect(body.reason).toMatch(new RegExp(`card 2 stays in_progress: mikael works implement_services in ${m}, where human writes, so only mikael may move the card, not ai`));
+      // The skip keeps the cause the answer ends with, and the lanes on either side.
+      expect(body.events[1]).toMatchObject({ actor: "ai", to: "review", state: "in_progress", pull_request: 3 });
+      expect(body.reason).toBe(`card 2 stays in_progress: ${(body.events[1] as Extract<CardEvent, { type: "move_skipped" }>).reason}`);
       expect((await cardStatus(db, "2")).state).toBe("in_progress");
     }
   });
@@ -508,7 +600,7 @@ describe("who moves the card follows the owner's mode", () => {
     });
     await moveCard2("ready", "in_progress");
     const body = await recorded("pull_request", tweak(fixture("pull_request.opened"), "sender.login", "invented-other-login"));
-    expect(types(body.events)).toEqual(["review_requested"]);
+    expect(types(body.events)).toEqual(["review_requested", "move_skipped"]);
     expect(body.reason).toMatch(/only mikael or the AI may move the card, not invented-other/);
   });
 
@@ -530,7 +622,7 @@ describe("who moves the card follows the owner's mode", () => {
       await moveCard2("ready", "in_progress");
       // The other person's review request records the event but leaves the card in progress.
       const asked = await recorded("pull_request", tweak(fixture("pull_request.opened"), "sender.login", "invented-other-login"));
-      expect(types(asked.events)).toEqual(["review_requested"]);
+      expect(types(asked.events)).toEqual(["review_requested", "move_skipped"]);
       expect(asked.reason).toMatch(/card 2 stays in_progress: .*not invented-other/);
       expect((await cardStatus(db, "2")).state).toBe("in_progress");
       // Mikael moves it to review by hand; the other person's changes request sends it back.
@@ -550,7 +642,8 @@ describe("who moves the card follows the owner's mode", () => {
     await setMode("assist");
     await moveCard2("ready", "in_progress", "review");
     const stays = await recorded("pull_request_review", criticReview("changes_requested"));
-    expect(types(stays.events)).toEqual(["check_ran", "changes_requested"]);
+    expect(types(stays.events)).toEqual(["check_ran", "changes_requested", "move_skipped"]);
+    expect(stays.events[2]).toMatchObject({ actor: "ai", to: "in_progress", state: "review" });
     expect(stays.reason).toMatch(/card 2 stays review: mikael works implement_services in assist/);
     expect((await cardStatus(db, "2")).state).toBe("review");
     // The owner's own changes request moves it back in any mode.
@@ -574,7 +667,7 @@ describe("who moves the card follows the owner's mode", () => {
       { id: "invented-mode-back", type: "mode_changed", teammate_id: "mikael", function_id: "implement_services", actor: "mikael", at: "2026-11-11T09:30:00Z", from: "assist", to: "delegate" },
     ]);
     const body = await recorded("pull_request", tweak(fixture("pull_request.opened"), "pull_request.body", "Workbench: #1"));
-    expect(types(body.events)).toEqual(["review_requested"]);
+    expect(types(body.events)).toEqual(["review_requested", "move_skipped"]);
     expect(body.reason).toMatch(/card 1 stays in_progress: the card was picked in assist, where human writes/);
   });
 
@@ -623,23 +716,70 @@ describe("pull_request merged", () => {
     expect((await cardStatus(db, "2")).state).toBe("done");
   });
 
-  it("refuses a merge of a card that is not in review, even when approved", async () => {
+  it("refuses a merge of a card that is not in review, even when approved, and records the move it skipped", async () => {
+    // Card #16 on 2026-11-17: merged after the critic had sent it back to in progress.
     await moveCard2("ready", "in_progress");
     await recorded("pull_request_review", fixture("pull_request_review.approved"));
-    await refused(/card 2 is in_progress; a card moves to done only from review/);
+    const body = await refused(/^pull request #3 was merged, but card 2 is in_progress; a card moves to done only from review$/);
+    expect(body.events).toEqual([
+      {
+        id: expect.any(String),
+        type: "move_skipped",
+        card_id: "2",
+        actor: "mikael",
+        at: NOW,
+        to: "done",
+        state: "in_progress",
+        reason: "a card moves to done only from review",
+        pull_request: 3,
+      },
+    ]);
     expect((await cardStatus(db, "2")).state).toBe("in_progress");
   });
 
-  async function refused(reason: RegExp) {
+  /** A merge refused as `reason` says, which records one `move_skipped` and nothing else. */
+  async function refused(reason: RegExp, delivery?: string) {
     const before = await cardLog(db, "2");
-    const body = await outcome(await deliver("pull_request", fixture("pull_request.closed.merged")));
+    const body = await outcome(await deliver("pull_request", fixture("pull_request.closed.merged"), delivery === undefined ? {} : { delivery }));
     expect(body.outcome).toBe("refused");
     expect(body.card_id).toBe("2");
     expect(body.reason).toMatch(reason);
-    expect(await cardLog(db, "2")).toEqual(before);
+    expect(types(body.events)).toEqual(["move_skipped"]);
+    const skip = body.events[0] as Extract<CardEvent, { type: "move_skipped" }>;
+    expect(skip).toMatchObject({ to: "done", state: (await cardStatus(db, "2")).state, pull_request: 3 });
+    expect(body.reason?.endsWith(skip.reason)).toBe(true);
+    expect(await cardLog(db, "2")).toEqual([...before, skip]);
+    return body;
   }
 
-  it("refuses a merge nobody approved, and records nothing", async () => {
+  it("records a refused merge's skip once, and moves the card when the delivery comes again after the board is fixed", async () => {
+    await moveCard2("ready", "in_progress");
+    await recorded("pull_request_review", fixture("pull_request_review.approved"));
+    await refused(/a card moves to done only from review/, "invented-guid");
+    const again = await outcome(await deliver("pull_request", fixture("pull_request.closed.merged"), { delivery: "invented-guid" }));
+    expect(again.outcome).toBe("refused");
+    expect(again.reason).toMatch(/a card moves to done only from review/);
+    expect(again.events).toEqual([]);
+    expect(types(await cardLog(db, "2")).filter((t) => t === "move_skipped")).toHaveLength(1);
+    // A refusal is evaluated again on redelivery: once the card is in review, the same delivery moves it to done.
+    await moveCard2("review");
+    const fixed = await outcome(await deliver("pull_request", fixture("pull_request.closed.merged"), { delivery: "invented-guid" }));
+    expect(fixed.outcome).toBe("recorded");
+    expect(fixed.events).toMatchObject([{ id: eventIdFor("invented-guid", 0), type: "status_changed", to: { state: "done" } }]);
+  });
+
+  it("refuses a merge by an account that is not a teammate without recording a skip, since it has no actor", async () => {
+    await moveCard2("ready", "in_progress");
+    const before = await cardLog(db, "2");
+    const stranger = tweak(tweak(fixture("pull_request.closed.merged"), "pull_request.merged_by.login", "invented-stranger"), "sender.login", "invented-stranger");
+    const body = await outcome(await deliver("pull_request", stranger));
+    expect(body.outcome).toBe("refused");
+    expect(body.reason).toMatch(/card 2 is in_progress; a card moves to done only from review/);
+    expect(body.events).toEqual([]);
+    expect(await cardLog(db, "2")).toEqual(before);
+  });
+
+  it("refuses a merge nobody approved, and records only the skipped move", async () => {
     await moveCard2("ready", "in_progress", "review");
     await refused(/stays review: nobody approved it/);
     expect((await cardStatus(db, "2")).state).toBe("review");
