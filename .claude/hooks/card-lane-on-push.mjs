@@ -18,7 +18,9 @@
 // Reference: https://code.claude.com/docs/en/hooks (PreToolUse input:
 // tool_input.command and cwd; deny through hookSpecificOutput with
 // permissionDecision "deny" and permissionDecisionReason, which Claude sees).
+/* global fetch, AbortSignal */
 import { execFileSync } from "node:child_process";
+import process from "node:process";
 
 const API = (process.env.WB_API_URL ?? "http://localhost:3000/api").replace(/\/$/, "");
 const WORKING = new Set(["in_progress", "review", "needs_input"]);
@@ -75,7 +77,7 @@ function deny(reason) {
 }
 
 async function main() {
-  let input = {};
+  let input;
   try {
     input = JSON.parse(await readStdin()) ?? {};
   } catch {
