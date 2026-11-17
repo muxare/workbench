@@ -40,6 +40,11 @@ describe("askView", () => {
     expect(askView(detail({ status: waiting }, [open]), testBoard(), undefined)).toEqual({ kind: "none" });
   });
 
+  it("offers nothing on a withdrawn card, which takes no further event", () => {
+    const withdrawn = { by: PO, at: "2026-11-17T10:00:00.000Z", reason: "Invented reason.", from: "in_progress" } as const;
+    expect(askView(detail({ withdrawn }), testBoard(), undefined)).toEqual({ kind: "none" });
+  });
+
   it("offers nothing while a question is open, and again once it is answered", () => {
     expect(askView(detail({}, [open]), testBoard(), undefined)).toEqual({ kind: "none" });
     const answered = { ...open, answer: "Invented answer.", decided_by: BE };

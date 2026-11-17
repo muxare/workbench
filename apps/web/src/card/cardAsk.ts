@@ -44,7 +44,7 @@ function choice(p: HumanTeammate): PersonChoice {
  */
 export function askView(detail: CardResponse, board: BoardResponse, remembered: string | undefined): AskView {
   const { card, questions } = detail;
-  if (card.status.state !== "in_progress") return { kind: "none" };
+  if (card.status.state !== "in_progress" || card.withdrawn !== undefined) return { kind: "none" };
   if (questions.some((q) => q.answer === undefined)) return { kind: "none" };
   const team = people(board);
   const ids = new Set(team.map((p) => p.id));
