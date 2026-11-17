@@ -712,6 +712,39 @@ a:hover {
   color: var(--needs-input);
 }
 
+/* The column head and, on Ready, the "Select" toggle that starts ticking cards for a batch. */
+.column__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+}
+/* At least 24px to hit; the column head's mono label, so it reads as part of the head. */
+.column__select {
+  margin-left: auto;
+  min-height: 24px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.column__select:hover {
+  color: var(--fg);
+  border-color: var(--line);
+}
+.column__select[aria-pressed="true"] {
+  color: var(--fg);
+  background: var(--surface);
+  border-color: var(--line);
+}
+
 .column__empty {
   margin: 0;
   padding: 2px;
@@ -765,6 +798,72 @@ a:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+}
+
+/* The tile's first line: the id and function, and the batch tick on a Ready card while selecting. */
+.card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6px;
+}
+/* Above the title link, which covers the tile. */
+.card__tick {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--fg);
+  cursor: pointer;
+}
+/* While selecting, a tile that can be selected is the checkbox's label. */
+.card--pickable {
+  cursor: pointer;
+}
+.card.is-selected {
+  border-color: var(--fg);
+}
+
+/* Ticking Ready cards to hand to the AI as one batch: under the board head, above the columns. */
+.batch-bar {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.batch-bar__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.batch-bar__count {
+  font-size: 11px;
+  color: var(--fg);
+}
+.batch-bar__hint,
+.batch-bar__error {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.batch-bar__hint {
+  flex: 1 1 240px;
+  color: var(--muted);
+}
+/* As .moves__error: a refused hand-over is not a card waiting on someone, so not --needs-input. */
+.batch-bar__error {
+  font-weight: 600;
+  color: var(--fg);
+}
+.batch-bar__actions {
+  display: flex;
+  gap: 8px;
 }
 
 .card__note {
@@ -1166,6 +1265,13 @@ a:hover {
   border-color: var(--fg);
   background: var(--fg);
   color: var(--surface);
+}
+/* A button inside the board: the board's 12px text, not the 44px form button. */
+.btn--compact {
+  font-size: 12px;
+  min-height: 30px;
+  padding: 5px 12px;
+  border-radius: 6px;
 }
 .btn:disabled {
   cursor: default;
