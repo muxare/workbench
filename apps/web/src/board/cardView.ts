@@ -1,6 +1,6 @@
 // What a card tile and a teammate panel say, derived from the board response.
 import { unfinishedDependencies, waitingOnTeammate, type BoardResponse, type Card } from "@workbench/shared";
-import { cardMode, cardParticipants, isActive } from "./links.ts";
+import { aiIsWorking, cardMode, cardParticipants, isActive } from "./links.ts";
 import { cardRef, externalLabel, findTeammate, labelOf } from "./teammates.ts";
 
 /** `plain` is the text colour, as the artboard sets a panel's "Now" and "Just finished" lines. */
@@ -113,8 +113,11 @@ export function teammateNotes(teammateId: string, board: BoardResponse): Note[] 
   const verifying = board.cards.filter(
     (c) => c.status.state === "review" && c.owner === teammateId && teammate?.kind === "human",
   );
-  const now = board.cards.filter(
-    (c) => isActive(c) && !verifying.includes(c) && cardParticipants(c, board).includes(teammateId),
+  // A person has under Now every active card they are on; the AI only the cards it is writing.
+  const now = board.cards.filter((c) =>
+    teammate?.kind === "ai"
+      ? aiIsWorking(c, teammateId, board)
+      : isActive(c) && !verifying.includes(c) && cardParticipants(c, board).includes(teammateId),
   );
   if (now.length > 0) notes.push({ text: `Now: ${refs(now)}`, tone: "plain" });
 

@@ -3,7 +3,7 @@
 // domain schemas. There is no sign-in yet, so every write names its `actor`.
 import { z } from "zod";
 import { batch, batchState } from "./batch.ts";
-import { chainFunction } from "./chain.ts";
+import { moveFunction } from "./chain.ts";
 import { functionFrontMatter, functionRole } from "./functionFile.ts";
 import {
   aiTeammate,
@@ -134,9 +134,10 @@ export type BoardCycle = z.infer<typeof boardCycle>;
  * because the log here is also what the board follows the stream with.
  * `cycle` is the current cycle with its log, or null when no cycle has started.
  * `functions` is every function in process/functions, in file order, with
- * just what `chainOf` and `ownerMode` need, so a panel counts a person's modes
- * over the same chain and with the same default as their profile, and keeps
- * doing so as `mode_changed` and `roles_changed` events stream in.
+ * just what `chainOf`, `ownerMode` and `aiWrites` need, so a panel counts a
+ * person's modes over the same chain and with the same default as their
+ * profile, and keeps doing so as `mode_changed` and `roles_changed` events
+ * stream in, and the AI's panel lists under "Now" only the cards it writes.
  * `team` is the team's name and headline from its `team_named` events, or
  * null when the team has never been named.
  * `batches` is the open batches (not finished), oldest first, as on
@@ -146,7 +147,7 @@ export const boardResponse = z.object({
   team: teamName.nullable(),
   cards: z.array(card),
   teammates: z.array(teammate),
-  functions: z.array(chainFunction),
+  functions: z.array(moveFunction),
   open_questions: z.array(questionView),
   log: z.array(streamEvent),
   log_filters: logFilters,

@@ -1,6 +1,6 @@
 // Which teammate is linked to which card, and how. The artboard's three line
 // styles: solid = works on a card, dashed = needs input, dotted = reports back.
-import { isCardEvent, type BoardResponse, type Card, type CardStatus, type Mode } from "@workbench/shared";
+import { aiWrites, isCardEvent, ownerMode, type BoardResponse, type Card, type CardStatus, type Mode } from "@workbench/shared";
 import { aiTeammate, cardRef, externalLabel, findTeammate, labelOf } from "./teammates.ts";
 
 /** Statuses in which someone is working on a card. */
@@ -12,9 +12,12 @@ export function isActive(card: Card): boolean {
 
 /**
  * The mode a card is worked in: the mode of its latest `picked` event in the
- * log, or else the mode its owner set for the card's function. Undefined when
- * neither is known (the function's default lives in process/, which the board
- * response does not carry).
+ * log, or else its owner's mode for the card's function (`ownerMode`: their
+ * choice, or the function's default from the board's `functions`), as
+ * `mayMoveCard` reads it. The board log holds only the latest events, so a
+ * card picked long ago falls back to the owner's mode. Undefined when the
+ * owner is not a person, or when the function is unknown and the owner chose
+ * no mode for it.
  */
 export function cardMode(card: Card, board: BoardResponse): Mode | undefined {
   for (let i = board.log.length - 1; i >= 0; i -= 1) {
@@ -22,7 +25,23 @@ export function cardMode(card: Card, board: BoardResponse): Mode | undefined {
     if (e.type === "picked" && e.card_id === card.id) return e.mode;
   }
   const owner = findTeammate(board, card.owner);
-  return owner?.kind === "human" ? owner.process_profile[card.function_id] : undefined;
+  if (owner?.kind !== "human") return undefined;
+  const definition = board.functions.find((f) => f.name === card.function_id);
+  return definition ? ownerMode(owner, definition) : owner.process_profile[card.function_id];
+}
+
+/**
+ * Whether the AI teammate `aiId` is working `card`: the card is in progress,
+ * the AI is on it, and the mode it is worked in (`cardMode`) has a protocol
+ * whose `writes` is `ai` or `both` (`aiWrites`, read from the function file
+ * through the board's `functions`). A card waiting in Needs input, in review
+ * or worked in a mode where the person writes is not one the AI is working.
+ */
+export function aiIsWorking(card: Card, aiId: string, board: BoardResponse): boolean {
+  if (card.status.state !== "in_progress" || !cardParticipants(card, board).includes(aiId)) return false;
+  const m = cardMode(card, board);
+  const definition = board.functions.find((f) => f.name === card.function_id);
+  return m !== undefined && definition !== undefined && aiWrites(definition, m);
 }
 
 /** Who picked the card last, from the log. */

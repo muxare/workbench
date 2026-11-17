@@ -1,6 +1,6 @@
 // All data here is invented.
 import { describe, expect, it } from "vitest";
-import { chainModeCounts, chainOf, mayMoveCard, maySendCardBack, ownerMode, type ChainFunction, type MoveFunction } from "./chain.ts";
+import { aiWrites, chainModeCounts, chainOf, mayMoveCard, maySendCardBack, ownerMode, type ChainFunction, type MoveFunction } from "./chain.ts";
 import type { AiTeammate, HumanTeammate } from "./domain.ts";
 
 const fns: ChainFunction[] = [
@@ -121,5 +121,22 @@ describe("mayMoveCard", () => {
         expect(maySendCardBack(ai, owner, implement).allowed).toBe(false);
       }
     });
+  });
+});
+
+describe("aiWrites", () => {
+  const fn: MoveFunction = {
+    name: "implement_services",
+    role: "be",
+    modes: { default: "delegate" },
+    protocols: { manual: { writes: "human" }, assist: { writes: "human" }, delegate: { writes: "both" } },
+  };
+  it("is true where the mode's protocol has the AI or both write, read from the function, not the mode's name", () => {
+    expect(aiWrites(fn, "delegate")).toBe(true);
+    expect(aiWrites(fn, "assist")).toBe(false);
+    expect(aiWrites({ ...fn, protocols: { assist: { writes: "ai" } } }, "assist")).toBe(true);
+  });
+  it("is false for a mode the function has no protocol for", () => {
+    expect(aiWrites({ ...fn, protocols: {} }, "delegate")).toBe(false);
   });
 });

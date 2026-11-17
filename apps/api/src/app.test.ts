@@ -727,10 +727,15 @@ describe("GET /api/board, functions for the panels' mode counts", () => {
     for (const person of people) expect([person.id, chainModeCounts(person, board.functions)]).toEqual([person.id, await profileCounts(person.id)]);
   }
 
-  it("lists every function in process/functions, in file order, with its role and default mode", async () => {
+  it("lists every function in process/functions, in file order, with its role, default mode and who writes in each mode", async () => {
     const board = await getBoard();
     expect(board.functions).toEqual(
-      [...loadFunctionDefinitions().values()].map((d) => ({ name: d.name, role: d.role, modes: { default: d.modes.default } })),
+      [...loadFunctionDefinitions().values()].map((d) => ({
+        name: d.name,
+        role: d.role,
+        modes: { default: d.modes.default },
+        protocols: Object.fromEntries(Object.entries(d.protocols).map(([m, p]) => [m, { writes: p.writes }])),
+      })),
     );
   });
 

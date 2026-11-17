@@ -1,6 +1,6 @@
 // INVENTED test data for the board view-model tests. None of it describes a
 // real client, project or person.
-import { defaultLogFilters, type BoardResponse, type Card, type CardEvent, type ChainFunction } from "@workbench/shared";
+import { defaultLogFilters, type BoardResponse, type Card, type CardEvent, type MoveFunction } from "@workbench/shared";
 
 export const PO = "t-po";
 export const UX = "t-ux";
@@ -14,16 +14,18 @@ export const CYCLE = { id: "cy-14", name: "Invented sprint 14", starts_at: "2026
 
 /**
  * The functions the test board knows, in the shape `GET /board` sends: a
- * hand-written subset whose roles and defaults follow process/functions at
- * the time of writing. The board tests never read process/ themselves.
+ * hand-written subset whose roles, defaults and protocol writers follow
+ * process/functions at the time of writing. The board tests never read
+ * process/ themselves.
  */
-export const TEST_FUNCTIONS: ChainFunction[] = [
-  { name: "define_api_contract", role: "be", modes: { default: "assist" } },
-  { name: "implement_services", role: "be", modes: { default: "delegate" } },
-  { name: "refine_ui_spec", role: "fe", modes: { default: "assist" } },
-  { name: "fix_bug", role: "team", modes: { default: "delegate" } },
-  { name: "write_issues", role: "team", modes: { default: "delegate" } },
-  { name: "frame_problem", role: "ux", modes: { default: "assist" } },
+const writers: MoveFunction["protocols"] = { manual: { writes: "human" }, assist: { writes: "human" }, delegate: { writes: "ai" } };
+export const TEST_FUNCTIONS: MoveFunction[] = [
+  { name: "define_api_contract", role: "be", modes: { default: "assist" }, protocols: writers },
+  { name: "implement_services", role: "be", modes: { default: "delegate" }, protocols: writers },
+  { name: "refine_ui_spec", role: "fe", modes: { default: "assist" }, protocols: writers },
+  { name: "fix_bug", role: "team", modes: { default: "delegate" }, protocols: writers },
+  { name: "write_issues", role: "team", modes: { default: "delegate" }, protocols: writers },
+  { name: "frame_problem", role: "ux", modes: { default: "assist" }, protocols: writers },
 ];
 
 export function card(id: string, over: Partial<Card> = {}): Card {
