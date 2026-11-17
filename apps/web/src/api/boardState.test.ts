@@ -19,7 +19,7 @@ function report(id: string): CardEvent {
 }
 
 function board(lastSeq: number, log: CardEvent[] = []): BoardResponse {
-  return { team: null, cards: [], teammates: [], functions: [], open_questions: [], log, log_filters: defaultLogFilters(), cycle: null, batches: [], last_seq: lastSeq };
+  return { team: null, cards: [], teammates: [], former_teammates: [], functions: [], open_questions: [], log, log_filters: defaultLogFilters(), cycle: null, batches: [], last_seq: lastSeq };
 }
 
 const live = (seq: number, id = `e${seq}`): LiveEvent => ({ seq, event: report(id) });
@@ -140,6 +140,19 @@ describe("a mode_changed event", () => {
     const next = mergeEvent(liveBoard(withTeam(3)), rolesChanged);
     expect(next.board.teammates).toEqual([{ ...person, roles: ["po", "fe"] }, ai]);
     expect(next.board.log.map((e) => e.id)).toEqual(["e1", "r4"]);
+  });
+
+  it("a teammate_left event moves the person to former_teammates at once, so they leave their seat but keep their name", () => {
+    const leftEvent = { id: "l4", type: "teammate_left", teammate_id: "fe-1", actor: "fe-1", at: "2026-11-09T10:00:00.000Z" } as const;
+    const left: LiveEvent = { seq: 4, event: leftEvent };
+    expect(parseStreamMessage(JSON.stringify(left.event), "4")).toEqual(left);
+    const next = mergeEvent(liveBoard(withTeam(3)), left);
+    expect(next.board.teammates).toEqual([ai]);
+    expect(next.board.former_teammates).toEqual([person]);
+    expect(next.board.log.map((e) => e.id)).toEqual(["e1", "l4"]);
+    // The AI teammate is never taken off, so an event about it changes nothing.
+    const aboutAi = mergeEvent(liveBoard(withTeam(3)), { seq: 4, event: { ...leftEvent, teammate_id: "ai-1" } });
+    expect(aboutAi.board.teammates).toEqual([person, ai]);
   });
 
   it("adds a function the person had left at its default, and leaves other teammates alone", () => {

@@ -10,7 +10,9 @@
 // `POST /api/teammates/:id/roles` appends a `roles_changed` event in the same
 // way; a person's roles are derived from those events. `POST /api/teammates`
 // adds a person through `addTeammate`, whose joining `roles_changed` event
-// names the person who added them.
+// names the person who added them. `POST /api/teammates/:id/leave` appends a
+// `teammate_left` event: the person drops out of the team and the board's
+// `teammates`, and stays in `former_teammates` so their history still reads.
 // `POST /api/logs/:log/filter` appends a `log_filter_changed` event about the
 // team, and each log's filter is derived from those events; the API never
 // applies a filter to what it returns, because a filter is a view setting.
@@ -61,6 +63,7 @@ import {
   type BatchesResponse,
   type BatchResponse,
   addTeammateRequest,
+  leaveTeamRequest,
   createCardRequest,
   criticRequired,
   currentCycle,
@@ -121,12 +124,14 @@ import {
   getBatch,
   getCard,
   getTeammate,
+  hasLeft,
   handBatch,
   lastSeq,
   listBatches,
   listCards,
   listCycles,
   listQuestions,
+  listFormerTeammates,
   listTeammates,
   logFilters,
   StoreError,
@@ -242,9 +247,11 @@ export function createApp(deps: AppDeps) {
     return card;
   }
 
+  /** A teammate on the team by id: 422 for no such teammate or a person who has left. */
   async function teammateOr422(id: string, role: string): Promise<Teammate> {
     const t = await getTeammate(db, id);
     if (!t) throw new ApiProblem("rule_violation", `${role} '${id}' is not a teammate`);
+    if (await hasLeft(db, id)) throw new ApiProblem("rule_violation", `${role} '${id}' has left the team`);
     return t;
   }
 
@@ -316,6 +323,7 @@ export function createApp(deps: AppDeps) {
         team: await teamName(db),
         cards: await listCards(db),
         teammates: await listTeammates(db),
+        former_teammates: await listFormerTeammates(db),
         // Only what the board needs of each function: its name, role, default mode and who writes in each mode.
         functions: [...definitions().values()].map((d) => moveFunction.parse(d)),
         open_questions: (await listQuestions(db)).filter((q) => q.answer === undefined),
@@ -672,6 +680,21 @@ export function createApp(deps: AppDeps) {
         ]);
       }
       const response: TeammateResponse = { teammate: await personOr404(person.id) };
+      return c.json(response);
+    })
+
+    .post("/teammates/:id/leave", async (c) => {
+      const id = c.req.param("id");
+      const subject = await getTeammate(db, id);
+      if (!subject) throw new ApiProblem("not_found", `no teammate '${id}'`);
+      if (subject.kind !== "human") throw new ApiProblem("rule_violation", `${id} is an AI teammate; only a person is taken off the team`);
+      const req = await body(c, leaveTeamRequest);
+      const actor = await teammateOr422(req.actor, "actor");
+      if (actor.kind !== "human") throw new ApiProblem("forbidden", `a person is taken off the team by a person, not ${actor.id}`);
+      // The store checks the rest inside its write: not left already (409), not the last person,
+      // and no card that is not done and no open question left with them (422).
+      await appendEvents(db, [{ id: newId(), type: "teammate_left", teammate_id: subject.id, actor: actor.id, at: now().toISOString() }]);
+      const response: TeammateResponse = { teammate: subject };
       return c.json(response);
     })
 

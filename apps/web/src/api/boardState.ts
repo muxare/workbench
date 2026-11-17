@@ -6,6 +6,9 @@
 // derives it, so the board's mode pills and counts follow it without a refetch.
 // A `roles_changed` event replaces its teammate's roles in the same way, so the
 // person moves seat and label at once; a person who joins appears on refetch.
+// A `teammate_left` event moves the person from `teammates` to
+// `former_teammates` at once, so they leave their seat but still name their
+// events in the log.
 // A `log_filter_changed` event replaces its log's filter at once in the same
 // way, so a filter changed in another browser applies here as soon as it
 // streams in. The filter only decides what a log shows; the log kept here
@@ -121,13 +124,22 @@ function appendToCycle(current: BoardResponse["cycle"], e: StreamEvent): BoardRe
   return { ...current, log: [...current.log, e] };
 }
 
+/** The team with a `teammate_left` event applied: the person moves to the people who left, as they stand. */
+function applyLeft(board: BoardResponse, e: StreamEvent): Pick<BoardResponse, "teammates" | "former_teammates"> {
+  const gone = e.type === "teammate_left" ? board.teammates.find((t) => t.id === e.teammate_id) : undefined;
+  if (gone?.kind !== "human") return { teammates: board.teammates, former_teammates: board.former_teammates };
+  return { teammates: board.teammates.filter((t) => t !== gone), former_teammates: [...board.former_teammates, gone] };
+}
+
 function appendToBoard(board: BoardResponse, live: LiveEvent): BoardResponse {
   if (live.seq <= board.last_seq) return board;
   if (board.log.some((e) => e.id === live.event.id)) return { ...board, last_seq: live.seq };
   const log = [...board.log, live.event];
+  const team = applyLeft(board, live.event);
   return {
     ...board,
-    teammates: applyToTeammates(board.teammates, live.event),
+    teammates: applyToTeammates(team.teammates, live.event),
+    former_teammates: team.former_teammates,
     log_filters: applyToFilters(board.log_filters, live.event),
     team: live.event.type === "team_named" ? live.event.to : board.team,
     batches: applyToBatches(board.batches, live.event),

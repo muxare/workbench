@@ -154,6 +154,11 @@ describe("teamLiveKey", () => {
     expect(teamLiveKey(testBoard({ log: [modeChange, rolesChange, report("a")] }))).toBe("r1");
   });
 
+  it("is a person leaving the team too, so their column goes", () => {
+    const left: StreamEvent = { id: "l1", type: "teammate_left", teammate_id: UX, actor: UX, at: "2026-11-17T10:02:00Z" };
+    expect(teamLiveKey(testBoard({ log: [rolesChange, left, report("a")] }))).toBe("l1");
+  });
+
   it("reloads the team on a new change, and not when the change scrolls out of the log", () => {
     const first = teamLiveKey(testBoard({ log: [modeChange] }));
     let next = followLiveKey(undefined, first);

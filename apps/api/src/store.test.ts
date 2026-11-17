@@ -24,6 +24,7 @@ import {
   getTeammate,
   listCards,
   listCycles,
+  listFormerTeammates,
   listQuestions,
   listTeammates,
   logFilters,
@@ -181,6 +182,88 @@ describe("roles changes", () => {
     await expect(appendEvent(db, change(["ux"], ["be"], "r1", "t-ai"))).rejects.toMatchObject({ code: "forbidden" });
     const aboutAi = { ...change([], ["be"]), teammate_id: "t-ai" } as StreamEvent;
     await expect(appendEvent(db, aboutAi)).rejects.toMatchObject({ code: "rule_violation" });
+  });
+});
+
+describe("leaving the team", () => {
+  const left = (teammateId: string, actor = "t-human", id = `left-${teammateId}`): StreamEvent => ({
+    id,
+    type: "teammate_left",
+    teammate_id: teammateId,
+    actor,
+    at: at(55),
+  });
+  beforeEach(async () => {
+    await addTeammate(db, { kind: "human", id: "t-gone", name: "Invented leaver", roles: ["fe"] }, at(1), { addedBy: "t-human" });
+  });
+
+  it("leaves the person out of the team, keeps them findable as they stood, and keeps their events", async () => {
+    await appendEvent(db, left("t-gone"));
+    expect((await listTeammates(db)).map((t) => t.id)).toEqual(["t-ai", "t-human"]);
+    expect(await listFormerTeammates(db)).toEqual([
+      { kind: "human", id: "t-gone", name: "Invented leaver", roles: ["fe"], process_profile: {} },
+    ]);
+    expect(await getTeammate(db, "t-gone")).toMatchObject({ name: "Invented leaver" });
+    expect(ids(await boardLog(db)).slice(-2)).toEqual(["roles-t-gone-joined", "left-t-gone"]);
+  });
+
+  it("lets a person take themselves off, while another person stays", async () => {
+    await appendEvent(db, left("t-gone", "t-gone"));
+    expect(await listFormerTeammates(db)).toHaveLength(1);
+  });
+
+  it("refuses the AI teammate, an unknown person, and an actor who is not a person on the team", async () => {
+    await expect(appendEvent(db, left("t-ai"))).rejects.toMatchObject({ code: "rule_violation", message: expect.stringMatching(/only a person/) });
+    await expect(appendEvent(db, left("t-nobody"))).rejects.toMatchObject({ code: "not_found" });
+    await expect(appendEvent(db, left("t-gone", "t-ai"))).rejects.toMatchObject({ code: "forbidden" });
+    await expect(appendEvent(db, left("t-gone", "t-nobody"))).rejects.toMatchObject({ code: "not_found" });
+    expect(await listFormerTeammates(db)).toEqual([]);
+  });
+
+  it("refuses a second leave as a conflict, and a person who left as an actor", async () => {
+    await addTeammate(db, { kind: "human", id: "t-third", name: "Invented third", roles: ["be"] }, at(1), { addedBy: "t-human" });
+    await appendEvent(db, left("t-gone"));
+    await expect(appendEvent(db, left("t-gone", "t-human", "again"))).rejects.toMatchObject({ code: "conflict" });
+    await expect(appendEvent(db, left("t-third", "t-gone"))).rejects.toMatchObject({ code: "forbidden" });
+  });
+
+  it("refuses the last person on the team", async () => {
+    await appendEvent(db, left("t-gone"));
+    await expect(appendEvent(db, left("t-human", "t-human"))).rejects.toMatchObject({ message: expect.stringMatching(/last person/) });
+  });
+
+  it("refuses a person who owns a card that is not done, naming the cards", async () => {
+    await appendEvent(db, { id: "v-own", type: "status_changed", card_id: "k2", actor: "t-human", at: at(50), from: "ready", to: { state: "done" } });
+    await addCard(db, { id: "k3", title: "Invented card three", function_id: "frame_problem", owner: "t-gone", links: [] }, functionIds);
+    await expect(appendEvent(db, left("t-gone"))).rejects.toMatchObject({ code: "rule_violation", message: expect.stringMatching(/owns k3, which is not done/) });
+    await appendEvent(db, { id: "v-k3", type: "status_changed", card_id: "k3", actor: "t-human", at: at(51), from: "backlog", to: { state: "done" } });
+    await appendEvent(db, left("t-gone"));
+    expect((await listFormerTeammates(db)).map((t) => t.id)).toEqual(["t-gone"]);
+  });
+
+  it("refuses a person an open question waits on, and asking a person who left", async () => {
+    // t-human owns k1 and k2, and q1 on k1 waits on them; k1 is refused for its owner first.
+    await expect(appendEvent(db, left("t-human", "t-gone"))).rejects.toThrow(/owns k1, k2/);
+    await appendEvent(db, { id: "v-k1", type: "status_changed", card_id: "k1", actor: "t-human", at: at(50), from: "needs_input", to: { state: "done" } });
+    await appendEvent(db, { id: "v-k2", type: "status_changed", card_id: "k2", actor: "t-human", at: at(50), from: "ready", to: { state: "done" } });
+    await expect(appendEvent(db, left("t-human", "t-gone"))).rejects.toThrow(/a question on k1 waits on Invented human/);
+    await appendEvent(db, { id: "a1", type: "answered", card_id: "k1", actor: "t-human", at: at(52), question_id: "q1", answer: "Invented." });
+    await appendEvent(db, left("t-human", "t-gone"));
+    const asked: StreamEvent = { ...(tiny.events[4] as StreamEvent), id: "v-ask-again", at: at(56) } as StreamEvent;
+    await expect(appendEvent(db, asked)).rejects.toThrow(/has left the team/);
+  });
+
+  it("keeps a person who left from changing roles or modes, or being changed, and their id from being added again", async () => {
+    await appendEvent(db, left("t-gone"));
+    const roles: StreamEvent = { id: "r-gone", type: "roles_changed", teammate_id: "t-gone", actor: "t-human", at: at(57), from: ["fe"], to: ["be"] };
+    await expect(appendEvent(db, roles)).rejects.toThrow(/has left the team/);
+    await expect(appendEvent(db, { ...roles, teammate_id: "t-human", actor: "t-gone", from: ["ux"] } as StreamEvent)).rejects.toMatchObject({ code: "forbidden" });
+    await expect(appendEvent(db, profileEvents("t-gone", { frame_problem: "assist" }, at(57))[0]!)).rejects.toThrow(/has left the team/);
+    await expect(addTeammate(db, { kind: "human", id: "t-gone", name: "Invented again", roles: ["fe"] }, at(58), { addedBy: "t-human" })).rejects.toMatchObject({
+      code: "conflict",
+      message: expect.stringMatching(/left the team/),
+    });
+    await expect(addTeammate(db, { kind: "human", id: "t-new", name: "Invented", roles: ["fe"] }, at(58), { addedBy: "t-gone" })).rejects.toMatchObject({ code: "forbidden" });
   });
 });
 

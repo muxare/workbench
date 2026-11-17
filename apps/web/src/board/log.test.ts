@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { HumanTeammate } from "@workbench/shared";
 import { BOARD_PANEL_LOG, cycleWindow, describeEvent, emptyCycleLog, formatTime, logLines } from "./log.ts";
 import { CYCLE, testBoard } from "./testBoard.ts";
 
@@ -102,6 +103,18 @@ describe("describeEvent", () => {
     expect(describeEvent({ ...change, actor: "t-po", from: ["be"], to: ["be", "fe"] }, board)).toBe(
       "PO changed BE's roles to BE, FE · was: BE",
     );
+  });
+
+  it("describes a person leaving, by role and name, and still names them after they left", () => {
+    const left = { id: "l", type: "teammate_left", teammate_id: "t-be", actor: "t-po", at: "2026-11-06T09:57:00Z" } as const;
+    const be = board.teammates.find((t): t is HumanTeammate => t.id === "t-be" && t.kind === "human")!;
+    expect(describeEvent(left, board)).toBe(`PO took BE (${be.name}) off the team`);
+    expect(describeEvent({ ...left, actor: "t-be" }, board)).toBe(`BE (${be.name}) left the team`);
+    // Once they left, the board lists them under former_teammates, and their old events still read with their label.
+    const after = testBoard({ teammates: board.teammates.filter((t) => t.id !== "t-be"), former_teammates: [be] });
+    expect(describeEvent(left, after)).toBe(`PO took BE (${be.name}) off the team`);
+    expect(describeEvent({ id: "c", type: "report_posted", card_id: "c-1", actor: "t-be", at: left.at, text: "Invented." }, after)).toMatch(/^BE posted/);
+    expect(describeEvent({ ...left, teammate_id: "t-unknown" }, after)).toBe("PO took t-unknown off the team");
   });
 
   it("describes a filter change, which is about the team", () => {

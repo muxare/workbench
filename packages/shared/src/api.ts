@@ -161,11 +161,16 @@ export type BoardCycle = z.infer<typeof boardCycle>;
  * null when the team has never been named.
  * `batches` is the open batches (not finished), oldest first, as on
  * `GET /batches`.
+ * `teammates` is the people and AI teammates on the team now; a person who
+ * left (`teammate_left`) is in `former_teammates` instead, as they stood when
+ * they left, so the events and cards that name them still read with their
+ * name and role.
  */
 export const boardResponse = z.object({
   team: teamName.nullable(),
   cards: z.array(card),
   teammates: z.array(teammate),
+  former_teammates: z.array(humanTeammate),
   functions: z.array(moveFunction),
   open_questions: z.array(questionView),
   log: z.array(streamEvent),
@@ -485,6 +490,19 @@ export const addTeammateRequest = z.strictObject({
   roles: teammateRoles,
 });
 export type AddTeammateRequest = z.infer<typeof addTeammateRequest>;
+
+/**
+ * `POST /teammates/:id/leave`: a person takes a person off the team, their
+ * own or a teammate's, recorded as a `teammate_left` event made by `actor`.
+ * Refused for an AI teammate (422), for an actor who is not a person on the
+ * team (422, 403), for a person who has already left (409), for the last
+ * person on the team, and while the person owns a card that is not done or a
+ * question waits on them (422, with the cards in the reason). Nothing is
+ * deleted: the person's events and the cards' logs keep their id and name.
+ * The answer is the person as they stood when they left.
+ */
+export const leaveTeamRequest = z.strictObject({ actor: teammateId });
+export type LeaveTeamRequest = z.infer<typeof leaveTeamRequest>;
 
 export const teammateResponse = z.object({ teammate: humanTeammate });
 export type TeammateResponse = z.infer<typeof teammateResponse>;

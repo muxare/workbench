@@ -143,8 +143,22 @@
   padding-top: 16px;
   border-top: 1px solid var(--line-soft);
 }
-.team-edit__person .team-edit__actions {
+.team-edit__person .team-edit__actions,
+.team-edit__person .team-edit__leave {
   grid-column: 2;
+}
+
+/* Taking a person off the team: under their roles, asking before it is sent. */
+.team-edit__leave {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.team-edit__question {
+  margin: 0;
+  max-width: 60ch;
+  font-size: 13px;
 }
 
 .team-edit__who {
@@ -260,7 +274,8 @@
   .team-edit__fields {
     grid-template-columns: minmax(0, 1fr);
   }
-  .team-edit__person .team-edit__actions {
+  .team-edit__person .team-edit__actions,
+  .team-edit__person .team-edit__leave {
     grid-column: 1;
   }
 }

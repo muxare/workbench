@@ -1,12 +1,12 @@
 // Log lines as the board and card detail show them, and the cycle log under
 // the board: one line per event, newest first. Events about a card, a
-// teammate (a mode or roles change) and the team (a filter, critic gate or name change, a batch handed
+// teammate (a mode or roles change, or leaving the team) and the team (a filter, critic gate or name change, a batch handed
 // to the AI or its plan) share it. It shows
 // the current cycle's log (`board.cycle`), so the cycle log's filter applies.
 import { shownInLog, type BoardResponse, type Cycle, type LogName, type StreamEvent } from "@workbench/shared";
 import { columnLabel } from "./columns.ts";
 import { modeLabel } from "./modes.ts";
-import { cardRef, externalLabel, labelOf, waitingOnLabel } from "./teammates.ts";
+import { cardRef, externalLabel, findTeammate, labelOf, waitingOnLabel } from "./teammates.ts";
 
 /** "09:41", 24-hour, in the viewer's time zone unless one is given. */
 export function formatTime(at: string, timeZone?: string): string {
@@ -33,6 +33,12 @@ export function describeEvent(e: StreamEvent, board: BoardResponse): string {
     }
     const whose = e.teammate_id === e.actor ? "their" : `${labelOf(board, e.teammate_id)}'s`;
     return `${who} changed ${whose} roles to ${roles(e.to)} · was: ${roles(e.from)}`;
+  }
+  if (e.type === "teammate_left") {
+    // Named in full, since two people may share a role label and the person is no longer seated on the board.
+    const t = findTeammate(board, e.teammate_id);
+    const gone = t ? `${labelOf(board, e.teammate_id)} (${t.name})` : e.teammate_id;
+    return e.actor === e.teammate_id ? `${gone} left the team` : `${who} took ${gone} off the team`;
   }
   if (e.type === "log_filter_changed") {
     const hides = e.hidden.length === 0 ? "shows every event type" : `hides ${e.hidden.join(", ")}`;

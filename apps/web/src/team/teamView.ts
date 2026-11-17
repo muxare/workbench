@@ -145,7 +145,7 @@ export function responseOrder(): { start: () => number; settle: (ticket: number)
 
 /**
  * The id of the latest event in the board's log that changes the team
- * screen: a `mode_changed` or `roles_changed` about anyone. "" when the log
+ * screen: a `mode_changed`, `roles_changed` or `teammate_left` about anyone. "" when the log
  * holds none, and undefined while there is no board. Follow it with
  * `followLiveKey`, as a profile does.
  */
@@ -153,7 +153,7 @@ export function teamLiveKey(board: BoardResponse | undefined): string | undefine
   if (!board) return undefined;
   for (let i = board.log.length - 1; i >= 0; i -= 1) {
     const e = board.log[i]!;
-    if (e.type === "mode_changed" || e.type === "roles_changed") return e.id;
+    if (e.type === "mode_changed" || e.type === "roles_changed" || e.type === "teammate_left") return e.id;
   }
   return "";
 }
