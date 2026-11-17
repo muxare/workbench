@@ -2,7 +2,7 @@ import type { Mode, ProfileStep } from "@workbench/shared";
 import { modeMeaning } from "../board/modes.ts";
 import { roleTitle, shortLabel } from "../board/teammates.ts";
 import { boardHref } from "../route.ts";
-import { aiPickSteps, modeButtons, modeShares, stepSubline } from "./profileView.ts";
+import { aiPickSteps, criticGateHint, modeButtons, modeShares, stepSubline } from "./profileView.ts";
 import { useProfile } from "./useProfile.ts";
 import "./profile.css";
 
@@ -11,11 +11,17 @@ function StepRow({
   saving,
   failure,
   choose,
+  gateSaving,
+  gateFailure,
+  setGate,
 }: {
   step: ProfileStep;
   saving: boolean;
   failure: string | undefined;
   choose: (mode: Mode) => void;
+  gateSaving: boolean;
+  gateFailure: string | undefined;
+  setGate: (required: boolean) => void;
 }) {
   return (
     <li className="step">
@@ -35,23 +41,39 @@ function StepRow({
             Not saved: {failure}
           </span>
         )}
+        {gateSaving && (
+          <span className="step__saving" role="status">
+            Saving the critic gate…
+          </span>
+        )}
+        {gateFailure !== undefined && (
+          <span className="step__failure" role="alert">
+            Not saved (critic gate): {gateFailure}
+          </span>
+        )}
       </div>
-      <div className="mode-switch" role="group" aria-label="Who does this step" aria-busy={saving}>
-        {modeButtons(step).map((b) => (
-          <button
-            key={b.mode}
-            type="button"
-            className={`mode-switch__button${b.pressed ? ` mode-switch__button--${b.mode}` : ""}${b.allowed ? "" : " mode-switch__button--not-allowed"}`}
-            aria-pressed={b.pressed}
-            disabled={!b.allowed || saving}
-            title={b.allowed ? modeMeaning[b.mode] : `${modeMeaning[b.mode]}: not allowed for this step in process/`}
-            onClick={() => {
-              if (!b.pressed) choose(b.mode);
-            }}
-          >
-            {b.label}
-          </button>
-        ))}
+      <div className="step__controls">
+        <label className="critic-gate" title={criticGateHint(step)} aria-busy={gateSaving}>
+          <input type="checkbox" checked={step.critic_required} disabled={gateSaving} onChange={(e) => setGate(e.target.checked)} />
+          <span>Critic must pass</span>
+        </label>
+        <div className="mode-switch" role="group" aria-label="Who does this step" aria-busy={saving}>
+          {modeButtons(step).map((b) => (
+            <button
+              key={b.mode}
+              type="button"
+              className={`mode-switch__button${b.pressed ? ` mode-switch__button--${b.mode}` : ""}${b.allowed ? "" : " mode-switch__button--not-allowed"}`}
+              aria-pressed={b.pressed}
+              disabled={!b.allowed || saving}
+              title={b.allowed ? modeMeaning[b.mode] : `${modeMeaning[b.mode]}: not allowed for this step in process/`}
+              onClick={() => {
+                if (!b.pressed) choose(b.mode);
+              }}
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
       </div>
     </li>
   );
@@ -65,7 +87,7 @@ export function ProfileView({
 }: {
   teammateId: string;
   onChanged: (() => void) | undefined;
-  /** Changes when the board's stream brings a mode change for this person (`profileLiveKey`). */
+  /** Changes when the board's stream brings a mode change for this person or a critic gate change for any function (`profileLiveKey`). */
   liveKey?: string | undefined;
 }) {
   const state = useProfile(teammateId, onChanged, liveKey);
@@ -95,7 +117,7 @@ export function ProfileView({
     );
   }
 
-  const { profile, saving, failure, choose } = state;
+  const { profile, saving, failure, choose, gateSaving, gateFailure, setGate } = state;
   const { teammate, steps } = profile;
   const shares = modeShares(steps);
   const aiSteps = aiPickSteps(steps);
@@ -108,7 +130,8 @@ export function ProfileView({
         </span>
         <div className="profile__intro">
           <nav className="profile__crumbs" aria-label="Breadcrumb">
-            <a href={boardHref}>Team board</a> › Team › <span title={teammate.name}>{teammate.roles.map((r) => roleTitle[r]).join(" · ")}</span>
+            <a href={boardHref}>Team board</a> › Team ›{" "}
+            <span title={teammate.name}>{teammate.roles.map((r) => roleTitle[r]).join(" · ")}</span>
           </nav>
           <h1>How I work with AI</h1>
           <p>This sets how the AI joins every card I pick. Change a step and the board shows it on my cards from the next pick.</p>
@@ -133,7 +156,9 @@ export function ProfileView({
             </div>
           </div>
           {steps.length === 0 ? (
-            <p className="profile__empty">No steps yet. The function files in process/ give this role none, and no mode is set for another step.</p>
+            <p className="profile__empty">
+              No steps yet. The function files in process/ give this role none, and no mode is set for another step.
+            </p>
           ) : (
             <ul className="steps">
               {steps.map((step) => (
@@ -143,9 +168,18 @@ export function ProfileView({
                   saving={saving === step.function_id}
                   failure={failure?.functionId === step.function_id ? failure.reason : undefined}
                   choose={(mode) => choose(step.function_id, mode)}
+                  gateSaving={gateSaving.has(step.function_id)}
+                  gateFailure={gateFailure?.functionId === step.function_id ? gateFailure.reason : undefined}
+                  setGate={(required) => setGate(step.function_id, required)}
                 />
               ))}
             </ul>
+          )}
+          {steps.length > 0 && (
+            <p className="profile__note">
+              &ldquo;Critic must pass&rdquo; is set for the whole team, not only for me: with it on, the AI critic&rsquo;s review must pass
+              before a person&rsquo;s approval moves a card on that step to done.
+            </p>
           )}
           {profile.unknown_functions.length > 0 && (
             <p className="profile__note">

@@ -16,6 +16,16 @@ const change = (id: string, teammate: string): StreamEvent => ({
   to: "assist",
 });
 
+const gate = (id: string): StreamEvent => ({
+  id,
+  type: "critic_gate_changed",
+  actor: UX,
+  at: "2026-11-09T10:00:00Z",
+  function_id: "define_api_contract",
+  required: true,
+  was_required: false,
+});
+
 const report = (id: string): StreamEvent => ({ id, type: "report_posted", card_id: "c-151", actor: UX, at: "2026-11-09T10:00:00Z", text: "Invented." });
 
 /** Each board the stream produces, from a board whose log is already full, as useBoard would show them. */
@@ -53,6 +63,12 @@ describe("profileLiveKey", () => {
     const board = testBoard();
     expect(profileLiveKey(BE, { ...board, log: [...board.log, change("m1", BE), change("m2", UX)] })).toBe("m1");
   });
+
+  it("is the id of a later critic gate change by anyone, since every profile shows the team's gates", () => {
+    const board = testBoard();
+    expect(profileLiveKey(BE, { ...board, log: [...board.log, change("m1", BE), gate("g1")] })).toBe("g1");
+    expect(profileLiveKey(BE, { ...board, log: [...board.log, gate("g1"), change("m1", BE)] })).toBe("m1");
+  });
 });
 
 describe("following a full board log", () => {
@@ -61,6 +77,12 @@ describe("following a full board log", () => {
     const cardEvents = Array.from({ length: 60 }, (_, i) => report(`n${i}`));
     const boards = stream([...cardEvents, change("m1", UX), change("m2", BE)]);
     expect(boards.at(-3)!.log.some((e) => e.id === "m0")).toBe(false);
+    expect(reloads(BE, boards)).toBe(1);
+    expect(reloads(UX, boards)).toBe(1);
+  });
+
+  it("reloads every profile when a critic gate changes", () => {
+    const boards = stream([report("n0"), gate("g1"), report("n1")]);
     expect(reloads(BE, boards)).toBe(1);
     expect(reloads(UX, boards)).toBe(1);
   });

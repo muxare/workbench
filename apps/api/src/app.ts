@@ -17,8 +17,8 @@
 // person's approval lets a merge move a card of that function to done;
 // `GET /api/functions/critic-gates` answers every gate someone has set.
 // `GET /api/teammates/:id/profile` reads the person's chain of steps from
-// process/functions on each request; for an AI teammate it answers a
-// separate, derived profile (aiProfile.ts).
+// process/functions on each request, with each step's critic gate; for an AI
+// teammate it answers a separate, derived profile (aiProfile.ts).
 // `GET /api/board` also carries the current cycle (`currentCycle` at the
 // server's clock) and its cycle log, for the panel under the board, and each
 // function's name, role and default mode from process/functions, so a panel
@@ -558,7 +558,7 @@ export function createApp(deps: AppDeps) {
         return c.json(response);
       }
       const person = await personOr404(id);
-      const response: TeammateProfileResponse = buildProfile(person, definitions());
+      const response: TeammateProfileResponse = buildProfile(person, definitions(), await criticGates(db));
       return c.json(response);
     })
 
@@ -594,7 +594,7 @@ export function createApp(deps: AppDeps) {
           },
         ]);
       }
-      const response: TeammateProfileResponse = buildProfile(await personOr404(person.id), defs);
+      const response: TeammateProfileResponse = buildProfile(await personOr404(person.id), defs, await criticGates(db));
       return c.json(response);
     })
 

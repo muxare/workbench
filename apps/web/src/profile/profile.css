@@ -270,6 +270,49 @@
 }
 
 /*
+ * A step's critic gate: a team setting no artboard draws, kept to a labelled
+ * checkbox beside the mode switch, as tall as the switch's buttons.
+ */
+/* The gate and the mode switch stay together at the row's right, as the artboard's switch does. */
+.step__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 16px;
+  margin-left: auto;
+}
+
+.critic-gate {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.critic-gate:has(input:checked) {
+  color: var(--fg);
+}
+.critic-gate input {
+  margin: 0;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--fg);
+  cursor: inherit;
+}
+.critic-gate input:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+.critic-gate[aria-busy="true"] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/*
  * The AI teammate's profile (AiProfileView.tsx). No artboard draws it: it
  * reuses the layout above and the avatar, pills and log wording of the board.
  */

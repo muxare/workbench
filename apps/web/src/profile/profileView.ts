@@ -2,7 +2,8 @@
 // Which steps a person has, their titles and which modes each allows come from
 // the function files in process/ through the API; nothing here names a
 // function or a function field's value.
-import type { Mode, ProfileStep } from "@workbench/shared";
+import { criticRequired, type CriticGates, type Mode, type ProfileStep, type TeammateProfileResponse } from "@workbench/shared";
+import { ApiRequestError } from "../api/client.ts";
 import { modeLabel, modes } from "../board/modes.ts";
 
 export interface ModeShare {
@@ -52,3 +53,47 @@ export function aiPickSteps(steps: readonly ProfileStep[]): ProfileStep[] {
   return steps.filter((s) => s.ai_may_pick);
 }
 
+
+/** What a step's critic gate control says: the gate is a team setting, so it says so. */
+export function criticGateHint(step: ProfileStep): string {
+  const now = step.critic_required ? "On" : "Off";
+  return `${now} for the whole team: when on, the AI critic must pass on a pull request before a person's approval moves a card of ${step.function_id} to done.`;
+}
+
+/** The profile with each step's critic gate taken from `gates`, the API's answer to a change. */
+export function withCriticGates(profile: TeammateProfileResponse, gates: CriticGates): TeammateProfileResponse {
+  return { ...profile, steps: profile.steps.map((s) => ({ ...s, critic_required: criticRequired(gates, s.function_id) })) };
+}
+
+/**
+ * Why a critic gate change was not saved, after "Not saved (critic gate):".
+ * This screen always asks for the opposite of what it shows, so a view that is
+ * merely stale ends as a 200 that changes nothing and shows the gate as it
+ * stands. A 409 arises only when another change lands between the route's
+ * read and its write; it then reads as someone else's change, and the profile
+ * is reloaded to show the gate as it stands.
+ */
+export function criticGateFailure(err: unknown): string {
+  if (err instanceof ApiRequestError) {
+    return err.code === "conflict" ? "someone changed this gate in the meantime; it now shows the current setting" : err.reason;
+  }
+  return err instanceof Error ? err.message : "the critic gate could not be saved";
+}
+
+/** The steps whose critic gate change is in flight, with `functionId` added. */
+export function startSaving(saving: ReadonlySet<string>, functionId: string): ReadonlySet<string> {
+  return new Set([...saving, functionId]);
+}
+
+/** The steps whose critic gate change is in flight, without `functionId`: an answer ends only its own save. */
+export function endSaving(saving: ReadonlySet<string>, functionId: string): ReadonlySet<string> {
+  if (!saving.has(functionId)) return saving;
+  const next = new Set(saving);
+  next.delete(functionId);
+  return next;
+}
+
+/** Whether an answer fetched for `requestedFor` may be shown on the profile of `showing`: never another person's. */
+export function answerApplies(requestedFor: string, showing: string): boolean {
+  return requestedFor === showing;
+}

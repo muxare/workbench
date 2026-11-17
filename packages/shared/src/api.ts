@@ -269,7 +269,7 @@ export type TeammateRunResponse = WriteResponse;
 
 /**
  * One step in a person's chain on `GET /teammates/:id/profile`. Everything but
- * `mode`, `mode_is_default` and `ai_may_pick` is read from the function's file
+ * `mode`, `mode_is_default`, `ai_may_pick` and `critic_required` is read from the function's file
  * in process/functions; the app never lists a function's fields itself.
  */
 export const profileStep = z.object({
@@ -288,6 +288,12 @@ export const profileStep = z.object({
    * `mode`: the mode is one it works in and the mode's protocol lets the AI ask.
    */
   ai_may_pick: z.boolean(),
+  /**
+   * Whether the AI critic must pass before a person's approval moves a card of
+   * this function to done: the team's critic gate (`critic_gate_changed`,
+   * `criticRequired`), the same for every person, off until someone turns it on.
+   */
+  critic_required: z.boolean(),
 });
 export type ProfileStep = z.infer<typeof profileStep>;
 

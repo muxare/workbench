@@ -66,7 +66,7 @@ describe("aiSteps", () => {
     const withoutCards = aiSteps(definitions, teammates, []);
     for (const person of teammates) {
       if (person.kind !== "human") continue;
-      const fromProfile = buildProfile(person, definitions).steps.map((s) => s.function_id).sort();
+      const fromProfile = buildProfile(person, definitions, {}).steps.map((s) => s.function_id).sort();
       const fromAi = withoutCards.filter((s) => s.owners.some((o) => o.teammate_id === person.id)).map((s) => s.function_id).sort();
       expect(fromAi).toEqual(fromProfile);
     }

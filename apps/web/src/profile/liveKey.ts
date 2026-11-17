@@ -1,10 +1,13 @@
-// What the live board knows about one person's modes, so an open profile can
-// follow the event stream without a stream of its own, as card detail does.
+// What the live board knows about one person's modes and the team's critic
+// gates, so an open profile can follow the event stream without a stream of
+// its own, as card detail does.
 import type { BoardResponse } from "@workbench/shared";
 
 /**
- * The id of the latest `mode_changed` event about `teammateId` in the board's
- * log, "" when the log holds none, and undefined while there is no board.
+ * The id of the latest event in the board's log that changes what the
+ * profile of `teammateId` shows: a `mode_changed` about them, or a
+ * `critic_gate_changed` about any function, since the gate is the team's.
+ * "" when the log holds none, and undefined while there is no board.
  * Board log entries carry no seq, so the id stands for the position.
  */
 export function profileLiveKey(teammateId: string, board: BoardResponse | undefined): string | undefined {
@@ -12,6 +15,7 @@ export function profileLiveKey(teammateId: string, board: BoardResponse | undefi
   for (let i = board.log.length - 1; i >= 0; i -= 1) {
     const e = board.log[i]!;
     if (e.type === "mode_changed" && e.teammate_id === teammateId) return e.id;
+    if (e.type === "critic_gate_changed") return e.id;
   }
   return "";
 }
