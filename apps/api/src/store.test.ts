@@ -254,6 +254,18 @@ describe("leaving the team", () => {
     await expect(appendEvent(db, asked)).rejects.toThrow(/has left the team/);
   });
 
+  it("lets a person leave whose only card that is not done is withdrawn, and refuses a withdrawal by a person who left", async () => {
+    await addCard(db, { id: "k3", title: "Invented card three", function_id: "frame_problem", owner: "t-gone", links: [] }, functionIds);
+    await addCard(db, { id: "k4", title: "Invented card four", function_id: "frame_problem", owner: "t-human", links: [] }, functionIds);
+    await expect(appendEvent(db, left("t-gone"))).rejects.toThrow(/owns k3, which is not done; a person leaves once every card they own is done or withdrawn/);
+    const withdraw = (id: string, cardId: string, actor: string): StreamEvent =>
+      ({ id, type: "card_withdrawn", card_id: cardId, actor, at: at(56), reason: "Invented: rehearsal only", from: "backlog" }) as StreamEvent;
+    await appendEvent(db, withdraw("w-k3", "k3", "t-human"));
+    await appendEvent(db, left("t-gone"));
+    expect((await listFormerTeammates(db)).map((t) => t.id)).toEqual(["t-gone"]);
+    await expect(appendEvent(db, withdraw("w-k4", "k4", "t-gone"))).rejects.toMatchObject({ code: "forbidden", message: expect.stringMatching(/has left the team/) });
+  });
+
   it("refuses any event made by a person who left, and a card owned by them", async () => {
     await appendEvent(db, left("t-gone"));
     await expect(

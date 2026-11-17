@@ -198,7 +198,7 @@ describe("taking a person off the team", () => {
   });
 
   it("shows the API's reason for a refusal, says someone else was first on a 409, and a sentence for anything else", () => {
-    const owns = "Invented developer owns #3, which is not done; give it another owner or finish it first";
+    const owns = "Invented developer owns #3, which is not done; a person leaves once every card they own is done or withdrawn";
     expect(leaveFailure(new ApiRequestError("rule_violation", owns, 422), person)).toBe(owns);
     expect(leaveFailure(new ApiRequestError("conflict", "Invented developer has already left the team", 409), person)).toBe(
       "someone took Invented developer off the team in the meantime",

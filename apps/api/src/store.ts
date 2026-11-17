@@ -468,9 +468,9 @@ function cardName(id: string): string {
  * Taking a person off the team: the subject must be a person on the team, not
  * an AI teammate; the actor must be a person on the team, who may be the
  * subject; at least one other person must stay, so someone can still act;
- * and the person must own no card that is not done and have no open question
- * waiting on them, so no work is left with nobody to carry it. Each refusal
- * says what to do first.
+ * and the person must own no card that is neither done nor withdrawn and have
+ * no open question waiting on them on a card still on the board, so no work
+ * is left with nobody to carry it. Each refusal says what to do first.
  */
 async function checkTeammateLeft(db: Db, event: TeammateLeftEvent, pending: Pending): Promise<void> {
   const id = event.teammate_id;
@@ -488,15 +488,21 @@ async function checkTeammateLeft(db: Db, event: TeammateLeftEvent, pending: Pend
   }
   const others = (await listTeammates(db)).filter((t) => t.kind === "human" && t.id !== id && !pending.left.has(t.id));
   if (others.length === 0) throw new StoreError(`${who} is the last person on the team, and a team needs a person to act on it`);
-  const open = (await listCards(db))
-    .filter((c) => c.owner === id && (pending.statuses.get(c.id) ?? c.status).state !== "done")
+  // Every card, withdrawn ones included, so a withdrawn card is skipped on purpose rather than missed.
+  const owned = await listCards(db, { includeWithdrawn: true });
+  const withdrawn = new Set(owned.filter((c) => c.withdrawn !== undefined || pending.withdrawn.has(c.id)).map((c) => c.id));
+  const open = owned
+    .filter((c) => c.owner === id && !withdrawn.has(c.id) && (pending.statuses.get(c.id) ?? c.status).state !== "done")
     .map((c) => cardName(c.id));
   if (open.length > 0) {
     const one = open.length === 1;
-    throw new StoreError(`${who} owns ${open.join(", ")}, which ${one ? "is" : "are"} not done; a person leaves once every card they own is done`);
+    throw new StoreError(
+      `${who} owns ${open.join(", ")}, which ${one ? "is" : "are"} not done; a person leaves once every card they own is done or withdrawn`,
+    );
   }
+  // A withdrawn card takes no answer, so a question left open on it waits on nobody.
   const waiting = (await listQuestions(db))
-    .filter((q) => q.asked_of === id && q.answer === undefined)
+    .filter((q) => q.asked_of === id && q.answer === undefined && !withdrawn.has(q.card_id))
     .map((q) => cardName(q.card_id));
   if (waiting.length > 0) {
     throw new StoreError(`a question on ${[...new Set(waiting)].join(", ")} waits on ${who}; answer it first`);
