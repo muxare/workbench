@@ -12,6 +12,7 @@ import {
   streamEventType,
   teammateProfileResponse,
   teammateResponse,
+  teamResponse,
   teammateRunResponse,
   writeResponse,
   type StreamEvent,
@@ -791,6 +792,83 @@ describe("POST /api/teammates/:id/roles", () => {
     await expectProblem(await setFeRoles(["fe", "fe"]), 400, "invalid_request");
     await expectProblem(await post(`/api/teammates/${AI}/roles`, { actor: PO, roles: ["fe"], was: ["fe"] }), 422, "rule_violation");
     expect(await lastSeq(db)).toBe(seeded.length);
+  });
+});
+
+describe("POST /api/teammates", () => {
+  const newcomer = { actor: PO, id: "invented-newcomer", name: "Invented newcomer", roles: ["fe", "ux"] };
+
+  it("adds the person with their roles, records the join as made by the actor, and the team and board follow", async () => {
+    const res = await post("/api/teammates", newcomer);
+    expect(res.status).toBe(201);
+    expect(teammateResponse.parse(await res.json()).teammate).toEqual({
+      kind: "human",
+      id: "invented-newcomer",
+      name: "Invented newcomer",
+      roles: ["fe", "ux"],
+      process_profile: {},
+    });
+    const board = boardResponse.parse(await (await app.request("/api/board")).json());
+    expect(board.teammates.map((t) => t.id)).toContain("invented-newcomer");
+    expect(board.log.at(-1)).toEqual({
+      id: "roles-invented-newcomer-joined",
+      type: "roles_changed",
+      teammate_id: "invented-newcomer",
+      actor: PO,
+      at: "2026-11-07T10:00:00.000Z",
+      from: [],
+      to: ["fe", "ux"],
+    });
+    expect(await lastSeq(db)).toBe(seeded.length + 1);
+    const team = teamResponse.parse(await (await app.request("/api/team")).json());
+    const added = team.people.find((p) => p.teammate.id === "invented-newcomer");
+    expect(added?.cells.length).toBeGreaterThan(0);
+  });
+
+  it("trims the name", async () => {
+    const res = await post("/api/teammates", { ...newcomer, name: "  Invented newcomer  " });
+    expect(teammateResponse.parse(await res.json()).teammate.name).toBe("Invented newcomer");
+  });
+
+  it("refuses a taken id with 409, whether a person's or the AI's, and records nothing", async () => {
+    await expectProblem(await post("/api/teammates", { ...newcomer, id: FE }), 409, "conflict", /already a teammate 'invented-fe'/);
+    await expectProblem(await post("/api/teammates", { ...newcomer, id: AI }), 409, "conflict");
+    expect((await post("/api/teammates", newcomer)).status).toBe(201);
+    await expectProblem(await post("/api/teammates", newcomer), 409, "conflict");
+    expect(await lastSeq(db)).toBe(seeded.length + 1);
+  });
+
+  it("refuses no roles, a repeated role, no name and an id that is not plain with 400", async () => {
+    await expectProblem(await post("/api/teammates", { ...newcomer, roles: [] }), 400, "invalid_request", /roles/);
+    await expectProblem(await post("/api/teammates", { ...newcomer, roles: ["fe", "fe"] }), 400, "invalid_request", /listed twice/);
+    await expectProblem(await post("/api/teammates", { ...newcomer, name: " " }), 400, "invalid_request", /name/);
+    await expectProblem(await post("/api/teammates", { ...newcomer, id: "Invented Newcomer" }), 400, "invalid_request", /id/);
+    expect(await lastSeq(db)).toBe(seeded.length);
+  });
+
+  it("refuses an unknown actor with 422 and an AI actor with 403", async () => {
+    await expectProblem(await post("/api/teammates", { ...newcomer, actor: "invented-nobody" }), 422, "rule_violation", /actor/);
+    await expectProblem(await post("/api/teammates", { ...newcomer, actor: AI }), 403, "forbidden");
+    // Adding yourself is no way round it on a team that has people.
+    await expectProblem(await post("/api/teammates", { ...newcomer, actor: newcomer.id }), 422, "rule_violation");
+    expect(await lastSeq(db)).toBe(seeded.length);
+    expect(boardResponse.parse(await (await app.request("/api/board")).json()).teammates.map((t) => t.id)).not.toContain(newcomer.id);
+  });
+
+  it("lets the first person on a team with no person add themselves, and nobody else", async () => {
+    const empty = await openDb(":memory:");
+    await addTeammate(empty, { kind: "ai", id: AI, name: "Invented AI" });
+    const a = createApp({ db: empty, functionIds, now: () => new Date("2026-11-07T10:00:00Z") });
+    const send = (payload: unknown) =>
+      a.request("/api/teammates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    await expectProblem(await send({ ...newcomer, actor: "invented-somebody" }), 422, "rule_violation");
+    await expectProblem(await send({ ...newcomer, actor: AI }), 403, "forbidden");
+    const res = await send({ ...newcomer, actor: newcomer.id });
+    expect(res.status).toBe(201);
+    expect(await lastSeq(empty)).toBe(1);
+    // From now on the team has a person, who adds the next.
+    await expectProblem(await send({ ...newcomer, id: "invented-second", actor: "invented-second" }), 422, "rule_violation");
+    expect((await send({ ...newcomer, id: "invented-second", actor: newcomer.id })).status).toBe(201);
   });
 });
 

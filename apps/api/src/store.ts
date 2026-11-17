@@ -610,23 +610,33 @@ export async function lastSeq(db: Db): Promise<number> {
   return row?.seq ?? 0;
 }
 
-/** The `roles_changed` event `addTeammate` records when a person joins at `at`; none for an AI teammate. */
-export function joiningEvent(t: TeammateRecord, at: string): RolesChangedEvent | undefined {
+/**
+ * The `roles_changed` event `addTeammate` records when a person joins at `at`,
+ * made by `actor` (the person themselves unless someone else added them);
+ * none for an AI teammate.
+ */
+export function joiningEvent(t: TeammateRecord, at: string, actor: string = t.id): RolesChangedEvent | undefined {
   if (t.kind !== "human") return undefined;
-  return { id: `roles-${t.id}-joined`, type: "roles_changed", teammate_id: t.id, actor: t.id, at, from: [], to: [...t.roles] };
+  return { id: `roles-${t.id}-joined`, type: "roles_changed", teammate_id: t.id, actor, at, from: [], to: [...t.roles] };
 }
 
 /**
  * Add a teammate. A person joins with the roles in `input`, recorded as a
- * `roles_changed` event from no roles, made by the person at `joinedAt`, with
- * the id `roles-<teammate id>-joined`; if that event is refused, the person
- * is not added. A person starts with no chosen modes; their process profile
- * grows from `mode_changed` events (see `profileEvents`).
+ * `roles_changed` event from no roles, made at `joinedAt` by `addedBy` (the
+ * person themselves when left out), with the id `roles-<teammate id>-joined`;
+ * if that event is refused, for instance because `addedBy` is not a person,
+ * the person is not added. A person starts with no chosen modes; their
+ * process profile grows from `mode_changed` events (see `profileEvents`).
  */
-export async function addTeammate(db: Db, input: TeammateRecord, joinedAt: string = new Date().toISOString()): Promise<void> {
+export async function addTeammate(
+  db: Db,
+  input: TeammateRecord,
+  joinedAt: string = new Date().toISOString(),
+  addedBy?: string,
+): Promise<void> {
   const t = teammateRecord.parse(input);
   await db.insert(teammates).values({ id: t.id, kind: t.kind, name: t.name });
-  const joined = joiningEvent(t, joinedAt);
+  const joined = joiningEvent(t, joinedAt, addedBy);
   if (!joined) return;
   try {
     await appendEvents(db, [joined]);

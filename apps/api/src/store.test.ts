@@ -121,6 +121,14 @@ describe("teammates", () => {
     await expect(addTeammate(db, withProfile)).rejects.toThrow();
   });
 
+  it("records the join as made by the person who added them, and adds nobody when that is not a person", async () => {
+    await addTeammate(db, { kind: "human", id: "t-new", name: "Invented", roles: ["fe"] }, at(1), "t-human");
+    expect((await boardLog(db)).at(-1)).toMatchObject({ id: "roles-t-new-joined", teammate_id: "t-new", actor: "t-human" });
+    await expect(addTeammate(db, { kind: "human", id: "t-other", name: "Invented", roles: ["fe"] }, at(1), "t-ai")).rejects.toThrow(/by a person/);
+    await expect(addTeammate(db, { kind: "human", id: "t-other", name: "Invented", roles: ["fe"] }, at(1), "t-nobody")).rejects.toThrow(/no teammate/);
+    expect(await getTeammate(db, "t-other")).toBeUndefined();
+  });
+
   it("lets one person hold every role, first role first", async () => {
     await addTeammate(db, { kind: "human", id: "t-all", name: "Invented", roles: ["po", "ux", "fe", "be"] }, at(1));
     expect(await getTeammate(db, "t-all")).toMatchObject({ roles: ["po", "ux", "fe", "be"] });
