@@ -168,7 +168,13 @@ export async function handleDelivery(ctx: WebhookContext, delivery: Delivery): P
     const refused = { card_id: plan.cardId, reason: plan.reason };
     if (plan.skipped === undefined || (await hasEvent(ctx.db, skippedId))) return answer("refused", refused);
     const skip = cardEvent.parse({ ...plan.skipped, id: skippedId, card_id: plan.cardId, at: ctx.now().toISOString() });
-    await appendEvents(ctx.db, [skip]);
+    try {
+      await appendEvents(ctx.db, [skip]);
+    } catch (err) {
+      // A copy of the same delivery handled at the same moment wrote the skip first.
+      if (await hasEvent(ctx.db, skippedId)) return answer("refused", refused);
+      throw err;
+    }
     return answer("refused", { ...refused, events: [skip] });
   }
   const at = ctx.now().toISOString();
