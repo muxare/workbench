@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { BoardResponse, CardResponse } from "@workbench/shared";
 import { ApiRequestError, askQuestion } from "../api/client.ts";
 import { readChangingAs, rememberChangingAs } from "../team/changingAsStore.ts";
@@ -17,6 +17,11 @@ export function AskQuestion({ detail, board, onAsked }: { detail: CardResponse; 
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const view = askView(detail, board, remembered);
+  // A refusal belongs to the moment it was given: when the card moves on and
+  // the panel goes away, drop it, so it does not reappear stale later.
+  useEffect(() => {
+    if (view.kind === "none") setError(undefined);
+  }, [view.kind]);
   if (view.kind === "none") return null;
 
   const { card } = detail;
@@ -48,8 +53,6 @@ export function AskQuestion({ detail, board, onAsked }: { detail: CardResponse; 
       (err: unknown) => {
         setSending(false);
         setError(err instanceof ApiRequestError ? `The question was not asked: ${err.reason}.` : "The question was not asked.");
-        // The card may have moved under the form; show it as it now stands.
-        onAsked();
       },
     );
   };
@@ -73,7 +76,7 @@ export function AskQuestion({ detail, board, onAsked }: { detail: CardResponse; 
       </div>
       <form className="question__form" onSubmit={submit}>
         <label className="field">
-          Ask
+          Ask whom
           <select value={askedOf ?? ""} onChange={(e) => setChosenOf(e.target.value)} disabled={sending || choices.length === 0}>
             {choices.map((p) => (
               <option key={p.id} value={p.id}>
@@ -84,11 +87,11 @@ export function AskQuestion({ detail, board, onAsked }: { detail: CardResponse; 
         </label>
         <label className="field">
           Question, written so they can answer without opening the work
-          <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} disabled={sending} />
+          <textarea rows={3} value={text} aria-invalid={error !== undefined} onChange={(e) => setText(e.target.value)} disabled={sending} />
         </label>
         <label className="field">
           Why it blocks the work
-          <textarea rows={2} value={why} onChange={(e) => setWhy(e.target.value)} disabled={sending} />
+          <textarea rows={2} value={why} aria-invalid={error !== undefined} onChange={(e) => setWhy(e.target.value)} disabled={sending} />
         </label>
         <div className="question__actions">
           <span className="detail__meta">{askHint(board, askedOf)}</span>
