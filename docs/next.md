@@ -64,16 +64,14 @@ Last updated 2026-11-17 by Claude.
 
 ## Waiting for Mikael
 
-1. **What should happen to a card that depends on a withdrawn card?** Today it stays blocked for good: the dependency check counts a card that is not on the board as not done, and nothing can edit a card's links. Recommendation: let withdrawing a card also drop it from the `depends_on` of the cards that wait on it, recorded on those cards, because a withdrawn card will never be done and the waiting card should not silently stall.
-
-2. **Which past project for the Phase 2 run?** Not needed before ConCon on 2026-11-18. Recommendation: choose it in the week after ConCon and run it before adding any template field for failed checks or waiting on another role, because that run is what shows whether those fields are needed.
+1. **Which past project for the Phase 2 run?** Not needed before ConCon on 2026-11-18. Recommendation: choose it in the week after ConCon and run it before adding any template field for failed checks or waiting on another role, because that run is what shows whether those fields are needed.
 
 ## Next, in the suggested order
 
 Build work is on the workbench board as cards #6 to #19; this list keeps what is not a card and the order before ConCon.
 
 1. Take Felix Svensson and Uxi Larsson off the real board with "Take off the team…" on `#/team` once `pnpm wb restart api` has loaded card #25's code, and check the board's team reads Mikael and the AI teammate.
-2. Work card #24 (Withdraw with a reason on the card screen) on a branch from `main`: its pick is refused until card #23 is Done, which the merge of #23's pull request records.
+2. Work card #24 (Withdraw with a reason on the card screen) on a branch from `main`: its pick is refused until card #23 is Done, which the merge of #23's pull request records. Then card #28: withdrawing a card drops it from the `depends_on` of the cards that wait on it (decided 2026-11-17, see `docs/decisions.md`).
 3. Click through the new controls on the rehearsal board before the demo: "New card", "Ask a question", "Take off the team…" and, after #24, "Withdraw…".
 4. After lunch on 2026-11-18, cut the ConCon demo from `main`: choose Part 1's cards from the Backlog or enter fresh ones, set the modes, dry-run Part 1 on a copy of `teams/workbench/board.db` and put the copy back afterwards, dry-run Part 2 against a fresh seed, check the board header on both boards, update `docs/demo.md` from what the runs show, including correcting Part 2's steps 4 and 5 for `main`, and move the `concon-demo` tag.
 5. After ConCon, work the hosted cards in order: #10 then #11 (sign-in), #12 (image), #13 (break the Azure move into cards), then deploy.
