@@ -114,6 +114,36 @@ describe("card lists", () => {
     ]);
   });
 
+  it("says who verifies each card the AI picked in a mode where it writes, and nothing on cards it assists on", () => {
+    const now = profile({
+      now: [
+        { card: card("c-145", { function_id: "write_issues", owner: PO, status: { state: "in_progress" } }), mode: "delegate" },
+        { card: card("c-146", { function_id: "write_issues", owner: PO, status: { state: "review" } }), mode: "delegate" },
+        { card: card("c-151", { function_id: "define_api_contract", owner: BE, status: { state: "needs_input", waiting_on: BE, question_id: "q-151" } }), mode: "delegate" },
+        { card: card("c-160", { status: { state: "in_progress" } }), mode: "assist" },
+      ],
+    });
+    expect(nowItems(now, board).map((c) => [c.ref, c.note, c.writes])).toEqual([
+      ["#145", "In progress", "I write · PO verifies"],
+      ["#146", "Review", "I write · PO verifies"],
+      ["#151", "Waiting on BE", "I write · BE verifies"],
+      ["#160", "In progress", undefined],
+    ]);
+  });
+
+  it("reads who writes from the function's protocol for the picked mode, not from the mode's name", () => {
+    const odd = testBoard({
+      functions: [
+        { name: "frame_problem", role: "ux", modes: { default: "assist" }, protocols: { assist: { writes: "both" }, delegate: { writes: "human" } } },
+      ],
+    });
+    const picked = (mode: "assist" | "delegate") => ({ card: card("c-160", { status: { state: "in_progress" } }), mode });
+    expect(nowItems(profile({ now: [picked("assist")] }), odd)[0]?.writes).toBe("I write · UX verifies");
+    expect(nowItems(profile({ now: [picked("delegate")] }), odd)[0]?.writes).toBeUndefined();
+    // A function the board does not know: the AI is not shown as writing it.
+    expect(nowItems(profile({ now: [picked("delegate")] }), testBoard({ functions: [] }))[0]?.writes).toBeUndefined();
+  });
+
   it("marks the card the next run takes", () => {
     expect(nextItems(profile(), board).map((c) => [c.id, c.note, c.tone])).toEqual([
       ["c-170", "Next run · owner UX", "plain"],

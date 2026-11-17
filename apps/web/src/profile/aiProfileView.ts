@@ -3,7 +3,15 @@
 // artboard for this screen; it follows the Profile artboard's layout, and the
 // AI's own panel on the Main artboard for how the AI is drawn. Nothing here
 // names a function or a function field's value.
-import { shownInLog, type AiProfileStep, type AiTeammateProfileResponse, type BoardResponse, type Mode } from "@workbench/shared";
+import {
+  aiWrites,
+  shownInLog,
+  type AiProfileStep,
+  type AiTeammateProfileResponse,
+  type BoardResponse,
+  type Card,
+  type Mode,
+} from "@workbench/shared";
 import { columnLabel } from "../board/columns.ts";
 import { describeEvent, formatTime } from "../board/log.ts";
 import { modeMeaning, modes } from "../board/modes.ts";
@@ -96,9 +104,31 @@ export interface CardItem {
   note: string;
   tone: Tone;
   mode: Mode;
+  /**
+   * On a card in "On now" that the AI writes, who verifies it: "I write · BE
+   * verifies". Undefined when a person writes the card, and on other lists.
+   */
+  writes?: string | undefined;
 }
 
-/** The cards the AI is on now. A card in Needs input says whom it waits on. */
+/**
+ * "I write · BE verifies" when the AI writes `card` worked in mode `m`, else
+ * undefined. Who writes is read from the function's protocol for the mode
+ * (`aiWrites`, through the board's `functions`), never from the mode's name;
+ * a function the board does not know counts as one the AI does not write.
+ * The card's owner verifies, as in every protocol where the AI writes.
+ */
+export function writesLine(card: Card, m: Mode, board: BoardResponse): string | undefined {
+  const definition = board.functions.find((f) => f.name === card.function_id);
+  if (definition === undefined || !aiWrites(definition, m)) return undefined;
+  return `I write · ${labelOf(board, card.owner)} verifies`;
+}
+
+/**
+ * The cards the AI is on now, with the mode it picked each one in. A card in
+ * Needs input says whom it waits on, and a card the AI writes says who
+ * verifies it (`writesLine`).
+ */
 export function nowItems(profile: AiTeammateProfileResponse, board: BoardResponse): CardItem[] {
   return profile.now.map(({ card, mode }) => ({
     id: card.id,
@@ -108,6 +138,7 @@ export function nowItems(profile: AiTeammateProfileResponse, board: BoardRespons
     note: card.status.state === "needs_input" ? `Waiting on ${waitingOnLabel(board, card.status.waiting_on)}` : columnLabel(card.status.state),
     tone: card.status.state === "needs_input" ? "needs-input" : "plain",
     mode,
+    writes: writesLine(card, mode, board),
   }));
 }
 

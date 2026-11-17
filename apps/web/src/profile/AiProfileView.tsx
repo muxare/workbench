@@ -64,6 +64,7 @@ function CardList({ items, empty }: { items: CardItem[]; empty: string }) {
             {c.title}
           </a>
           <span className={`ai-card__note tone--${c.tone}`}>{c.note}</span>
+          {c.writes !== undefined && <span className="ai-card__note tone--muted">{c.writes}</span>}
         </li>
       ))}
     </ul>
