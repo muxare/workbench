@@ -1,10 +1,12 @@
 // `pnpm wb <command> [service...]`: start, stop, restart and inspect the
 // processes of the local development loop (see services.ts and
-// docs/dev-loop.md, "Running the loop locally").
+// docs/dev-loop.md, "Running the loop locally"), and report where the board
+// has drifted from GitHub (`lanes`, see lanes.ts).
 import { execFileSync, spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { formatDuration, logPath, processCommand, start, status, stop, type Paths } from "./manager.ts";
 import { parse, usage } from "./args.ts";
+import { lanes } from "./lanesCli.ts";
 import { hookRepo, services } from "./services.ts";
 
 function hookOnGithub(): string {
@@ -78,6 +80,10 @@ async function main(): Promise<number> {
       const child = spawn("tail", args, { stdio: "inherit" });
       return await new Promise((res) => child.on("exit", (code) => res(code ?? 0)));
     }
+    case "lanes":
+      // A report: drift, a stopped API or an unreadable GitHub all exit 0.
+      await lanes(parsed.json);
+      return 0;
   }
   return ok ? 0 : 1;
 }

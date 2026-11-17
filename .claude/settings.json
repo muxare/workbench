@@ -20,7 +20,7 @@
           {
             "type": "command",
             "command": "sh \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/main-behind-on-start.sh",
-            "timeout": 20
+            "timeout": 30
           }
         ]
       }
