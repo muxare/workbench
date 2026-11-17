@@ -443,26 +443,34 @@ describe("withdrawing a card", () => {
     expect((await getCard(db, "k3"))?.withdrawn?.from).toBe("backlog");
   });
 
+  const link = (id: string, cardId: string): StreamEvent => ({
+    id,
+    type: "workspace_linked",
+    card_id: cardId,
+    actor: "t-human",
+    at: at(46),
+    workspace: "github",
+    repository: "invented/repo",
+    branch: `wb/${cardId}-invented`,
+    url: `https://github.com/invented/repo/tree/wb/${cardId}-invented`,
+  });
+  const branchLinked = { code: "rule_violation", message: expect.stringMatching(/branch linked/) };
+
   it("refuses a card in progress with a branch linked", async () => {
-    await appendEvents(db, [
-      move("s1", "k2", "ready", "in_progress"),
-      {
-        id: "l1",
-        type: "workspace_linked",
-        card_id: "k2",
-        actor: "t-human",
-        at: at(46),
-        workspace: "github",
-        repository: "invented/repo",
-        branch: "wb/k2-invented",
-        url: "https://github.com/invented/repo/tree/wb/k2-invented",
-      },
-    ]);
-    await expect(appendEvent(db, withdrawn("w1", "k2", "in_progress"))).rejects.toMatchObject({
-      code: "rule_violation",
-      message: expect.stringMatching(/branch linked/),
-    });
+    await appendEvents(db, [move("s1", "k2", "ready", "in_progress"), link("l1", "k2")]);
+    await expect(appendEvent(db, withdrawn("w1", "k2", "in_progress"))).rejects.toMatchObject(branchLinked);
     expect(await getCard(db, "k2")).not.toHaveProperty("withdrawn");
+  });
+
+  it("refuses a card moved back to Ready that still has a branch linked", async () => {
+    await appendEvents(db, [move("s1", "k2", "ready", "in_progress"), link("l1", "k2"), move("s2", "k2", "in_progress", "ready")]);
+    await expect(appendEvent(db, withdrawn("w1", "k2", "ready"))).rejects.toMatchObject(branchLinked);
+    expect(await getCard(db, "k2")).not.toHaveProperty("withdrawn");
+  });
+
+  it("refuses a withdrawal after a branch linked earlier in the same write", async () => {
+    await expect(appendEvents(db, [link("l1", "k2"), withdrawn("w1", "k2", "ready")])).rejects.toMatchObject(branchLinked);
+    expect(ids(await cardLog(db, "k2"))).toEqual(["v3"]);
   });
 
   it("refuses Needs input, Review and Done as `from`, an empty reason, a stale `from`, an AI and an unknown card", async () => {

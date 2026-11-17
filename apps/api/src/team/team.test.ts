@@ -148,6 +148,24 @@ describe("enterCards", () => {
   it("refuses a dependency that is not on the board", async () => {
     await expect(enterCards(db, { cards: [cards.cards[1]!] }, functionIds)).rejects.toThrow(/depends on '1'/);
   });
+
+  it("refuses a dependency that was withdrawn, as POST /cards does, and enters nothing for it", async () => {
+    await enterCards(db, { cards: [cards.cards[0]!] }, functionIds);
+    await appendEvent(db, {
+      id: "invented-withdrawn",
+      type: "card_withdrawn",
+      card_id: "1",
+      actor: "invented-person",
+      at: "2026-11-12T09:00:00Z",
+      reason: "Invented: not needed",
+      from: "backlog",
+    });
+    await expect(enterCards(db, { cards: [cards.cards[1]!] }, functionIds)).rejects.toMatchObject({
+      code: "conflict",
+      message: expect.stringMatching(/depends on '1', which was withdrawn/),
+    });
+    expect((await listCards(db, { includeWithdrawn: true })).map((c) => c.id)).toEqual(["1"]);
+  });
 });
 
 describe("startNextCycle", () => {

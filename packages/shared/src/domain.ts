@@ -126,9 +126,10 @@ export type CardLink = z.infer<typeof cardLink>;
 
 /**
  * The states a card may be withdrawn from: before anyone has started the
- * work, or while it is in progress with no branch linked to it. A card in
- * Review or Done has work on record, and one waiting on an answer has a
- * question open, so it is not withdrawn from those.
+ * work, or while it is in progress. A card in Review or Done has work on
+ * record, and one waiting on an answer has a question open, so it is not
+ * withdrawn from those; nor is a card in any state once a branch is linked
+ * to it, which the store checks.
  */
 export const withdrawableStatus = cardStatus.extract(["backlog", "ready", "in_progress"]);
 export type WithdrawableStatus = z.infer<typeof withdrawableStatus>;
@@ -402,7 +403,7 @@ export const cardEvent = z.discriminatedUnion("type", [
     from: withdrawableStatus,
   }),
 ]);
-export type CardEvent= z.infer<typeof cardEvent>;
+export type CardEvent = z.infer<typeof cardEvent>;
 export type CardEventType = CardEvent["type"];
 
 /**

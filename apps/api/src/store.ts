@@ -235,6 +235,8 @@ interface Pending {
   batches: StreamEvent[];
   /** The cards an earlier event in the write set withdrew. */
   withdrawn: Set<string>;
+  /** The cards an earlier event in the write set linked a branch to. */
+  linked: Set<string>;
 }
 
 /**
@@ -456,9 +458,11 @@ async function checkTeamNamed(db: Db, event: TeamNamedEvent, pending: Pending): 
 /**
  * A card is withdrawn by a person, from the state it is in now (`from`), so
  * a withdrawal made from an out-of-date view cannot land. The schema allows
- * only Backlog, Ready and In progress as `from`; from In progress, the card
- * must have no branch linked (`workspace_linked`), because work on a branch
- * is on record and goes through review instead. A card withdrawn already is
+ * only Backlog, Ready and In progress as `from`, and whatever `from` is, the
+ * card must never have had a branch linked (`workspace_linked`, in the stream
+ * or earlier in the same write), because work on a branch is on record and
+ * goes through review instead; a card moved back to Ready from In progress
+ * keeps its branch. A card withdrawn already is
  * refused before this, like any event on it.
  */
 async function checkCardWithdrawn(db: Db, event: CardWithdrawnEvent, pending: Pending): Promise<void> {
@@ -471,15 +475,15 @@ async function checkCardWithdrawn(db: Db, event: CardWithdrawnEvent, pending: Pe
   if (current.state !== event.from) {
     throw new StoreError(`${event.id}: card ${event.card_id} is ${current.state}, not ${event.from}`, "conflict");
   }
-  if (event.from === "in_progress") {
-    const [linked] = await db
-      .select({ seq: events.seq })
-      .from(events)
-      .where(and(eq(events.cardId, event.card_id), eq(events.type, "workspace_linked")))
-      .limit(1);
-    if (linked) {
-      throw new StoreError(`${event.id}: card ${event.card_id} has a branch linked, so it goes through review rather than being withdrawn`);
-    }
+  const [linked] = pending.linked.has(event.card_id)
+    ? [true]
+    : await db
+        .select({ seq: events.seq })
+        .from(events)
+        .where(and(eq(events.cardId, event.card_id), eq(events.type, "workspace_linked")))
+        .limit(1);
+  if (linked) {
+    throw new StoreError(`${event.id}: card ${event.card_id} has a branch linked, so it goes through review rather than being withdrawn`);
   }
   pending.withdrawn.add(event.card_id);
   pending.batches.push(event);
@@ -515,6 +519,7 @@ async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise
     throw new StoreError(`${event.id}: card ${event.card_id} was withdrawn and takes no further event`, "conflict");
   }
   if (event.type === "card_withdrawn") await checkCardWithdrawn(db, event, pending);
+  if (event.type === "workspace_linked") pending.linked.add(event.card_id);
   if (event.type === "status_changed") {
     const current = pending.statuses.get(event.card_id) ?? (await cardStatus(db, event.card_id));
     if (current.state !== event.from) {
@@ -629,6 +634,7 @@ async function appendNow(db: Db, inputs: readonly StreamEvent[]): Promise<Stored
     gates: new Map(),
     batches: [],
     withdrawn: new Set(),
+    linked: new Set(),
   };
   const checked: StreamEvent[] = [];
   for (const input of inputs) checked.push(await checkEvent(db, input, pending));

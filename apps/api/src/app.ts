@@ -567,7 +567,7 @@ export function createApp(deps: AppDeps) {
       const actor = await teammateOr422(req.actor, "actor");
       if (actor.kind !== "human") throw new ApiProblem("forbidden", `a card is withdrawn by a person, not ${actor.id}`);
       if (card.withdrawn) throw new ApiProblem("conflict", `${card.id} was withdrawn already`);
-      // The store checks `from` against the card's state and refuses a card in progress with a branch linked (422).
+      // The store checks `from` against the card's state and refuses a card with a branch linked, whatever its state (422).
       return c.json(
         await write(card.id, [{ ...base(card.id, actor.id), type: "card_withdrawn", reason: req.reason, from: req.from }]),
       );

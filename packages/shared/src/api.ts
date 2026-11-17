@@ -119,12 +119,12 @@ export type MoveStatusRequest = z.infer<typeof moveStatusRequest>;
  * `POST /cards/:id/withdraw`: a person takes a card off the board, which
  * appends one `card_withdrawn` event. `from` must be the card's current
  * state, so a withdrawal made from an out-of-date view is refused, and a card
- * is withdrawn only from Backlog, Ready, or In progress with no branch linked.
+ * is withdrawn only from Backlog, Ready or In progress, and never once a branch is linked to it.
  * The card leaves the board's columns and any open batch, takes no further
  * move, pick, question or report, and stays readable at `GET /cards/:id` with
  * its whole log. Refusals: 400 for a bad body (an empty reason, or a `from`
  * that is not withdrawable); 404 for an unknown card; 422 for an unknown
- * actor, or a card in progress with a branch linked; 403 when the actor is not
+ * actor, or a card with a branch linked; 403 when the actor is not
  * a person; 409 when the card is not in `from` or is already withdrawn.
  */
 export const withdrawRequest = z.strictObject({ actor: teammateId, reason: withdrawalReason, from: withdrawableStatus });
