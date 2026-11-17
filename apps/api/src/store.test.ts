@@ -121,6 +121,33 @@ describe("teammates", () => {
     await expect(addTeammate(db, withProfile)).rejects.toThrow();
   });
 
+  it("records the join as made by the person who added them, and adds nobody when that is not a person", async () => {
+    const other: TeammateRecord = { kind: "human", id: "t-other", name: "Invented", roles: ["fe"] };
+    await addTeammate(db, { kind: "human", id: "t-new", name: "Invented", roles: ["fe"] }, at(1), { addedBy: "t-human" });
+    expect((await boardLog(db)).at(-1)).toMatchObject({ id: "roles-t-new-joined", teammate_id: "t-new", actor: "t-human" });
+    await expect(addTeammate(db, other, at(1), { addedBy: "t-ai" })).rejects.toThrow(/by a person/);
+    await expect(addTeammate(db, other, at(1), { addedBy: "t-nobody" })).rejects.toThrow(/no teammate/);
+    expect(await getTeammate(db, "t-other")).toBeUndefined();
+  });
+
+  it("refuses a taken id, and a founding person once the team has a person, with a conflict", async () => {
+    await expect(addTeammate(db, { kind: "human", id: "t-ai", name: "Invented", roles: ["fe"] }, at(1))).rejects.toMatchObject({ code: "conflict" });
+    await expect(
+      addTeammate(db, { kind: "human", id: "t-other", name: "Invented", roles: ["fe"] }, at(1), { founding: true }),
+    ).rejects.toMatchObject({ code: "conflict", message: expect.stringMatching(/already has a person/) });
+    expect(await getTeammate(db, "t-other")).toBeUndefined();
+  });
+
+  it("lets only one of two founders racing on an empty team in, and every reader sees a person with roles", async () => {
+    const empty = await openDb(":memory:");
+    const founder = (id: string) => addTeammate(empty, { kind: "human", id, name: "Invented", roles: ["ux"] }, at(1), { founding: true });
+    const results = await Promise.allSettled([founder("t-a"), founder("t-b"), listTeammates(empty), founder("t-c")]);
+    expect(results.filter((r) => r.status === "fulfilled").length).toBe(2); // one founder and the read
+    const people = await listTeammates(empty);
+    expect(people).toHaveLength(1);
+    expect(people[0]).toMatchObject({ roles: ["ux"] });
+  });
+
   it("lets one person hold every role, first role first", async () => {
     await addTeammate(db, { kind: "human", id: "t-all", name: "Invented", roles: ["po", "ux", "fe", "be"] }, at(1));
     expect(await getTeammate(db, "t-all")).toMatchObject({ roles: ["po", "ux", "fe", "be"] });

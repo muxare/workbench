@@ -34,6 +34,15 @@ export const roleSummary: Partial<Record<TeammateRole, string>> = {
   po: "Owns the order and the milestone.",
 };
 
+/**
+ * Who a change is made as until the viewer picks someone, since there is no
+ * sign-in: the product owner, who owns the order of the board, or else the
+ * first person. Used by the log filter's and the team screen's "Changing as".
+ */
+export function defaultActor(people: readonly HumanTeammate[]): string | undefined {
+  return (people.find((p) => p.roles.includes("po")) ?? people[0])?.id;
+}
+
 /** A person's main role: the first they hold. The API never sends a person without one. */
 export function mainRole(person: HumanTeammate): TeammateRole {
   return person.roles[0]!;

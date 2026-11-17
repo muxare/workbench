@@ -160,6 +160,19 @@ a:hover {
   color: var(--surface);
   cursor: pointer;
 }
+/* A secondary action beside a primary one, such as Undo beside Save. */
+.button--quiet {
+  background: var(--surface);
+  color: var(--fg);
+  border-color: var(--line);
+}
+/* Disabled: the page background, as an unavailable control sits back into the page. */
+.button:disabled {
+  cursor: default;
+  background: var(--bg);
+  border-color: var(--line);
+  color: var(--muted);
+}
 
 /* Legend: "How to read it" */
 
@@ -1413,19 +1426,41 @@ a:hover {
   font-size: 13px;
   font-weight: 600;
 }
-.field textarea {
+/* A label beside its control rather than above it, such as a "Changing as" select. */
+.field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.field textarea,
+.field input,
+.field select {
   font: inherit;
   font-size: 14px;
   font-weight: 400;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  resize: vertical;
   color: var(--fg);
   background: var(--surface);
 }
-.field textarea[aria-invalid="true"] {
+.field input,
+.field select {
+  padding: 6px 10px;
+  min-height: 44px;
+}
+.field textarea {
+  resize: vertical;
+}
+.field textarea[aria-invalid="true"],
+.field input[aria-invalid="true"],
+.field select[aria-invalid="true"] {
   border-color: var(--needs-input);
+}
+.field input:focus-visible,
+.field select:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
 }
 
 .protocol {

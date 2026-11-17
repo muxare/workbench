@@ -27,7 +27,7 @@ export function teamScreen(state: TeamState): TeamScreen {
 /** Why the team is empty, in a sentence for the screen. */
 export function emptyReason(team: TeamResponse): string {
   if (team.steps.length === 0) return "process/functions holds no function file, so there is no step to show.";
-  return "The team has no person yet. AI teammates have no modes of their own, so they have no row here.";
+  return "The team has no person yet; add the first one below. AI teammates have no modes of their own, so they have no column here.";
 }
 
 /** A person's column heading. */

@@ -8,7 +8,9 @@
 // person, and a person's process profile is derived from those events, so a
 // mode change reaches the logs and the stream like a card change.
 // `POST /api/teammates/:id/roles` appends a `roles_changed` event in the same
-// way; a person's roles are derived from those events.
+// way; a person's roles are derived from those events. `POST /api/teammates`
+// adds a person through `addTeammate`, whose joining `roles_changed` event
+// names the person who added them.
 // `POST /api/logs/:log/filter` appends a `log_filter_changed` event about the
 // team, and each log's filter is derived from those events; the API never
 // applies a filter to what it returns, because a filter is a view setting.
@@ -58,6 +60,7 @@ import {
   type BatchDetailResponse,
   type BatchesResponse,
   type BatchResponse,
+  addTeammateRequest,
   createCardRequest,
   criticRequired,
   currentCycle,
@@ -108,6 +111,7 @@ import { validSignature } from "./github/signature.ts";
 import { handleDelivery, WebhookPayloadError } from "./github/webhook.ts";
 import {
   addNumberedCard,
+  addTeammate,
   appendEvents,
   boardLog,
   cardLog,
@@ -605,6 +609,26 @@ export function createApp(deps: AppDeps) {
       }
       const response: TeammateProfileResponse = buildProfile(await personOr404(person.id), defs, await criticGates(db));
       return c.json(response);
+    })
+
+    .post("/teammates", async (c) => {
+      const req = await body(c, addTeammateRequest);
+      const team = await listTeammates(db);
+      if (team.some((t) => t.id === req.id)) throw new ApiProblem("conflict", `there is already a teammate '${req.id}'; choose another id`);
+      // There is no sign-in, so the request names who adds the person. On a team with no person
+      // yet nobody could, so the first person adds themselves. The store checks the id and the
+      // empty team again inside its write, so two such requests cannot both win (409).
+      const founding = !team.some((t) => t.kind === "human") && req.actor === req.id;
+      if (!founding) {
+        const actor = await teammateOr422(req.actor, "actor");
+        if (actor.kind !== "human") throw new ApiProblem("forbidden", `a person is added by a person, not ${actor.id}`);
+      }
+      await addTeammate(db, { kind: "human", id: req.id, name: req.name, roles: req.roles }, now().toISOString(), {
+        addedBy: req.actor,
+        founding,
+      });
+      const response: TeammateResponse = { teammate: await personOr404(req.id) };
+      return c.json(response, 201);
     })
 
     .post("/teammates/:id/roles", async (c) => {

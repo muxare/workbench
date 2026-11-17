@@ -49,7 +49,7 @@ export type TeammateRole = z.infer<typeof teammateRole>;
  */
 export const teammateRoles = z
   .array(teammateRole)
-  .min(1)
+  .min(1, "a person holds at least one role")
   .refine((roles) => new Set(roles).size === roles.length, { message: "a role is listed twice" });
 export type TeammateRoles = z.infer<typeof teammateRoles>;
 

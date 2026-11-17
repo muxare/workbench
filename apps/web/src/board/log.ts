@@ -27,7 +27,10 @@ export function describeEvent(e: StreamEvent, board: BoardResponse): string {
   }
   if (e.type === "roles_changed") {
     const roles = (list: readonly string[]) => list.map((r) => r.toUpperCase()).join(", ");
-    if (e.from.length === 0) return `${labelOf(board, e.teammate_id)} joined the team as ${roles(e.to)}`;
+    if (e.from.length === 0) {
+      const joined = labelOf(board, e.teammate_id);
+      return e.actor === e.teammate_id ? `${joined} joined the team as ${roles(e.to)}` : `${who} added ${joined} to the team as ${roles(e.to)}`;
+    }
     const whose = e.teammate_id === e.actor ? "their" : `${labelOf(board, e.teammate_id)}'s`;
     return `${who} changed ${whose} roles to ${roles(e.to)} · was: ${roles(e.from)}`;
   }

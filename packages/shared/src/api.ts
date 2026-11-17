@@ -421,6 +421,52 @@ export type SetModeRequest = z.infer<typeof setModeRequest>;
 export const setRolesRequest = z.strictObject({ actor: teammateId, roles: teammateRoles, was: teammateRoles });
 export type SetRolesRequest = z.infer<typeof setRolesRequest>;
 
+/**
+ * The id a new person is added with: lower-case letters and digits in words
+ * joined by single hyphens, such as "anna-berg", at most 40 characters. It
+ * names the person in every event and in the profile's URL, so it is kept
+ * plain. People added before this route, by seeds and `team:start`, keep the
+ * ids they have.
+ */
+export const newTeammateId = z
+  .string()
+  .max(40, "an id is at most 40 characters")
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "an id is lower-case letters and digits, in words joined by single hyphens");
+
+/**
+ * The id a name suggests: letters without their accents, lower case, with
+ * every run of other characters a single hyphen, cut to 40 characters.
+ * "Åsa Öberg-Lind" suggests "asa-oberg-lind". "" when the name has no letter
+ * or digit to build one from; the person then types an id.
+ */
+export function teammateIdFromName(name: string): string {
+  return name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .slice(0, 40)
+    .replace(/-+$/, "");
+}
+
+/**
+ * `POST /teammates`: a person adds a person to the team, with the roles they
+ * join with, first role first. The actor must be a person on the team, since
+ * there is no sign-in to say who is asking; on a team with no person yet, the
+ * first person adds themselves (`actor` is their own `id`). The join is the
+ * person's first `roles_changed` event, from no roles, made by the actor.
+ * Answers 201 with the person; 409 when the id is taken; 422 for an unknown
+ * actor; 403 for an AI actor.
+ */
+export const addTeammateRequest = z.strictObject({
+  actor: teammateId,
+  id: newTeammateId,
+  name: z.string().trim().min(1, "a name is required"),
+  roles: teammateRoles,
+});
+export type AddTeammateRequest = z.infer<typeof addTeammateRequest>;
+
 export const teammateResponse = z.object({ teammate: humanTeammate });
 export type TeammateResponse = z.infer<typeof teammateResponse>;
 
