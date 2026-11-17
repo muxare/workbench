@@ -50,6 +50,7 @@ Last updated 2026-11-17 by Claude.
 - Decided with Mikael on 2026-11-09: the workbench is developed and demoed on one invented example project, a housing cooperative's laundry room booking and fault reporting, designed to stress the chain. It does not replace the Phase 2 run on a real project. See `docs/decisions.md`.
 - Decided with Mikael on 2026-11-08: the template lists the protocols' optional `note`, and a card with an unfinished `depends_on` cannot be picked (shared rule in `packages/shared`, used by the AI teammate and the API pick); on 2026-11-15 this was relaxed for the AI's pick inside a planned batch, as recorded above.
 - Merged to `main` from `feat/session-start-main-check`: a `SessionStart` hook (`.claude/hooks/main-behind-on-start.sh`, on `startup` and `clear`) fetches `origin/main`, fast-forwards `main` when the main checkout is on `main` and clean, and otherwise only reports; either way it tells Claude which pull requests were merged, whether app code changed, and to finish the after-merge routine. See `docs/decisions.md`.
+- On 2026-11-17 the critic's review was first seen reaching a card's log: `ai-review` passed pull request #14 (card #17) and the board recorded `check_ran` `consistency` passed on the head `c273484`, after the `structural` check. Cards #17 and #18 were still Ready when their pull requests opened, since nobody picked them, so `review_requested` did not move them to Review and the merge does not move them to Done; they are moved by hand through the API, as card #1 was (pick, review, done).
 
 ## Waiting for Mikael
 
@@ -59,9 +60,8 @@ Last updated 2026-11-17 by Claude.
 
 Build work is on the workbench board as cards #6 to #19; this list keeps what is not a card and the order before ConCon.
 
-1. On the next pull request that has a card, check that the critic's review reaches the card's log; pull request #8 had no card, so only the posting was seen.
-2. Fix cards #14 and #6 on the workbench board.
-3. If time allows, work #8, then #7.
-4. After lunch on 2026-11-18, cut the ConCon demo from `main`: choose Part 1's cards from the Backlog or enter fresh ones, set the modes, dry-run Part 1 on a copy of `teams/workbench/board.db` and put the copy back afterwards, dry-run Part 2 against a fresh seed, check the board header on both boards, update `docs/demo.md` from what the runs show, including correcting Part 2's steps 4 and 5 for `main`, and move the `concon-demo` tag.
-5. After ConCon, work the hosted cards in order: #10 then #11 (sign-in), #12 (image), #13 (break the Azure move into cards), then deploy.
-6. Draft stage 4: a GitHub Actions workflow that runs Claude Code on a card's branch when the card is handed to the AI.
+1. Fix cards #14 and #6 on the workbench board.
+2. If time allows, work #8, then #7.
+3. After lunch on 2026-11-18, cut the ConCon demo from `main`: choose Part 1's cards from the Backlog or enter fresh ones, set the modes, dry-run Part 1 on a copy of `teams/workbench/board.db` and put the copy back afterwards, dry-run Part 2 against a fresh seed, check the board header on both boards, update `docs/demo.md` from what the runs show, including correcting Part 2's steps 4 and 5 for `main`, and move the `concon-demo` tag.
+4. After ConCon, work the hosted cards in order: #10 then #11 (sign-in), #12 (image), #13 (break the Azure move into cards), then deploy.
+5. Draft stage 4: a GitHub Actions workflow that runs Claude Code on a card's branch when the card is handed to the AI.
