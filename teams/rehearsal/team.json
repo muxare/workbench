@@ -1,0 +1,13 @@
+{
+  "id": "rehearsal",
+  "name": "Rehearsal",
+  "teammates": [
+    { "kind": "human", "id": "mikael", "name": "Mikael Axelsson", "roles": ["po", "be"] },
+    { "kind": "human", "id": "felix-svensson", "name": "Felix Svensson", "roles": ["fe"] },
+    { "kind": "human", "id": "uxi-larsson", "name": "Uxi Larsson", "roles": ["ux"] },
+    { "kind": "ai", "id": "ai", "name": "AI teammate" }
+  ],
+  "cycle": { "id": "rehearsal-1", "name": "Rehearsal", "starts_at": "2026-11-17T00:00:00Z", "ends_at": "2026-12-01T00:00:00Z" },
+  "cycles": { "length_days": 14, "id": "rehearsal-{n}" },
+  "github_logins": {}
+}

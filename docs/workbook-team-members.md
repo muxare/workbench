@@ -93,12 +93,50 @@ With your go-ahead, the session pushes the branch and opens the pull request as 
 
 The run has worked when the card's log at `#/cards/<n>` reads, in order: created by Mikael, moved to Ready by Felix, picked by the AI in Felix's mode, a question to Felix and his answer, a question from Felix to Uxi and Uxi's answer; and the board showed each change without a reload. Anything else is worth writing down: a move refused with a reason you did not expect, a panel that shows the card under the wrong person, or a step that needed a reload.
 
-## Cheat sheet
+## Rehearsal board
 
-The whole run in order, for use at the keyboard. Paste the shell lines into one terminal, so that `$A` and `$B` keep the card numbers. Replace each `<…>` title with a small real task first.
+The real board keeps every card and event for good, so practise on a board of its own first. `teams/rehearsal/team.json` is a team with Mikael (po, be), Felix (fe), Uxi (ux) and the AI teammate. Its board, `teams/rehearsal/board.db`, is git-ignored like every team's board, and it runs beside the real one on other ports: the API on 3001 and the web board on 5174. The real board on 3000 and 5173 is not touched. `pnpm wb` only manages the real board, so the rehearsal runs in terminals you keep open.
+
+Open four terminals, each in the repository root (`cd ~/source/repos/workbench`).
+
+**Terminal 1, the rehearsal API.** Create the board the first time, then serve it, and leave it running:
 
 ```sh
-API=localhost:3000/api; J='content-type: application/json'
+pnpm --filter @workbench/api team:start teams/rehearsal   # first time only
+PORT=3001 pnpm --filter @workbench/api team:serve teams/rehearsal
+```
+
+**Terminal 2, the rehearsal web board.** Leave it running, and open http://localhost:5174 in the browser:
+
+```sh
+API_URL=http://localhost:3001 pnpm --filter @workbench/web dev --port 5174 --strictPort
+```
+
+**Terminal 3, the curl commands.** Run every command of the cheat sheet below here, in this one terminal, so that `$A` and `$B` keep the card numbers. Start it with:
+
+```sh
+API=localhost:3001/api
+```
+
+**Terminal 4, the AI session.** Start a separate Claude Code session whose MCP server talks to the rehearsal API, and use it for step 8 only:
+
+```sh
+WORKBENCH_API_URL=http://localhost:3001 claude
+```
+
+The code that session writes still lands in this repository, so stop it before it commits, or delete its `wb/<n>-…` branch afterwards. No GitHub event reaches the rehearsal API, so opening a pull request would not move the card; stop at the session's report.
+
+**To start over,** stop terminal 1 with Ctrl-C, then run `rm teams/rehearsal/board.db*` and the two commands of terminal 1 again. The new board has no cards, and card numbers start at 1 again. Terminal 2 can keep running.
+
+**When done,** stop terminals 1 and 2 with Ctrl-C and close the session in terminal 4.
+
+## Cheat sheet
+
+The whole run in order. Shell lines go in terminal 3 (or any one terminal, on the real board); browser steps go in the web board; step 8 goes in terminal 4 (or this Claude Code session, on the real board). Replace each `<…>` title first: on the real board with a small real task, on the rehearsal board with anything.
+
+```sh
+# Terminal 3. Rehearsal: API=localhost:3001/api. Real board: API=localhost:3000/api.
+J='content-type: application/json'
 
 # 1. Felix's modes: assist on one step, delegate on the other.
 curl -s $API/teammates/felix-svensson/modes -H "$J" -d '{"actor":"felix-svensson","function_id":"implement_interactions","mode":"assist"}'
@@ -110,21 +148,22 @@ B=$(curl -s $API/cards -H "$J" -d '{"actor":"mikael","owner":"felix-svensson","f
 echo "A=#$A B=#$B"
 ```
 
-3. In the browser, open `#/cards/<A>` and `#/cards/<B>` and click "Move to Ready" on each. You are Felix.
+3. **Browser, as Felix:** open card A and card B (`#/cards/<n>`) and click "Move to Ready" on each.
 
 ```sh
-# 4. The AI picks card A by itself (stub, no model). Check first that no other assist card is Ready.
+# 4. Terminal 3. The AI picks card A by itself (the stub, no model call).
+#    On the real board, check first that no other card in assist is Ready.
 curl -s -X POST $API/teammates/ai/run
 ```
 
-5. On card A, answer the AI's question. You are Felix.
+5. **Browser, as Felix:** on card A, answer the AI's question.
 
 ```sh
-# 6. Felix asks Uxi on card A.
+# 6. Terminal 3. Felix asks Uxi on card A.
 curl -s $API/cards/$A/questions -H "$J" -d '{"actor":"felix-svensson","asked_of":"uxi-larsson","text":"Which empty state do we show?","why_it_blocks":"The screen has no design for zero bookings"}'
 ```
 
-7. On card A, answer the question. You are Uxi.
-8. In Claude Code, prompt: "Pick card #<B> on the workbench board and work it."
-9. On card B, answer the session's question when it comes. You are Felix.
-10. When the session reports, either give the go-ahead to push and open the pull request, or stop there.
+7. **Browser, as Uxi:** on card A, answer the question.
+8. **Terminal 4 (rehearsal) or this session (real board):** prompt "Pick card #<B> on the workbench board and work it."
+9. **Browser, as Felix:** on card B, answer the session's question when it comes.
+10. **When the session reports:** on the rehearsal board, stop there. On the real board, give the go-ahead to push and open the pull request, or stop there.
