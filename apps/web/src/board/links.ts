@@ -1,6 +1,6 @@
 // Which teammate is linked to which card, and how. The artboard's three line
 // styles: solid = works on a card, dashed = needs input, dotted = reports back.
-import { isCardEvent, type BoardResponse, type Card, type CardStatus, type Mode } from "@workbench/shared";
+import { aiWrites, isCardEvent, type BoardResponse, type Card, type CardStatus, type Mode } from "@workbench/shared";
 import { aiTeammate, cardRef, externalLabel, findTeammate, labelOf } from "./teammates.ts";
 
 /** Statuses in which someone is working on a card. */
@@ -23,6 +23,20 @@ export function cardMode(card: Card, board: BoardResponse): Mode | undefined {
   }
   const owner = findTeammate(board, card.owner);
   return owner?.kind === "human" ? owner.process_profile[card.function_id] : undefined;
+}
+
+/**
+ * Whether the AI teammate `aiId` is working `card`: the card is in progress,
+ * the AI is on it, and the mode it is worked in (`cardMode`) has a protocol
+ * whose `writes` is `ai` or `both` (`aiWrites`, read from the function file
+ * through the board's `functions`). A card waiting in Needs input, in review
+ * or worked in a mode where the person writes is not one the AI is working.
+ */
+export function aiIsWorking(card: Card, aiId: string, board: BoardResponse): boolean {
+  if (card.status.state !== "in_progress" || !cardParticipants(card, board).includes(aiId)) return false;
+  const m = cardMode(card, board);
+  const definition = board.functions.find((f) => f.name === card.function_id);
+  return m !== undefined && definition !== undefined && aiWrites(definition, m);
 }
 
 /** Who picked the card last, from the log. */

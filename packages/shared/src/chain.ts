@@ -5,7 +5,7 @@
 // process/functions; these rules only need its name, role and default mode.
 import { z } from "zod";
 import { functionId, mode, type HumanTeammate, type Mode, type Teammate } from "./domain.ts";
-import { functionRole, type ProtocolActor } from "./functionFile.ts";
+import { functionRole, protocolActor } from "./functionFile.ts";
 
 /**
  * The part of a function's front matter that decides who works it and in
@@ -57,10 +57,25 @@ export function chainModeCounts(person: HumanTeammate, definitions: Iterable<Cha
 
 /**
  * The part of a function's front matter that says who writes in each mode,
- * which is who may move a card of that function along its work.
- * `FunctionFrontMatter` fits it as it is.
+ * which is who may move a card of that function along its work and whether
+ * the AI is the one working a card of it. `GET /board` sends one per function
+ * file, in file order; `FunctionFrontMatter` fits it as it is.
  */
-export type MoveFunction = ChainFunction & { protocols: Partial<Record<Mode, { writes: ProtocolActor }>> };
+export const moveFunction = chainFunction.extend({
+  protocols: z.partialRecord(mode, z.object({ writes: protocolActor })),
+});
+export type MoveFunction = z.infer<typeof moveFunction>;
+
+/**
+ * Whether the AI writes when `definition` is worked in `m`: the protocol's
+ * `writes` is `ai` or `both`, which in every function file today is
+ * `delegate`. Read from the function's file, never assumed from the mode's
+ * name. In the other modes the person writes and the AI at most asks.
+ */
+export function aiWrites(definition: MoveFunction, m: Mode): boolean {
+  const writes = definition.protocols[m]?.writes;
+  return writes === "ai" || writes === "both";
+}
 
 /** Whether `mover` may move a card owned by `owner`, and if not, why. */
 export type MoveVerdict = { allowed: true } | { allowed: false; reason: string };
@@ -89,7 +104,7 @@ export function mayMoveCard(mover: Teammate, owner: Teammate, definition: MoveFu
   }
   const m = pickedMode ?? ownerMode(owner, definition);
   const writes = definition.protocols[m]?.writes;
-  if (mover.kind === "ai" && (writes === "ai" || writes === "both")) return { allowed: true };
+  if (mover.kind === "ai" && aiWrites(definition, m)) return { allowed: true };
   const writer = writes === undefined ? `${definition.name} has no protocol for ${m}` : `${writes} writes`;
   const how = pickedMode === undefined ? `${owner.id} works ${definition.name} in ${m}` : `the card was picked in ${m}`;
   return {

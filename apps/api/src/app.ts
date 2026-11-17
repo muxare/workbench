@@ -74,6 +74,7 @@ import {
   setRolesRequest,
   batchCards,
   unmetDependencies,
+  moveFunction,
   type HumanTeammate,
   type TeammateResponse,
   type TeammateProfileResponse,
@@ -299,7 +300,8 @@ export function createApp(deps: AppDeps) {
         team: await teamName(db),
         cards: await listCards(db),
         teammates: await listTeammates(db),
-        functions: [...definitions().values()].map((d) => ({ name: d.name, role: d.role, modes: { default: d.modes.default } })),
+        // Only what the board needs of each function: its name, role, default mode and who writes in each mode.
+        functions: [...definitions().values()].map((d) => moveFunction.parse(d)),
         open_questions: (await listQuestions(db)).filter((q) => q.answer === undefined),
         log: await boardLog(db, { limit: BOARD_LOG_LIMIT }),
         log_filters: await logFilters(db),
