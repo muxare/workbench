@@ -11,8 +11,10 @@ import {
   criticGatesResponse,
   logFiltersResponse,
   teammateProfileResponse,
+  teammateResponse,
   teamResponse,
   writeResponse,
+  type AddTeammateRequest,
   type AiTeammateProfileResponse,
   type AnswerRequest,
   type ApiErrorCode,
@@ -28,6 +30,8 @@ import {
   type SetCriticGateRequest,
   type SetLogFilterRequest,
   type SetModeRequest,
+  type SetRolesRequest,
+  type TeammateResponse,
   type TeammateProfileResponse,
   type TeamResponse,
   type WriteResponse,
@@ -204,5 +208,28 @@ export async function setLogFilter(log: LogName, request: SetLogFilterRequest): 
 export async function setCriticGate(functionId: string, request: SetCriticGateRequest): Promise<CriticGatesResponse> {
   const parsed = criticGatesResponse.safeParse(await postJson(`/functions/${encodeURIComponent(functionId)}/critic-gate`, request));
   if (!parsed.success) throw new ApiRequestError("bad_response", "the critic gates from the API do not match the shared schema");
+  return parsed.data;
+}
+
+/**
+ * `POST /api/teammates`: a person adds a person to the team with the roles
+ * they join with. Answers with the person; the board and the team screen also
+ * hear the joining `roles_changed` event over the stream.
+ */
+export async function addTeammate(request: AddTeammateRequest): Promise<TeammateResponse> {
+  return parseTeammate(await postJson("/teammates", request));
+}
+
+/**
+ * `POST /api/teammates/:id/roles`: a person sets the roles someone holds, first
+ * role first. `was` is what the view showed, so a stale view is refused with 409.
+ */
+export async function setRoles(teammateId: string, request: SetRolesRequest): Promise<TeammateResponse> {
+  return parseTeammate(await postJson(`/teammates/${encodeURIComponent(teammateId)}/roles`, request));
+}
+
+function parseTeammate(body: unknown): TeammateResponse {
+  const parsed = teammateResponse.safeParse(body);
+  if (!parsed.success) throw new ApiRequestError("bad_response", "the teammate from the API does not match the shared schema");
   return parsed.data;
 }

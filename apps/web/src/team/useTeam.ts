@@ -1,6 +1,7 @@
 // The team from `GET /api/team`, loaded when the screen opens and on retry.
-// The screen owns this state; it is read-only, since modes are set on each
-// person's profile. A mode or role change made anywhere arrives on the
+// The screen owns this state. Modes are set on each person's profile; people
+// and roles are changed on this screen, which calls `refresh` after each write
+// so the table follows at once. A mode or role change made anywhere arrives on the
 // board's stream; `liveKey` (teamLiveKey) then changes and the team is
 // reloaded in place, keeping the table shown meanwhile. Every request takes a
 // ticket (`responseOrder`), so an older answer that arrives after a newer one
@@ -16,7 +17,7 @@ function reasonOf(err: unknown): string {
   return err instanceof Error ? err.message : "the team could not be loaded";
 }
 
-export function useTeam(liveKey?: string): TeamState {
+export function useTeam(liveKey?: string): { state: TeamState; refresh: () => void } {
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   const [team, setTeam] = useState<TeamResponse | undefined>();
@@ -39,25 +40,39 @@ export function useTeam(liveKey?: string): TeamState {
     return () => abort.abort();
   }, [attempt]);
 
+  // Reload in place, keeping the team shown meanwhile. An answer for a request
+  // older than one already shown is dropped.
+  const reloads = useRef(new Set<AbortController>());
+  const refresh = useCallback(() => {
+    const abort = new AbortController();
+    reloads.current.add(abort);
+    const ticket = order.current.start();
+    fetchTeam(abort.signal)
+      .then(
+        (fresh) => {
+          if (order.current.settle(ticket)) setTeam(fresh);
+        },
+        () => {
+          // Keep the team shown; the next change on the stream tries again.
+        },
+      )
+      .finally(() => reloads.current.delete(abort));
+  }, []);
+  useEffect(() => {
+    const running = reloads.current;
+    return () => {
+      for (const abort of running) abort.abort();
+    };
+  }, []);
+
   const seenKey = useRef(liveKey);
   useEffect(() => {
     const next = followLiveKey(seenKey.current, liveKey);
     seenKey.current = next.seen;
-    if (!next.reload) return;
-    const abort = new AbortController();
-    const ticket = order.current.start();
-    fetchTeam(abort.signal).then(
-      (fresh) => {
-        if (order.current.settle(ticket)) setTeam(fresh);
-      },
-      () => {
-        // Keep the team shown; the next change on the stream tries again.
-      },
-    );
-    return () => abort.abort();
-  }, [liveKey]);
+    if (next.reload) refresh();
+  }, [liveKey, refresh]);
 
-  if (loadError !== undefined) return { phase: "error", reason: loadError, retry };
-  if (!team) return { phase: "loading" };
-  return { phase: "ready", team };
+  if (loadError !== undefined) return { state: { phase: "error", reason: loadError, retry }, refresh };
+  if (!team) return { state: { phase: "loading" }, refresh };
+  return { state: { phase: "ready", team }, refresh };
 }

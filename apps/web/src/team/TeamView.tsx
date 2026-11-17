@@ -1,6 +1,7 @@
 import { Legend } from "../board/Legend.tsx";
 import { boardHref } from "../route.ts";
 import { aiPickCount, emptyReason, teamColumns, teamRows, teamScreen, type TeamCellView } from "./teamView.ts";
+import { PeoplePanel } from "./TeamEdit.tsx";
 import { useTeam } from "./useTeam.ts";
 import "../profile/profile.css";
 import "./team.css";
@@ -37,16 +38,19 @@ function Header() {
           <a href={boardHref}>Team board</a> › Team
         </nav>
         <h1>How the team works with AI</h1>
-        <p>Every person against every step: the mode each one works it in, and whether the AI may pick its cards on its own. Open a cell to change it on that person's profile.</p>
+        <p>
+          Every person against every step: the mode each one works it in, and whether the AI may pick its cards on its own. Open a cell to
+          change it on that person's profile. Add people and change their roles below the table.
+        </p>
       </div>
       <Legend modesOnly />
     </header>
   );
 }
 
-/** `#/team`: every person against every step, read from `GET /api/team`. */
+/** `#/team`: every person against every step, read from `GET /api/team`, and the people and their roles, changed here. */
 export function TeamView({ liveKey }: { liveKey?: string | undefined }) {
-  const state = useTeam(liveKey);
+  const { state, refresh } = useTeam(liveKey);
 
   if (state.phase === "loading") {
     return (
@@ -81,6 +85,7 @@ export function TeamView({ liveKey }: { liveKey?: string | undefined }) {
         <section className="profile__panel" aria-label="The team">
           <p className="profile__empty">{emptyReason(team)}</p>
         </section>
+        <PeoplePanel team={team} onChanged={refresh} />
       </main>
     );
   }
@@ -142,6 +147,7 @@ export function TeamView({ liveKey }: { liveKey?: string | undefined }) {
           applies. – means the step is not in that person's chain. Follows from each person's modes and what the AI teammate can do today.
         </p>
       </section>
+      <PeoplePanel team={team} onChanged={refresh} />
     </main>
   );
 }

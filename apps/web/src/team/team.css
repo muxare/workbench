@@ -105,3 +105,181 @@
 .team__key {
   line-height: 1.6;
 }
+
+/*
+ * People and roles (TeamEdit.tsx): the "Changing as" picker, a row per
+ * person with their roles, and the form that adds a person. No artboard draws
+ * these; they reuse the profile's panel, the board's avatars and the card
+ * screen's `.field` and `.button`, with the log filter's select.
+ */
+
+.team-edit {
+  gap: 16px;
+}
+
+.team-edit__as {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.team-edit select,
+.team-edit__field input {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  min-height: 36px;
+}
+.team-edit__field input[aria-invalid="true"],
+.team-edit__roles[aria-invalid="true"] .team-edit__checks {
+  border-color: var(--needs-input);
+}
+
+.team-edit__person {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr);
+  gap: 12px 24px;
+  align-items: start;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.team-edit__person .team-edit__actions {
+  grid-column: 2;
+}
+
+.team-edit__who {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+.team-edit__who:hover .team-edit__name {
+  text-decoration: underline;
+}
+
+.team-edit__name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.team-edit__roles {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.team-edit__legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.team-edit__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.team-edit__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  font-size: 14px;
+}
+.team-edit__check input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.team-edit__main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.team-edit__hint {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.team-edit__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.team-edit .button--quiet {
+  background: var(--surface);
+  color: var(--fg);
+  border-color: var(--line);
+}
+.team-edit .button:disabled {
+  cursor: default;
+  background: var(--line-soft);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.team-edit__status {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.team-edit__error {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--needs-input);
+}
+
+.team-edit__add {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.team-edit__subhead {
+  margin: 0;
+  font-size: 15px;
+}
+
+.team-edit__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 320px));
+  gap: 12px 24px;
+}
+
+@media (max-width: 720px) {
+  .team-edit__person,
+  .team-edit__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .team-edit__person .team-edit__actions {
+    grid-column: 1;
+  }
+}

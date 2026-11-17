@@ -95,6 +95,7 @@ describe("describeEvent", () => {
   it("describes a person joining and a roles change", () => {
     const change = { id: "r", type: "roles_changed", teammate_id: "t-be", actor: "t-be", at: "2026-11-06T09:55:00Z" } as const;
     expect(describeEvent({ ...change, from: [], to: ["be"] }, board)).toBe("BE joined the team as BE");
+    expect(describeEvent({ ...change, actor: "t-po", from: [], to: ["be", "fe"] }, board)).toBe("PO added BE to the team as BE, FE");
     expect(describeEvent({ ...change, actor: "t-po", from: ["be"], to: ["be", "fe"] }, board)).toBe(
       "PO changed BE's roles to BE, FE · was: BE",
     );
