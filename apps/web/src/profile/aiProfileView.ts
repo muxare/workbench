@@ -116,7 +116,9 @@ export interface CardItem {
  * undefined. Who writes is read from the function's protocol for the mode
  * (`aiWrites`, through the board's `functions`), never from the mode's name;
  * a function the board does not know counts as one the AI does not write.
- * The card's owner verifies, as in every protocol where the AI writes.
+ * The card's owner is named as the verifier, because a mode is the owner's
+ * choice and `delegate` reads "AI does it, I verify" from their side; a
+ * function's `checks.human.approver` may name others, and the line does not.
  */
 export function writesLine(card: Card, m: Mode, board: BoardResponse): string | undefined {
   const definition = board.functions.find((f) => f.name === card.function_id);
