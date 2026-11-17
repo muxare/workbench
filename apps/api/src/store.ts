@@ -240,6 +240,10 @@ const BATCH_TYPES: StreamEventType[] = ["batch_handed", "batch_planned", "status
  * (type, seq) index. Only events from the first `batch_handed` on are read,
  * since an earlier status change cannot affect a batch; with no batch handed
  * yet, nothing is.
+ *
+ * The read still grows with the whole stream after that first hand-over, and it
+ * runs on every board read, AI pick and batch write. That is fine at today's
+ * size; a larger board would need an index on batch membership or a snapshot.
  */
 async function batchEvents(db: Db): Promise<StreamEvent[]> {
   const [first] = await db
