@@ -25,7 +25,7 @@ import { inventedSeedAt } from "./seed/invented.ts";
 /** The invented seed as loaded on 2026-11-07, so Sprint 4 runs from 2026-11-05 to 2026-11-19. */
 const inventedSeed = inventedSeedAt(new Date("2026-11-07T08:00:00Z"));
 import { withProfile } from "./seed/withProfile.ts";
-import { addCard, addTeammate, appendEvent, cardStatus, lastSeq, seed, seedEvents, type SeedData } from "./store.ts";
+import { addCard, addTeammate, appendEvent, cardStatus, lastSeq, listCards, seed, seedEvents, type SeedData } from "./store.ts";
 
 /** Every event the seed stores, the people's joining events first, so positions in the stream match. */
 const seeded = seedEvents(inventedSeed);
@@ -1012,6 +1012,15 @@ describe("POST /api/teammates/:id/leave", () => {
     await expectProblem(await leave(newcomer.id, AI), 403, "forbidden");
     await expectProblem(await leave(newcomer.id, "invented-nobody"), 422, "rule_violation", /actor/);
     await expectProblem(await post(`/api/teammates/${newcomer.id}/leave`, {}), 400, "invalid_request");
+  });
+
+  it("refuses a card owned by, and a question asked of, a person who left", async () => {
+    expect((await leave(newcomer.id)).status).toBe(200);
+    const card = { actor: PO, title: "Invented card", function_id: "frame_problem", owner: newcomer.id, links: [] };
+    await expectProblem(await post("/api/cards", card), 422, "rule_violation", /has left the team/);
+    const inProgress = (await listCards(db)).find((c) => c.status.state === "in_progress")!;
+    const asked = { actor: AI, asked_of: newcomer.id, text: "Invented?", why_it_blocks: "Invented." };
+    await expectProblem(await post(`/api/cards/${inProgress.id}/questions`, asked), 422, "rule_violation", /asked_of 'invented-newcomer' has left the team/);
   });
 
   it("lets a person take themselves off", async () => {

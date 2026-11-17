@@ -1,5 +1,5 @@
 // The team screen's writes: add a person, change a person's roles, take a
-// person off the team, and the
+// person off the team (asked first, under each person's roles), and the
 // "Changing as" picker that names who makes each change, since there is no
 // sign-in. The choice is remembered per browser (changingAsStore.ts). Every
 // write is answered by the API, and only the team reloaded after it changes
@@ -96,12 +96,15 @@ function LeaveTeam({
   team,
   actor,
   onLeft,
+  onStart,
 }: {
   person: HumanTeammate;
   team: TeamResponse;
   actor: string | undefined;
   /** Called once the API has taken the person off the team. */
   onLeft: (person: HumanTeammate) => void;
+  /** Called when the viewer starts another change, so the panel's last message clears. */
+  onStart: () => void;
 }) {
   const [asking, setAsking] = useState(false);
   const [sending, setSending] = useState(false);
@@ -155,6 +158,7 @@ function LeaveTeam({
             disabled={actor === undefined}
             onClick={() => {
               setAsking(true);
+              onStart();
               setFailure(undefined);
             }}
           >
@@ -179,6 +183,7 @@ function RolesEditor({
   actor,
   onSaved,
   onLeft,
+  onStart,
 }: {
   person: HumanTeammate;
   team: TeamResponse;
@@ -187,6 +192,8 @@ function RolesEditor({
   /** Reload the team; resolves to whether the reload reached the API. */
   onSaved: () => Promise<boolean>;
   onLeft: (person: HumanTeammate) => void;
+  /** Called when the viewer starts a change here, so the panel's last message clears. */
+  onStart: () => void;
 }) {
   // The roles the API last answered with, until the reloaded team brings them, so a second
   // save right after the first sends the right `was` even if the reload is slow or fails.
@@ -261,6 +268,7 @@ function RolesEditor({
         onChange={(next) => {
           setDraft(next);
           setSaved(false);
+          onStart();
         }}
         disabled={saving || actor === undefined}
         invalid={empty}
@@ -309,7 +317,7 @@ function RolesEditor({
           </span>
         )}
       </div>
-      <LeaveTeam person={person} team={team} actor={actor} onLeft={onLeft} />
+      <LeaveTeam person={person} team={team} actor={actor} onLeft={onLeft} onStart={onStart} />
     </form>
   );
 }
@@ -320,11 +328,14 @@ function AddPerson({
   options,
   actor,
   onAdded,
+  onStart,
 }: {
   team: TeamResponse;
   options: RoleOption[];
   actor: string | undefined;
   onAdded: () => Promise<boolean>;
+  /** Called when the viewer starts a change here, so the panel's last message clears. */
+  onStart: () => void;
 }) {
   const [form, setForm] = useState<AddForm>(emptyAddForm);
   const [tried, setTried] = useState(false);
@@ -339,6 +350,7 @@ function AddPerson({
   const update = (next: Partial<AddForm>) => {
     setForm({ ...form, ...next });
     setAdded(undefined);
+    onStart();
   };
 
   const submit = (e: FormEvent) => {
@@ -472,11 +484,13 @@ export function PeoplePanel({ team, onChanged }: { team: TeamResponse; onChanged
     setRemembered(id);
     rememberChangingAs(id);
   };
-  // The row goes once the reloaded team leaves the person out; the panel says what happened.
+  // The row goes once the reloaded team leaves the person out; the panel says what happened
+  // until the next change, as "Added …" and "Saved." do.
   const onLeft = (person: HumanTeammate) => {
     setLeft(person.name);
     void onChanged();
   };
+
 
   return (
     <section className="profile__panel team-edit" aria-labelledby="people-heading">
@@ -514,9 +528,10 @@ export function PeoplePanel({ team, onChanged }: { team: TeamResponse; onChanged
           actor={actor}
           onSaved={onChanged}
           onLeft={onLeft}
+          onStart={() => setLeft(undefined)}
         />
       ))}
-      <AddPerson team={team} options={options} actor={actor} onAdded={onChanged} />
+      <AddPerson team={team} options={options} actor={actor} onAdded={onChanged} onStart={() => setLeft(undefined)} />
     </section>
   );
 }

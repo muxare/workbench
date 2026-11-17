@@ -492,7 +492,8 @@ async function checkTeammateLeft(db: Db, event: TeammateLeftEvent, pending: Pend
     .filter((c) => c.owner === id && (pending.statuses.get(c.id) ?? c.status).state !== "done")
     .map((c) => cardName(c.id));
   if (open.length > 0) {
-    throw new StoreError(`${who} owns ${open.join(", ")}, which ${open.length === 1 ? "is" : "are"} not done; give ${open.length === 1 ? "it" : "them"} another owner or finish ${open.length === 1 ? "it" : "them"} first`);
+    const one = open.length === 1;
+    throw new StoreError(`${who} owns ${open.join(", ")}, which ${one ? "is" : "are"} not done; a person leaves once every card they own is done`);
   }
   const waiting = (await listQuestions(db))
     .filter((q) => q.asked_of === id && q.answer === undefined)
@@ -577,10 +578,15 @@ export async function cardWithdrawal(db: Db, cardId: string): Promise<CardWithdr
  * `checkLogFilterChange`, a critic gate change `checkCriticGateChange`, a
  * team name change `checkTeamNamed`, a handed batch `checkBatchHanded` and a
  * batch's plan `checkBatchPlanned`.
+ * Before all of these, the actor must not be a person who has left.
  * `pending` holds what earlier events in the same write have changed.
  */
 async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise<StreamEvent> {
   const event = streamEvent.parse(input);
+  // A person who left acts on nothing, whoever records the event: a route, the runner or the GitHub webhook.
+  if (pending.left.has(event.actor) || (await hasLeft(db, event.actor))) {
+    throw new StoreError(`${event.id}: ${event.actor} has left the team and changes nothing on it`, "forbidden");
+  }
   if (isCardEvent(event) && (pending.withdrawn.has(event.card_id) || (await cardWithdrawal(db, event.card_id)))) {
     throw new StoreError(`${event.id}: card ${event.card_id} was withdrawn and takes no further event`, "conflict");
   }
@@ -855,6 +861,14 @@ export async function addCycle(db: Db, input: Cycle): Promise<void> {
 }
 
 /**
+ * A new card's owner must not be a person who has left: checked inside the
+ * serialized write, so a card cannot be added while its owner is taken off.
+ */
+async function checkOwnerOnTeam(db: Db, owner: string, what: string): Promise<void> {
+  if (await hasLeft(db, owner)) throw new StoreError(`${what}: owner '${owner}' has left the team`, "rule_violation");
+}
+
+/**
  * Add a card. `functionIds` are the function names read from process/
  * (see `loadFunctionIds`); the store never lists them itself.
  */
@@ -867,13 +881,16 @@ export async function addCard(db: Db, input: CardRecord, functionIds: ReadonlySe
   if (/^[0-9]+$/.test(c.id) && !Number.isSafeInteger(Number(c.id))) {
     throw new StoreError(`${c.id}: a numeric card id must be at most ${Number.MAX_SAFE_INTEGER}`, "rule_violation");
   }
-  await db.insert(cards).values({
-    id: c.id,
-    title: c.title,
-    functionId: c.function_id,
-    owner: c.owner,
-    milestone: c.milestone ?? null,
-    links: c.links,
+  await serialized(db, async () => {
+    await checkOwnerOnTeam(db, c.owner, c.id);
+    await db.insert(cards).values({
+      id: c.id,
+      title: c.title,
+      functionId: c.function_id,
+      owner: c.owner,
+      milestone: c.milestone ?? null,
+      links: c.links,
+    });
   });
 }
 
@@ -888,19 +905,30 @@ export async function addCard(db: Db, input: CardRecord, functionIds: ReadonlySe
  * primary key stops a duplicate, and the losing writer may instead fail with
  * SQLITE_BUSY, since no busy_timeout is set. Answers with the new card's id.
  */
-export async function addNumberedCard(db: Db, input: Omit<CardRecord, "id">, functionIds: ReadonlySet<string>): Promise<string> {
+export async function addNumberedCard(
+  db: Db,
+  input: Omit<CardRecord, "id">,
+  functionIds: ReadonlySet<string>,
+  options: { actor?: string } = {},
+): Promise<string> {
   const c = cardRecord.omit({ id: true }).parse(input);
   if (!functionIds.has(c.function_id)) {
     throw new StoreError(`no function '${c.function_id}' in process/functions`, "unknown_function");
   }
-  const row = await db.get<{ id: string }>(sql`
-    INSERT INTO ${cards} (id, title, function_id, owner, milestone, links)
-    SELECT CAST(COALESCE(MAX(CAST(id AS INTEGER)), 0) + 1 AS TEXT),
-      ${c.title}, ${c.function_id}, ${c.owner}, ${c.milestone ?? null}, ${JSON.stringify(c.links)}
-    FROM ${cards}
-    WHERE id GLOB '[1-9]*' AND id NOT GLOB '*[^0-9]*'
-    RETURNING id`);
-  return row.id;
+  return serialized(db, async () => {
+    if (options.actor !== undefined && (await hasLeft(db, options.actor))) {
+      throw new StoreError(`${options.actor} has left the team and changes nothing on it`, "forbidden");
+    }
+    await checkOwnerOnTeam(db, c.owner, "the card");
+    const row = await db.get<{ id: string }>(sql`
+      INSERT INTO ${cards} (id, title, function_id, owner, milestone, links)
+      SELECT CAST(COALESCE(MAX(CAST(id AS INTEGER)), 0) + 1 AS TEXT),
+        ${c.title}, ${c.function_id}, ${c.owner}, ${c.milestone ?? null}, ${JSON.stringify(c.links)}
+      FROM ${cards}
+      WHERE id GLOB '[1-9]*' AND id NOT GLOB '*[^0-9]*'
+      RETURNING id`);
+    return row.id;
+  });
 }
 
 /** One teammate; a person comes with their roles and process profile derived from their teammate events. */

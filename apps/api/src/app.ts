@@ -425,6 +425,8 @@ export function createApp(deps: AppDeps) {
           ...(req.milestone === undefined ? {} : { milestone: req.milestone }),
         },
         functionIds,
+        // The store checks the actor and the owner again inside its write, so a leave in between cannot slip through.
+        { actor: req.actor },
       );
       return c.json({ card: await cardOr404(id) }, 201);
     })

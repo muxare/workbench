@@ -108,7 +108,8 @@
 
 /*
  * People and roles (TeamEdit.tsx): the "Changing as" picker, a row per
- * person with their roles, and the form that adds a person. No artboard draws
+ * person with their roles and, under them, a quiet "Take off the team…"
+ * button that asks before it sends, and the form that adds a person. No artboard draws
  * these; they reuse the profile's panel and h2, the board's avatars, and the
  * shared `.field` (with `.field--inline` for the selects) and `.button` in
  * ../styles.css. Checkbox rows follow the Profile artboard's checkboxes: 44px

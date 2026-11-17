@@ -12,6 +12,7 @@ import { inventedSeedAt, runningCycle } from "./seed/invented.ts";
 const inventedSeed = inventedSeedAt(new Date("2026-11-07T08:00:00Z"));
 import {
   addCard,
+  addNumberedCard,
   addTeammate,
   appendEvent,
   appendEvents,
@@ -251,6 +252,21 @@ describe("leaving the team", () => {
     await appendEvent(db, left("t-human", "t-gone"));
     const asked: StreamEvent = { ...(tiny.events[4] as StreamEvent), id: "v-ask-again", at: at(56) } as StreamEvent;
     await expect(appendEvent(db, asked)).rejects.toThrow(/has left the team/);
+  });
+
+  it("refuses any event made by a person who left, and a card owned by them", async () => {
+    await appendEvent(db, left("t-gone"));
+    await expect(
+      appendEvent(db, { id: "rep-gone", type: "report_posted", card_id: "k1", actor: "t-gone", at: at(58), text: "Invented." }),
+    ).rejects.toMatchObject({ code: "forbidden", message: expect.stringMatching(/has left the team/) });
+    await expect(
+      appendEvent(db, { id: "ans-gone", type: "answered", card_id: "k1", actor: "t-gone", at: at(58), question_id: "q1", answer: "Invented." }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    const card = { id: "k9", title: "Invented card", function_id: "frame_problem", owner: "t-gone", links: [] };
+    await expect(addCard(db, card, functionIds)).rejects.toThrow(/owner 't-gone' has left the team/);
+    await expect(addNumberedCard(db, card, functionIds)).rejects.toThrow(/has left the team/);
+    await expect(addNumberedCard(db, { ...card, owner: "t-human" }, functionIds, { actor: "t-gone" })).rejects.toMatchObject({ code: "forbidden" });
+    expect((await listCards(db)).map((c) => c.id)).toEqual(["k1", "k2"]);
   });
 
   it("keeps a person who left from changing roles or modes, or being changed, and their id from being added again", async () => {
