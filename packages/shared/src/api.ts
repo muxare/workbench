@@ -427,11 +427,15 @@ export type ApiError = z.infer<typeof apiError>;
  * - `recorded`: `events` were appended to the card `card_id`. A `reason`
  *   here says why the card did not move although the delivery would move
  *   it, because its sender may not under the card's mode (`mayMoveCard`,
- *   or `maySendCardBack` for the move back on changes requested).
+ *   or `maySendCardBack` for the move back on changes requested), or
+ *   because of the lane it is in; `events` then end with a `move_skipped`.
  * - `ignored`: nothing was recorded, because the event is not one the board
  *   maps, or names no card on the board, or `reason` says otherwise.
  * - `refused`: the delivery names a card, but recording it would break a
  *   rule, such as a merge without a person's approval; `reason` says which.
+ *   A refused merge records only a `move_skipped`, in `events`, the first
+ *   time the delivery comes; a card that moved while the delivery was
+ *   handled records nothing.
  * - `duplicate`: the delivery (`X-GitHub-Delivery`) was recorded before.
  */
 export const webhookResponse = z.object({
