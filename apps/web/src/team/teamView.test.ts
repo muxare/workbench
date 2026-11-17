@@ -72,8 +72,8 @@ describe("teamRows", () => {
   });
 
   it("shows each person's mode, whether it is the default and whether the AI may pick, as the API says", () => {
-    expect(rows[0]?.cells[0]).toMatchObject({ kind: "mode", mode: "assist", label: "AI assists", isDefault: true, aiMayPick: true });
-    expect(rows[0]?.cells[1]).toMatchObject({ kind: "mode", mode: "delegate", label: "AI does it", isDefault: false, aiMayPick: false });
+    expect(rows[0]?.cells[0]).toMatchObject({ kind: "mode", mode: "assist", label: "AI assists", isDefault: true, aiMayPick: true, aiOnHandOff: false });
+    expect(rows[0]?.cells[1]).toMatchObject({ kind: "mode", mode: "delegate", label: "AI does it", isDefault: false, aiMayPick: false, aiOnHandOff: true });
     expect(rows[0]?.cells[0]?.description).toMatch(/may pick a Ready card on it on its own/);
     expect(rows[0]?.cells[1]?.description).toMatch(/does not pick it on its own/);
   });

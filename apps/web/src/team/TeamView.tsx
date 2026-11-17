@@ -21,6 +21,7 @@ function Cell({ cell }: { cell: TeamCellView }) {
         <span className={`pill pill--${cell.mode}`}>{cell.label}</span>
         <span className="team__meta mono" aria-hidden="true">
           {cell.aiMayPick && <span className="avatar avatar--sm avatar--ai team__ai">AI</span>}
+          {cell.aiOnHandOff && <span>hand-off</span>}
           {cell.isDefault && <span>default</span>}
         </span>
       </a>
@@ -136,7 +137,8 @@ export function TeamView({ liveKey }: { liveKey?: string | undefined }) {
           <span className="avatar avatar--sm avatar--ai team__ai" aria-hidden="true">
             AI
           </span>{" "}
-          the AI may pick a Ready card on the step on its own. “default” means the person has not chosen a mode, so the step's default
+          the AI may pick a Ready card on the step on its own. “hand-off” means the AI does not pick it on its own but takes it when a
+          person hands it over, in a session or a batch. “default” means the person has not chosen a mode, so the step's default
           applies. – means the step is not in that person's chain. Follows from each person's modes and what the AI teammate can do today.
         </p>
       </section>

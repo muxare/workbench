@@ -2,6 +2,7 @@
 // come from the function files in process/ and each cell from the person's
 // profile, both through the API; nothing here names a function or decides
 // whether the AI may pick.
+import { SESSION_MODES } from "@workbench/shared";
 import type { BoardResponse, HumanTeammate, Mode, TeamResponse, TeamStep } from "@workbench/shared";
 import { modeLabel, modeMeaning } from "../board/modes.ts";
 import { roleTitle, shortLabel } from "../board/teammates.ts";
@@ -48,6 +49,11 @@ export type TeamCellView =
       label: string;
       isDefault: boolean;
       aiMayPick: boolean;
+      /**
+       * The AI does not pick it on its own, but takes it when a person starts it
+       * in an agent session or hands it over in a batch (`SESSION_MODES`).
+       */
+      aiOnHandOff: boolean;
       /** The cell's accessible name and tooltip, in a sentence. */
       description: string;
     }
@@ -87,7 +93,12 @@ export function teamRows(team: TeamResponse): TeamRow[] {
         return { kind: "none", personId: teammate.id, href, description: `${teammate.name}: ${step.title} is not in their chain.` };
       }
       const how = `${modeMeaning[cell.mode]}${cell.mode_is_default ? " (the step's default)" : ""}`;
-      const ai = cell.ai_may_pick ? "The AI may pick a Ready card on it on its own." : "The AI does not pick it on its own.";
+      const aiOnHandOff = !cell.ai_may_pick && SESSION_MODES.includes(cell.mode);
+      const ai = cell.ai_may_pick
+        ? "The AI may pick a Ready card on it on its own."
+        : aiOnHandOff
+          ? "The AI does not pick it on its own, but takes it when a person hands it over, in a session or a batch."
+          : "The AI does not pick it on its own.";
       return {
         kind: "mode",
         personId: teammate.id,
@@ -96,6 +107,7 @@ export function teamRows(team: TeamResponse): TeamRow[] {
         label: modeLabel[cell.mode],
         isDefault: cell.mode_is_default,
         aiMayPick: cell.ai_may_pick,
+        aiOnHandOff,
         description: `${teammate.name}, ${step.title}: ${how}. ${ai}`,
       };
     }),
