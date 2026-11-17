@@ -839,7 +839,7 @@ describe("POST /api/teammates", () => {
   });
 
   it("refuses no roles, a repeated role, no name and an id that is not plain with 400", async () => {
-    await expectProblem(await post("/api/teammates", { ...newcomer, roles: [] }), 400, "invalid_request", /roles/);
+    await expectProblem(await post("/api/teammates", { ...newcomer, roles: [] }), 400, "invalid_request", /roles: a person holds at least one role/);
     await expectProblem(await post("/api/teammates", { ...newcomer, roles: ["fe", "fe"] }), 400, "invalid_request", /listed twice/);
     await expectProblem(await post("/api/teammates", { ...newcomer, name: " " }), 400, "invalid_request", /name/);
     await expectProblem(await post("/api/teammates", { ...newcomer, id: "Invented Newcomer" }), 400, "invalid_request", /id/);

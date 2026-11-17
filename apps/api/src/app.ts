@@ -614,22 +614,19 @@ export function createApp(deps: AppDeps) {
     .post("/teammates", async (c) => {
       const req = await body(c, addTeammateRequest);
       const team = await listTeammates(db);
-      const taken = () => new ApiProblem("conflict", `there is already a teammate '${req.id}'; choose another id`);
-      if (team.some((t) => t.id === req.id)) throw taken();
+      if (team.some((t) => t.id === req.id)) throw new ApiProblem("conflict", `there is already a teammate '${req.id}'; choose another id`);
       // There is no sign-in, so the request names who adds the person. On a team with no person
-      // yet nobody could, so the first person adds themselves.
+      // yet nobody could, so the first person adds themselves. The store checks the id and the
+      // empty team again inside its write, so two such requests cannot both win (409).
       const founding = !team.some((t) => t.kind === "human") && req.actor === req.id;
       if (!founding) {
         const actor = await teammateOr422(req.actor, "actor");
         if (actor.kind !== "human") throw new ApiProblem("forbidden", `a person is added by a person, not ${actor.id}`);
       }
-      try {
-        await addTeammate(db, { kind: "human", id: req.id, name: req.name, roles: req.roles }, now().toISOString(), req.actor);
-      } catch (err) {
-        // Another request may have taken the id between the check and the insert.
-        if (!(err instanceof StoreError) && (await getTeammate(db, req.id))) throw taken();
-        throw err;
-      }
+      await addTeammate(db, { kind: "human", id: req.id, name: req.name, roles: req.roles }, now().toISOString(), {
+        addedBy: req.actor,
+        founding,
+      });
       const response: TeammateResponse = { teammate: await personOr404(req.id) };
       return c.json(response, 201);
     })

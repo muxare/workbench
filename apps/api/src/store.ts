@@ -568,7 +568,12 @@ async function appendNow(db: Db, inputs: readonly StreamEvent[]): Promise<Stored
   const inserted = await db.insert(events).values(checked.map(toRow)).returning({ seq: events.seq, id: events.id });
   const seqById = new Map(inserted.map((r) => [r.id, r.seq]));
   const stored = checked.map((event) => ({ seq: seqById.get(event.id) ?? 0, event }));
-  // The events are stored by now; a failing listener must not fail the write.
+  notify(db, stored);
+  return stored;
+}
+
+/** Tell every listener about events stored by now; a failing listener must not fail the write. */
+function notify(db: Db, stored: readonly StoredEvent[]): void {
   for (const s of stored) {
     for (const listener of listeners.get(db) ?? []) {
       try {
@@ -578,7 +583,6 @@ async function appendNow(db: Db, inputs: readonly StreamEvent[]): Promise<Stored
       }
     }
   }
-  return stored;
 }
 
 /** Append one event to the stream. Events are never updated or deleted. */
@@ -623,28 +627,47 @@ export function joiningEvent(t: TeammateRecord, at: string, actor: string = t.id
 /**
  * Add a teammate. A person joins with the roles in `input`, recorded as a
  * `roles_changed` event from no roles, made at `joinedAt` by `addedBy` (the
- * person themselves when left out), with the id `roles-<teammate id>-joined`;
- * if that event is refused, for instance because `addedBy` is not a person,
- * the person is not added. A person starts with no chosen modes; their
- * process profile grows from `mode_changed` events (see `profileEvents`).
+ * person themselves when left out), with the id `roles-<teammate id>-joined`.
+ * The row and the joining event are written in one batch, so a reader never
+ * sees a person without roles, and inside the store's serialized writes, so
+ * the checks below cannot interleave with another add:
+ * - the id must be free (`conflict`);
+ * - `addedBy`, when someone else, must be a person (`not_found`, `forbidden`);
+ * - with `founding`, the team must have no person yet (`conflict`), which is
+ *   how the first person adds themselves.
+ * A person starts with no chosen modes; their process profile grows from
+ * `mode_changed` events (see `profileEvents`).
  */
 export async function addTeammate(
   db: Db,
   input: TeammateRecord,
   joinedAt: string = new Date().toISOString(),
-  addedBy?: string,
+  options: { addedBy?: string; founding?: boolean } = {},
 ): Promise<void> {
   const t = teammateRecord.parse(input);
-  await db.insert(teammates).values({ id: t.id, kind: t.kind, name: t.name });
-  const joined = joiningEvent(t, joinedAt, addedBy);
-  if (!joined) return;
-  try {
-    await appendEvents(db, [joined]);
-  } catch (err) {
-    // Nothing refers to the row yet, so it goes: a person never exists without roles.
-    await db.delete(teammates).where(eq(teammates.id, t.id));
-    throw err;
-  }
+  await serialized(db, async () => {
+    const [taken] = await db.select({ id: teammates.id }).from(teammates).where(eq(teammates.id, t.id));
+    if (taken) throw new StoreError(`there is already a teammate '${t.id}'; choose another id`, "conflict");
+    if (options.founding) {
+      const [person] = await db.select({ id: teammates.id }).from(teammates).where(eq(teammates.kind, "human")).limit(1);
+      if (person) throw new StoreError(`the team already has a person, so ${t.id} is added by one of them`, "conflict");
+    }
+    const row = db.insert(teammates).values({ id: t.id, kind: t.kind, name: t.name });
+    const joined = joiningEvent(t, joinedAt, options.addedBy);
+    if (!joined) {
+      await row;
+      return;
+    }
+    const event = streamEvent.parse(joined);
+    if (event.actor !== t.id) {
+      const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
+      if (!actor) throw new StoreError(`${event.id}: no teammate '${event.actor}'`, "not_found");
+      if (actor.kind !== "human") throw new StoreError(`${event.id}: roles are set by a person, not ${event.actor}`, "forbidden");
+    }
+    // One batch is one transaction: the row and its joining event are stored together or not at all.
+    const [, inserted] = await db.batch([row, db.insert(events).values(toRow(event)).returning({ seq: events.seq })]);
+    notify(db, [{ seq: inserted[0]?.seq ?? 0, event }]);
+  });
 }
 
 /**
