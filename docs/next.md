@@ -1,6 +1,6 @@
 # Next
 
-Last updated 2026-11-15 by Claude.
+Last updated 2026-11-17 by Claude.
 
 ## Where the work stands
 
@@ -45,6 +45,7 @@ Last updated 2026-11-15 by Claude.
 - On 2026-11-14, merged to `main` through pull request #6 on 2026-11-15: Mikael chose to demo real cards on the workbench's own board, and that the demo's cards are chosen at the cut, not reserved now. Eleven real backlog cards, #6 to #15, were entered from `teams/workbench/cards.json` as ordinary work, and `docs/demo.md` has a new Part 1 (not yet dry-run), with the invented script as Part 2 and the fallback. The same branch fixes `team:serve`, which since card #5 served `apps/api/data/workbench.db` instead of the team's board. Decided the same day: deploy to Azure after ConCon, sign-in first; cards #10 to #13. See `docs/decisions.md`.
 - Decided with Mikael on 2026-11-09: the workbench is developed and demoed on one invented example project, a housing cooperative's laundry room booking and fault reporting, designed to stress the chain. It does not replace the Phase 2 run on a real project. See `docs/decisions.md`.
 - Decided with Mikael on 2026-11-08: the template lists the protocols' optional `note`, and a card with an unfinished `depends_on` cannot be picked (shared rule in `packages/shared`, used by the AI teammate and the API pick).
+- Merged to `main` from `feat/session-start-main-check`: a `SessionStart` hook (`.claude/hooks/main-behind-on-start.sh`, on `startup` and `clear`) fetches `origin/main`, fast-forwards `main` when the main checkout is on `main` and clean, and otherwise only reports; either way it tells Claude which pull requests were merged, whether app code changed, and to finish the after-merge routine. See `docs/decisions.md`.
 
 ## Waiting for Mikael
 
