@@ -1419,6 +1419,14 @@ a:hover {
   color: var(--needs-input);
 }
 
+/* As .moves__error: a refused question is not a card waiting on someone, so not --needs-input. */
+.ask__error {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
 .field {
   display: flex;
   flex-direction: column;

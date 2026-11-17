@@ -18,6 +18,7 @@ import {
   type LeaveTeamRequest,
   type AiTeammateProfileResponse,
   type AnswerRequest,
+  type AskRequest,
   type ApiErrorCode,
   type BatchResponse,
   type BoardResponse,
@@ -153,6 +154,14 @@ export async function fetchCard(cardId: string, signal?: AbortSignal): Promise<C
   const parsed = cardResponse.safeParse(await getJson(`/cards/${encodeURIComponent(cardId)}`, signal));
   if (!parsed.success) throw new ApiRequestError("bad_response", "the card from the API does not match the shared schema");
   return parsed.data;
+}
+
+/**
+ * `POST /api/cards/:id/questions`: a person asks a teammate a question on a
+ * card in progress. The card moves to Needs input, waiting on `asked_of`.
+ */
+export async function askQuestion(cardId: string, request: AskRequest): Promise<WriteResponse> {
+  return parseWrite(await postJson(`/cards/${encodeURIComponent(cardId)}/questions`, request), "the question");
 }
 
 /** `POST /api/cards/:id/questions/:questionId/answer`. A card waiting on the question goes back to In progress. */
