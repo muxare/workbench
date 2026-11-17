@@ -32,6 +32,7 @@ Rules:
 - Add a custom subagent in `.claude/agents/` only when the same kind of request has come up at least twice, and only if it adds tool limits, fresh eyes or a cheaper model. Keep the set small.
 - A rule that must hold every time goes in a hook, not in this file. Keep hooks few.
 - A repeatable procedure goes in a skill under `.claude/skills/`.
+- A batch handed to the AI is worked with the `work-batch` skill, one worktree subagent per card.
 - Record every new agent, hook or skill, and why, in `docs/decisions.md`.
 - After building or changing a screen in `apps/web`, run the `design-reviewer` subagent on it and its artboard, and fix or answer each mismatch it reports before handing back.
 
