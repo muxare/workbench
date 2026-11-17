@@ -1,5 +1,6 @@
 import type { BoardResponse, Teammate } from "@workbench/shared";
 import type { BoardConnection } from "../api/useBoard.ts";
+import { teamHref } from "../route.ts";
 import { Board } from "./Board.tsx";
 import { Connector, type Side } from "./Connector.tsx";
 import { Legend } from "./Legend.tsx";
@@ -43,6 +44,11 @@ export function BoardView({
             Everyone, AI included, picks work from the same board. Each person's process map sets how they work with AI.
             Results, questions and status changes land on the card and in the cycle log.
           </p>
+          <nav aria-label="Screens">
+            <a className="page__nav-link" href={teamHref}>
+              Every person's modes, step by step
+            </a>
+          </nav>
         </div>
         <Legend />
       </header>

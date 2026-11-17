@@ -5,6 +5,8 @@ import { ProfileView } from "./profile/ProfileView.tsx";
 import { profileLiveKey } from "./profile/liveKey.ts";
 import { kindOnBoard, teammateScreen, useTeammateKind } from "./profile/teammateScreen.ts";
 import { CardDetailView } from "./card/CardDetailView.tsx";
+import { TeamView } from "./team/TeamView.tsx";
+import { teamLiveKey } from "./team/teamView.ts";
 import { useRoute } from "./route.ts";
 
 function BoardLoading() {
@@ -67,6 +69,8 @@ export function App() {
   const route = useRoute();
 
   if (route.view === "teammate") return <TeammateRoute teammateId={route.teammateId} state={state} />;
+  // The team screen loads on its own and follows the board's stream once the board is there.
+  if (route.view === "team") return <TeamView liveKey={teamLiveKey(state.phase === "ready" ? state.board : undefined)} />;
   if (state.phase === "loading") return <BoardLoading />;
   if (state.phase === "error") return <BoardError reason={state.reason} retry={state.retry} />;
   if (route.view === "card") {

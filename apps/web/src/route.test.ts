@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardHref, parseRoute, teammateHref } from "./route.ts";
+import { cardHref, parseRoute, teamHref, teammateHref } from "./route.ts";
 
 describe("parseRoute", () => {
   it("reads a card id from #/cards/<id>", () => {
@@ -10,6 +10,11 @@ describe("parseRoute", () => {
   it("reads a teammate's profile from the hash", () => {
     expect(parseRoute("#/teammates/invented-fe")).toEqual({ view: "teammate", teammateId: "invented-fe" });
     expect(parseRoute("#/teammates/invented-fe/")).toEqual({ view: "teammate", teammateId: "invented-fe" });
+  });
+
+  it("reads the team screen from #/team", () => {
+    expect(parseRoute(teamHref)).toEqual({ view: "team" });
+    expect(parseRoute("#/team/")).toEqual({ view: "team" });
   });
 
   it("round-trips ids that need encoding", () => {
@@ -27,6 +32,8 @@ describe("parseRoute", () => {
       "#/teammates/",
       "#/teammates/a/b",
       "#/other/x",
+      "#/team/x",
+      "#/teams",
       "#/cards/%E0%A4%A",
       "#/teammates/%E0%A4%A",
     ]) {

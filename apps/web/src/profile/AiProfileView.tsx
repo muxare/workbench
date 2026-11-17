@@ -1,7 +1,7 @@
 import { cardEventType, type BoardResponse } from "@workbench/shared";
 import { ModePill } from "../board/ModePill.tsx";
 import { modeMeaning } from "../board/modes.ts";
-import { boardHref } from "../route.ts";
+import { boardHref, teamHref } from "../route.ts";
 import {
   aiStepRows,
   nextItems,
@@ -122,7 +122,7 @@ export function AiProfileView({ teammateId, board }: { teammateId: string; board
         </span>
         <div className="profile__intro">
           <nav className="profile__crumbs" aria-label="Breadcrumb">
-            <a href={boardHref}>Team board</a> › Team › <span>{profile.teammate.name}</span>
+            <a href={boardHref}>Team board</a> › <a href={teamHref}>Team</a> ›{" "}<span>{profile.teammate.name}</span>
           </nav>
           <h1>How I work with the team</h1>
           <p>I work in the mode each person set for the step. Change a step on your own profile and I follow it from the next pick.</p>

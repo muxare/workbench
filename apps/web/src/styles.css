@@ -113,6 +113,21 @@ a:hover {
   color: var(--muted);
 }
 
+/* A link from the board's header to another screen, such as the team. */
+.page__nav-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.page__nav-link:hover {
+  color: var(--delegate);
+}
+
 .state-message {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -159,6 +174,11 @@ a:hover {
   flex-direction: column;
   gap: 10px;
   font-size: 13px;
+}
+
+/* The modes alone, as on the team screen: no line column to share the width with. */
+.legend--modes {
+  width: 240px;
 }
 
 .legend__head {
