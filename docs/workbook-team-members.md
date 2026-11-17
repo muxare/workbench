@@ -2,6 +2,8 @@
 
 Written 2026-11-17 by Claude, after Felix Svensson (fe) and Uxi Larsson (ux) were added to the workbench board on the team screen. The workbook walks through one card from creation to review, and says at each step what to do, what the board should show, and what is real and what is played.
 
+Felix and Uxi now live only on the rehearsal board. On 2026-11-17, after a first rehearsal, Mikael decided to take them off the real board for now and hold every role there himself again, so the real board's team is Mikael (po, ux, fe, be) and the AI teammate. Run every step below on the rehearsal board (the section "Rehearsal board" says how): every address below is the rehearsal board's, on ports 3001 and 5174. The rehearsal also showed which steps could only be done with curl; creating a card, asking a question on a card and taking a person off the team now have their place in the UI, and the steps say where.
+
 ## What to aim for
 
 The goal is to see the two new people take part in the chain: a card owned by Felix moves through the board, the AI teammate works on it in the way Felix's mode allows, and Felix and Uxi wait on each other through questions on the card. If the board shows each of those as events, under the right person, without a reload, then adding a person works end to end.
@@ -31,16 +33,16 @@ In both, a person must have moved the card to Ready first, and a person decides.
 
 ## Before you start
 
-Run `pnpm wb status` and check that `api`, `web` and `hook` are running. Open the board at http://localhost:5173 and the team screen at `#/team`; Felix and Uxi should both be there with their roles.
+Start the rehearsal board as the section "Rehearsal board" says, and open it at http://localhost:5174 and its team screen at `#/team`; Felix and Uxi should both be there with their roles.
 
-Decide what kind of card to use. The `teams/workbench` event store is append-only, so a card created here stays in the board's history for good, and a session that works it writes code in this repository. The cleanest choice is a small, real task you would want done anyway. A throwaway title is fine for the stub run and for the question round, but do not ask a session to work it; or tell the session to stop after the first question.
+Titles can be anything on the rehearsal board, since its board is thrown away when you start over. A session that works a card still writes code in this repository, so stop it before it commits, or delete its branch afterwards.
 
 ## Step 1: give Felix a card
 
 On the board, use "New card" at the head of the Backlog column. Choose yourself under "Creating as", write the title, choose `implement_interactions` as the function and Felix as owner (he is offered by default, as the one person seated in the function's role), and press "Create card". The form says which number the card got and links to it. The same can be done with curl, as yourself (the PO), with Felix as owner:
 
 ```sh
-curl -s localhost:3000/api/cards -H 'content-type: application/json' \
+curl -s localhost:3001/api/cards -H 'content-type: application/json' \
   -d '{"actor":"mikael","owner":"felix-svensson","function_id":"implement_interactions","title":"<a small real task>"}'
 ```
 
@@ -57,10 +59,10 @@ Open `#/cards/<n>` and use "Move to Ready". The move is recorded as Felix, becau
 **3a, the stub, with Felix in `assist`.** Run:
 
 ```sh
-curl -s -X POST localhost:3000/api/teammates/ai/run
+curl -s -X POST localhost:3001/api/teammates/ai/run
 ```
 
-**Expect:** the card moves to In progress and then Needs input, the AI's panel shows what it did, and the card shows an invented question asked of Felix. Check before the run that no real card owned by someone in `assist` sits in Ready, because the run takes the first one it may pick.
+**Expect:** the card moves to In progress and then Needs input, the AI's panel shows what it did, and the card shows an invented question asked of Felix. The run takes the first Ready card it may pick, so card A should be the only `assist` card in Ready.
 
 **3b, a session, with Felix in `delegate`.** Set Felix's `implement_interactions` to `delegate` on `#/teammates/felix-svensson` (or create the card for `refine_ui_spec`), then prompt here: "Pick card #<n> on the workbench board and work it." 
 
@@ -74,20 +76,20 @@ On `#/cards/<n>`, answer the open question. Any person may record an answer; the
 
 ## Step 5: Felix asks Uxi
 
-This is the step that shows two people working through the board. With the card In progress, ask as Felix:
+This is the step that shows two people working through the board. With the card In progress and no open question, the card screen shows "Ask a question". Choose Felix under "Asking as" and Uxi under "Ask whom", write the question ("Which empty state do we show?") and why it blocks ("The screen has no design for zero bookings"), and press "Ask". The same with curl:
 
 ```sh
-curl -s localhost:3000/api/cards/<n>/questions -H 'content-type: application/json' \
+curl -s localhost:3001/api/cards/<n>/questions -H 'content-type: application/json' \
   -d '{"actor":"felix-svensson","asked_of":"uxi-larsson","text":"Which empty state do we show?","why_it_blocks":"The screen has no design for zero bookings"}'
 ```
 
 **Expect:** the card moves to Needs input and Uxi's panel shows it as waiting on Uxi. Answer it on the card screen; the card returns to In progress and the log shows both. Nothing contacts Uxi: there are no notifications, so the board is the only place the question lives.
 
-## Step 6: review and done (session only)
+## Step 6: review and done (session only, real board only)
 
-With your go-ahead, the session pushes the branch and opens the pull request as the App, and the webhook moves the card to Review. A person's approval on the head commit and the merge move it to Done.
+No GitHub event reaches the rehearsal API, so on the rehearsal board stop at the session's report. On the real board, with your go-ahead, the session pushes the branch and opens the pull request as the App, and the webhook moves the card to Review. A person's approval on the head commit and the merge move it to Done.
 
-**Expect a limit here:** only `muxare` maps to a person in `teams/workbench/team.json`, so every review that reaches the board from GitHub is Mikael's. Felix and Uxi cannot approve a pull request until they have GitHub logins in `github_logins`.
+**Expect a limit here:** only `muxare` maps to a person in `teams/workbench/team.json`, so every review that reaches the board from GitHub is Mikael's. A person cannot approve a pull request until they have a GitHub login in `github_logins`, and a login that maps to a person who left the team is ignored.
 
 ## What counts as success
 
@@ -95,7 +97,7 @@ The run has worked when the card's log at `#/cards/<n>` reads, in order: created
 
 ## Rehearsal board
 
-The real board keeps every card and event for good, so practise on a board of its own first. `teams/rehearsal/team.json` is a team with Mikael (po, be), Felix (fe), Uxi (ux) and the AI teammate. Its board, `teams/rehearsal/board.db`, is git-ignored like every team's board, and it runs beside the real one on other ports: the API on 3001 and the web board on 5174. The real board on 3000 and 5173 is not touched. `pnpm wb` only manages the real board, so the rehearsal runs in terminals you keep open.
+The real board keeps every card and event for good, and since 2026-11-17 Felix and Uxi are only here, so the run happens on a board of its own. `teams/rehearsal/team.json` is a team with Mikael (po, be), Felix (fe), Uxi (ux) and the AI teammate. Its board, `teams/rehearsal/board.db`, is git-ignored like every team's board, and it runs beside the real one on other ports: the API on 3001 and the web board on 5174. The real board on 3000 and 5173 is not touched. `pnpm wb` only manages the real board, so the rehearsal runs in terminals you keep open.
 
 Open four terminals, each in the repository root (`cd ~/source/repos/workbench`).
 
@@ -106,13 +108,15 @@ pnpm --filter @workbench/api team:start teams/rehearsal   # first time only
 PORT=3001 pnpm --filter @workbench/api team:serve teams/rehearsal
 ```
 
+To have the AI pick an `assist` card by itself a few seconds after it reaches Ready, without the curl of cheat-sheet step 4, serve it with the timer instead: `TEAMMATE_INTERVAL_MS=5000 PORT=3001 pnpm --filter @workbench/api team:serve teams/rehearsal`.
+
 **Terminal 2, the rehearsal web board.** Leave it running, and open http://localhost:5174 in the browser:
 
 ```sh
 API_URL=http://localhost:3001 pnpm --filter @workbench/web dev --port 5174 --strictPort
 ```
 
-**Terminal 3, the curl commands.** Run every command of the cheat sheet below here, in this one terminal, so that `$A` and `$B` keep the card numbers. Start it with:
+**Terminal 3, the curl commands.** Most steps now have a place in the UI; the curl lines of the cheat sheet are the alternative, and if you use them, run them all here, in this one terminal, so that `$A` and `$B` keep the card numbers. Start it with:
 
 ```sh
 API=localhost:3001/api
@@ -132,38 +136,44 @@ The code that session writes still lands in this repository, so stop it before i
 
 ## Cheat sheet
 
-The whole run in order. Shell lines go in terminal 3 (or any one terminal, on the real board); browser steps go in the web board; step 8 goes in terminal 4 (or this Claude Code session, on the real board). Replace each `<…>` title first: on the real board with a small real task, on the rehearsal board with anything.
+The whole run in order, on the rehearsal board. Each step says where it is done in the browser at http://localhost:5174, and the curl line that does the same in terminal 3, if you prefer it.
 
 ```sh
-# Terminal 3. Rehearsal: API=localhost:3001/api. Real board: API=localhost:3000/api.
+# Terminal 3, only for the curl alternatives.
+API=localhost:3001/api
 J='content-type: application/json'
+```
 
-# 1. Felix's modes: assist on one step, delegate on the other.
+1. **Felix's modes.** On `#/teammates/felix-svensson`, set `implement_interactions` to `assist` and `refine_ui_spec` to `delegate`.
+
+```sh
 curl -s $API/teammates/felix-svensson/modes -H "$J" -d '{"actor":"felix-svensson","function_id":"implement_interactions","mode":"assist"}'
 curl -s $API/teammates/felix-svensson/modes -H "$J" -d '{"actor":"felix-svensson","function_id":"refine_ui_spec","mode":"delegate"}'
+```
 
-# 2. Two cards for Felix, created by Mikael as PO.
+2. **Two cards for Felix, created by Mikael.** On the board, "New card" at the head of Backlog: "Creating as" Mikael, owner Felix, one card for `implement_interactions` (card A) and one for `refine_ui_spec` (card B). The form says each card's number.
+
+```sh
 A=$(curl -s $API/cards -H "$J" -d '{"actor":"mikael","owner":"felix-svensson","function_id":"implement_interactions","title":"<task A>"}' | jq -r .card.id)
 B=$(curl -s $API/cards -H "$J" -d '{"actor":"mikael","owner":"felix-svensson","function_id":"refine_ui_spec","title":"<task B>"}' | jq -r .card.id)
 echo "A=#$A B=#$B"
 ```
 
-3. **Browser, as Felix:** open card A and card B (`#/cards/<n>`) and click "Move to Ready" on each.
+3. **As Felix:** open card A and card B (`#/cards/<n>`) and click "Move to Ready" on each.
+4. **The AI picks card A by itself** (the stub, no model call). With the timer from terminal 1 this happens on its own; without it:
 
 ```sh
-# 4. Terminal 3. The AI picks card A by itself (the stub, no model call).
-#    On the real board, check first that no other card in assist is Ready.
 curl -s -X POST $API/teammates/ai/run
 ```
 
-5. **Browser, as Felix:** on card A, answer the AI's question.
+5. **As Felix:** on card A, answer the AI's question.
+6. **Felix asks Uxi on card A.** On card A, "Ask a question": "Asking as" Felix, "Ask whom" Uxi.
 
 ```sh
-# 6. Terminal 3. Felix asks Uxi on card A.
 curl -s $API/cards/$A/questions -H "$J" -d '{"actor":"felix-svensson","asked_of":"uxi-larsson","text":"Which empty state do we show?","why_it_blocks":"The screen has no design for zero bookings"}'
 ```
 
-7. **Browser, as Uxi:** on card A, answer the question.
-8. **Terminal 4 (rehearsal) or this session (real board):** prompt "Pick card #<B> on the workbench board and work it."
-9. **Browser, as Felix:** on card B, answer the session's question when it comes.
-10. **When the session reports:** on the rehearsal board, stop there. On the real board, give the go-ahead to push and open the pull request, or stop there.
+7. **As Uxi:** on card A, answer the question.
+8. **Terminal 4:** prompt "Pick card #<B> on the workbench board and work it."
+9. **As Felix:** on card B, answer the session's question when it comes.
+10. **When the session reports,** stop there, and delete its `wb/<B>-…` branch if it committed.
