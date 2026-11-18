@@ -425,8 +425,9 @@ export function createApp(deps: AppDeps) {
           ...(req.milestone === undefined ? {} : { milestone: req.milestone }),
         },
         functionIds,
-        // The store checks the actor and the owner again inside its write, so a leave in between cannot slip through.
-        { actor: req.actor },
+        // The store records the card_created event with the row, and checks the actor and the owner again
+        // inside its write, so a leave in between cannot slip through.
+        { created: { actor: req.actor, at: now().toISOString(), eventId: newId() } },
       );
       return c.json({ card: await cardOr404(id) }, 201);
     })

@@ -15,7 +15,23 @@ export interface BatchSelection {
   onToggle: (cardId: string) => void;
 }
 
-export function BoardColumn({ board, column, selection }: { board: BoardResponse; column: Column; selection?: BatchSelection | undefined }) {
+/** "New card" on the Backlog column: the board holds whether its form is open and shows it under the header. */
+export interface NewCardToggle {
+  open: boolean;
+  onToggle: () => void;
+}
+
+export function BoardColumn({
+  board,
+  column,
+  selection,
+  newCard,
+}: {
+  board: BoardResponse;
+  column: Column;
+  selection?: BatchSelection | undefined;
+  newCard?: NewCardToggle | undefined;
+}) {
   const [expanded, setExpanded] = useState(false);
   const collapsible = column.status === "done" && column.cards.length > COLLAPSE_AFTER + 1;
   const shown = collapsible && !expanded ? column.cards.slice(0, COLLAPSE_AFTER) : column.cards;
@@ -23,6 +39,8 @@ export function BoardColumn({ board, column, selection }: { board: BoardResponse
   // Only the Ready column hands cards to the AI, and only when it has two to hand or is already selecting.
   const batching = column.status === "ready" ? selection : undefined;
   const offerSelect = batching !== undefined && (batching.selecting || column.cards.length >= 2);
+  // Only Backlog takes new cards, since a new card starts there.
+  const creating = column.status === "backlog" ? newCard : undefined;
 
   return (
     <section className={`column column--${column.status}`} aria-label={column.label}>
@@ -33,6 +51,11 @@ export function BoardColumn({ board, column, selection }: { board: BoardResponse
         {offerSelect && (
           <button type="button" className="column__select" aria-pressed={batching.selecting} aria-label="Select Ready cards for a batch" onClick={batching.onToggleSelecting}>
             Select
+          </button>
+        )}
+        {creating && (
+          <button type="button" className="column__select" aria-pressed={creating.open} aria-controls="new-card" onClick={creating.onToggle}>
+            New card
           </button>
         )}
       </div>

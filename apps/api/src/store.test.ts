@@ -23,6 +23,8 @@ import {
   eventsAfter,
   getCard,
   getTeammate,
+  hasEvent,
+  lastSeq,
   listCards,
   listCycles,
   listFormerTeammates,
@@ -277,7 +279,7 @@ describe("leaving the team", () => {
     const card = { id: "k9", title: "Invented card", function_id: "frame_problem", owner: "t-gone", links: [] };
     await expect(addCard(db, card, functionIds)).rejects.toThrow(/owner 't-gone' has left the team/);
     await expect(addNumberedCard(db, card, functionIds)).rejects.toThrow(/has left the team/);
-    await expect(addNumberedCard(db, { ...card, owner: "t-human" }, functionIds, { actor: "t-gone" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(addNumberedCard(db, { ...card, owner: "t-human" }, functionIds, { created: { actor: "t-gone", at: at(58), eventId: "created-gone" } })).rejects.toMatchObject({ code: "forbidden" });
     expect((await listCards(db)).map((c) => c.id)).toEqual(["k1", "k2"]);
   });
 
@@ -522,6 +524,37 @@ describe("cards", () => {
       await addCard(db, { id, title: `Invented card ${id}`, function_id: "frame_problem", owner: "t-human", links: [] }, functionIds);
     }
     expect((await listCards(db)).map((c) => c.id)).toEqual(["6", "9", "10", "100", "k1", "k2"]);
+  });
+
+  const fresh = { title: "Invented new card", function_id: "frame_problem", owner: "t-human", links: [] };
+
+  it("writes a created card's first event with it, leaving out a milestone it does not have", async () => {
+    const id = await addNumberedCard(db, fresh, functionIds, { created: { actor: "t-human", at: at(50), eventId: "created-1" } });
+    const [first] = await cardLog(db, id);
+    expect(first).toEqual({
+      id: "created-1",
+      type: "card_created",
+      card_id: id,
+      actor: "t-human",
+      at: at(50),
+      title: "Invented new card",
+      function_id: "frame_problem",
+      owner: "t-human",
+    });
+  });
+
+  it("stores neither the card nor its event when the event cannot be written", async () => {
+    const before = await lastSeq(db);
+    // "v1" is an event id the stream already holds, so the event insert fails and the batch rolls back.
+    await expect(addNumberedCard(db, fresh, functionIds, { created: { actor: "t-human", at: at(50), eventId: "v1" } })).rejects.toThrow();
+    expect((await listCards(db)).map((c) => c.id)).toEqual(["k1", "k2"]);
+    expect(await lastSeq(db)).toBe(before);
+  });
+
+  it("refuses a card_created event through the general append path, also for a card that exists", async () => {
+    const event = { id: "created-again", type: "card_created", card_id: "k1", actor: "t-human", at: at(50), title: "Invented", function_id: "frame_problem", owner: "t-human" } as const;
+    await expect(appendEvent(db, event)).rejects.toMatchObject({ code: "conflict", message: expect.stringMatching(/written only with its card/) });
+    expect(await hasEvent(db, "created-again")).toBe(false);
   });
 });
 

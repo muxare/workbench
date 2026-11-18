@@ -37,7 +37,7 @@ Decide what kind of card to use. The `teams/workbench` event store is append-onl
 
 ## Step 1: give Felix a card
 
-Cards cannot be created in the UI yet, so you create it with curl, as yourself (the PO), with Felix as owner:
+On the board, use "New card" at the head of the Backlog column. Choose yourself under "Creating as", write the title, choose `implement_interactions` as the function and Felix as owner (he is offered by default, as the one person seated in the function's role), and press "Create card". The form says which number the card got and links to it. The same can be done with curl, as yourself (the PO), with Felix as owner:
 
 ```sh
 curl -s localhost:3000/api/cards -H 'content-type: application/json' \

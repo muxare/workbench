@@ -61,6 +61,10 @@ export function describeEvent(e: StreamEvent, board: BoardResponse): string {
   }
   const card = cardRef(e.card_id);
   switch (e.type) {
+    case "card_created": {
+      const owner = e.owner === e.actor ? "themselves" : labelOf(board, e.owner);
+      return `${who} created ${card} in Backlog for ${owner} · ${e.function_id}: ${e.title}`;
+    }
     case "picked":
       return `${who} picked ${card} · mode: ${modeLabel[e.mode]}`;
     case "asked":

@@ -84,6 +84,9 @@ describe("describeEvent", () => {
     expect(describeEvent({ ...base, type: "card_withdrawn", reason: "Invented: a duplicate of #150", from: "in_progress" }, board)).toBe(
       "BE withdrew #151 from In progress: Invented: a duplicate of #150",
     );
+    const created = { ...base, type: "card_created", title: "Invented: a new card", function_id: "frame_problem", owner: "t-ux" } as const;
+    expect(describeEvent(created, board)).toBe("BE created #151 in Backlog for UX · frame_problem: Invented: a new card");
+    expect(describeEvent({ ...created, owner: "t-be" }, board)).toBe("BE created #151 in Backlog for themselves · frame_problem: Invented: a new card");
   });
 
   it("describes a mode change, which has no card", () => {
