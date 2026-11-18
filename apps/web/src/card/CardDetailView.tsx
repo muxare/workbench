@@ -19,6 +19,7 @@ import {
   statusText,
   statusTone,
 } from "./cardDetail.ts";
+import { AskQuestion } from "./AskQuestion.tsx";
 import { CardMoves } from "./CardMoves.tsx";
 import { answerFormId, OpenQuestion } from "./OpenQuestion.tsx";
 import { useCardDetail } from "./useCardDetail.ts";
@@ -139,6 +140,7 @@ function Detail({
           {questions.map((q) => (
             <OpenQuestion key={q.question.id} cardId={card.id} view={q} onAnswered={reload} />
           ))}
+          <AskQuestion detail={detail} board={board} onAsked={reload} />
 
           <section className="panel" aria-labelledby="worked-head">
             <h2 id="worked-head" className="panel__title">
