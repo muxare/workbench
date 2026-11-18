@@ -15,6 +15,7 @@ import {
   teamResponse,
   writeResponse,
   type AddTeammateRequest,
+  type LeaveTeamRequest,
   type AiTeammateProfileResponse,
   type AnswerRequest,
   type ApiErrorCode,
@@ -226,6 +227,15 @@ export async function addTeammate(request: AddTeammateRequest): Promise<Teammate
  */
 export async function setRoles(teammateId: string, request: SetRolesRequest): Promise<TeammateResponse> {
   return parseTeammate(await postJson(`/teammates/${encodeURIComponent(teammateId)}/roles`, request));
+}
+
+/**
+ * `POST /api/teammates/:id/leave`: a person takes a person off the team.
+ * Answers with the person as they stood when they left; the board and the
+ * team screen also hear the `teammate_left` event over the stream.
+ */
+export async function leaveTeam(teammateId: string, request: LeaveTeamRequest): Promise<TeammateResponse> {
+  return parseTeammate(await postJson(`/teammates/${encodeURIComponent(teammateId)}/leave`, request));
 }
 
 function parseTeammate(body: unknown): TeammateResponse {

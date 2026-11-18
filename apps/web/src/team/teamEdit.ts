@@ -1,10 +1,10 @@
 // The team screen's writes, as pure functions: who a change is made as, the
-// roles a person may hold, the add form's checks and the messages for a
-// refused write. The roles are the shared `teammateRole` list; how many steps
+// roles a person may hold, the add form's checks, what taking a person off
+// the team says, and the messages for a refused write. The roles are the shared `teammateRole` list; how many steps
 // each one owns is counted from the team's steps, which the API reads from
 // process/functions, so nothing here names a function.
 import { newTeammateId, sameRoles, teammateIdFromName, teammateRole } from "@workbench/shared";
-import type { AddTeammateRequest, HumanTeammate, TeamResponse, TeammateRole } from "@workbench/shared";
+import type { AddTeammateRequest, HumanTeammate, LeaveTeamRequest, TeamResponse, TeammateRole } from "@workbench/shared";
 import { ApiRequestError } from "../api/client.ts";
 import { defaultActor, roleTitle, shortLabel } from "../board/teammates.ts";
 
@@ -136,6 +136,34 @@ export function addRequest(form: AddForm, actor: string | undefined): AddTeammat
 export function addFailure(err: unknown): string {
   if (err instanceof ApiRequestError) return err.reason;
   return "the person could not be added";
+}
+
+/** The request that takes a person off the team, as the person chosen under "Changing as". */
+export function leaveRequest(actor: string): LeaveTeamRequest {
+  return { actor };
+}
+
+/**
+ * What the screen asks before taking a person off the team, naming who it is
+ * recorded as. Nothing is deleted, but the id cannot be used again, so the
+ * question says both.
+ */
+export function leaveQuestion(person: HumanTeammate, actor: string, team: TeamResponse): string {
+  const as = actor === person.id ? `${person.name} themselves` : (team.people.find((p) => p.teammate.id === actor)?.teammate.name ?? actor);
+  return `Take ${person.name} off the team, recorded as made by ${as}? Their cards and log entries stay and keep their name; the id ${person.id} cannot be used again.`;
+}
+
+/**
+ * Why taking a person off the team failed, for "Not taken off: …". The API's
+ * reason names what to do first, such as the cards the person still owns or
+ * the question waiting on them. A 409 means someone took them off first.
+ */
+export function leaveFailure(err: unknown, person: HumanTeammate): string {
+  if (err instanceof ApiRequestError) {
+    if (err.code === "conflict") return `someone took ${person.name} off the team in the meantime`;
+    return err.reason;
+  }
+  return `${person.name} could not be taken off the team`;
 }
 
 /** Why a roles change failed, for "Not saved: …". A 409 means someone changed the roles first. */

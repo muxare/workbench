@@ -415,6 +415,11 @@ export type CardEventType = CardEvent["type"];
  * `roles_changed` records the roles a person holds: `from` is the list they
  * held before, empty when they join the team, and `to` the list they hold
  * from now on. A person's roles are derived from these events.
+ * `teammate_left` records a person being taken off the team by `actor`, a
+ * person on the team. Nothing is deleted: the person's row, events and the
+ * cards' logs keep their id, and they still read with their name; they are
+ * only left out of the people on the team (`deriveLeft`). A person who left is
+ * not added again under the same id.
  */
 export const teammateEvent = z.discriminatedUnion("type", [
   z.object({
@@ -430,10 +435,15 @@ export const teammateEvent = z.discriminatedUnion("type", [
     from: z.union([z.array(teammateRole).length(0), teammateRoles]),
     to: teammateRoles,
   }),
+  z.object({
+    ...teammateEventBase,
+    type: z.literal("teammate_left"),
+  }),
 ]);
 export type TeammateEvent = z.infer<typeof teammateEvent>;
 export type ModeChangedEvent = Extract<TeammateEvent, { type: "mode_changed" }>;
 export type RolesChangedEvent = Extract<TeammateEvent, { type: "roles_changed" }>;
+export type TeammateLeftEvent = Extract<TeammateEvent, { type: "teammate_left" }>;
 
 /**
  * The logs people read: one card's, the board's, a cycle's and a teammate's.
@@ -638,6 +648,17 @@ export function deriveRoles(events: readonly StreamEvent[], teammateId: string):
   let roles: TeammateRole[] = [];
   for (const e of events) if (e.type === "roles_changed" && e.teammate_id === teammateId) roles = [...e.to];
   return roles;
+}
+
+/**
+ * The ids of the people who have left the team: everyone with a
+ * `teammate_left` event. A person who left does not come back under the same
+ * id, so one such event is enough.
+ */
+export function deriveLeft(events: readonly StreamEvent[]): Set<string> {
+  const left = new Set<string>();
+  for (const e of events) if (e.type === "teammate_left") left.add(e.teammate_id);
+  return left;
 }
 
 /** Whether two role lists are the same roles in the same order; the order matters, since the first is the main role. */

@@ -488,6 +488,17 @@ describe("pull_request_review", () => {
     ]);
   });
 
+  it("ignores an approval by a person who left the team, like an unmapped account, so it moves no card", async () => {
+    await addTeammate(db, { kind: "human", id: "invented-gone", name: "Invented leaver", roles: ["be"] }, "2026-11-11T08:00:00Z", { addedBy: "mikael" });
+    await appendEvents(db, [{ id: "invented-left", type: "teammate_left", teammate_id: "invented-gone", actor: "mikael", at: "2026-11-11T09:00:00Z" }]);
+    const logins = parseGithubLogins("muxare=mikael,workbench-agent[bot]=ai,invented-leaver=invented-gone");
+    app = createApp({ db, functionIds: loadFunctionIds(), now: () => new Date(NOW), githubWebhookSecret: SECRET, githubLogins: logins });
+    await moveCard2("ready", "in_progress", "review");
+    const approval = tweak(fixture("pull_request_review.approved"), "review.user.login", "invented-leaver");
+    await ignored("pull_request_review", approval, /invented-leaver maps to invented-gone, who has left the team/);
+    expect((await cardStatus(db, "2")).state).toBe("review");
+  });
+
   it("records changes requested with the review's text and sends a card in review back to in progress", async () => {
     await moveCard2("ready", "in_progress", "review");
     const body = await recorded("pull_request_review", fixture("pull_request_review.changes_requested"));

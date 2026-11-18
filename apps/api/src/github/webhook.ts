@@ -57,7 +57,7 @@ import type { Card, CardEvent, FunctionFrontMatter, Teammate, WebhookResponse } 
 import { cardEvent, cardIdFromBody, cardIdFromBranch, criticRequired, mayMoveCard, maySendCardBack } from "@workbench/shared";
 import type { z } from "zod";
 import type { Db } from "../db/client.ts";
-import { appendEvents, cardLog, criticGates, eventsOfType, getCard, getTeammate, hasEvent, StoreError } from "../store.ts";
+import { appendEvents, cardLog, criticGates, eventsOfType, getCard, getTeammate, hasEvent, hasLeft, StoreError } from "../store.ts";
 import { teammateForLogin } from "./logins.ts";
 import {
   pullRequestPayload,
@@ -233,6 +233,10 @@ async function teammateFor(ctx: WebhookContext, login: string, cardId: string) {
   const teammate = id === undefined ? undefined : await getTeammate(ctx.db, id);
   if (!teammate) {
     return { plan: ignore(`the GitHub account ${login} is not mapped to a teammate (GITHUB_LOGINS)`, cardId) };
+  }
+  // A person who left is treated like an unmapped account: their work on GitHub moves no card.
+  if (await hasLeft(ctx.db, teammate.id)) {
+    return { plan: ignore(`the GitHub account ${login} maps to ${teammate.id}, who has left the team`, cardId) };
   }
   return { teammate };
 }

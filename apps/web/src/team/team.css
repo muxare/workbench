@@ -108,7 +108,8 @@
 
 /*
  * People and roles (TeamEdit.tsx): the "Changing as" picker, a row per
- * person with their roles, and the form that adds a person. No artboard draws
+ * person with their roles and, under them, a quiet "Take off the team…"
+ * button that asks before it sends, and the form that adds a person. No artboard draws
  * these; they reuse the profile's panel and h2, the board's avatars, and the
  * shared `.field` (with `.field--inline` for the selects) and `.button` in
  * ../styles.css. Checkbox rows follow the Profile artboard's checkboxes: 44px
@@ -143,8 +144,22 @@
   padding-top: 16px;
   border-top: 1px solid var(--line-soft);
 }
-.team-edit__person .team-edit__actions {
+.team-edit__person .team-edit__actions,
+.team-edit__person .team-edit__leave {
   grid-column: 2;
+}
+
+/* Taking a person off the team: under their roles, asking before it is sent. */
+.team-edit__leave {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.team-edit__question {
+  margin: 0;
+  max-width: 60ch;
+  font-size: 13px;
 }
 
 .team-edit__who {
@@ -260,7 +275,8 @@
   .team-edit__fields {
     grid-template-columns: minmax(0, 1fr);
   }
-  .team-edit__person .team-edit__actions {
+  .team-edit__person .team-edit__actions,
+  .team-edit__person .team-edit__leave {
     grid-column: 1;
   }
 }

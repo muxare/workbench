@@ -25,7 +25,7 @@ import { inventedSeedAt } from "./seed/invented.ts";
 /** The invented seed as loaded on 2026-11-07, so Sprint 4 runs from 2026-11-05 to 2026-11-19. */
 const inventedSeed = inventedSeedAt(new Date("2026-11-07T08:00:00Z"));
 import { withProfile } from "./seed/withProfile.ts";
-import { addCard, addTeammate, appendEvent, cardStatus, lastSeq, seed, seedEvents, type SeedData } from "./store.ts";
+import { addCard, addTeammate, appendEvent, cardStatus, lastSeq, listCards, seed, seedEvents, type SeedData } from "./store.ts";
 
 /** Every event the seed stores, the people's joining events first, so positions in the stream match. */
 const seeded = seedEvents(inventedSeed);
@@ -964,6 +964,67 @@ describe("POST /api/teammates", () => {
     // From now on the team has a person, who adds the next.
     await expectProblem(await send({ ...newcomer, id: "invented-second", actor: "invented-second" }), 422, "rule_violation");
     expect((await send({ ...newcomer, id: "invented-second", actor: newcomer.id })).status).toBe(201);
+  });
+});
+
+describe("POST /api/teammates/:id/leave", () => {
+  const newcomer = { actor: PO, id: "invented-newcomer", name: "Invented newcomer", roles: ["fe"] };
+  const leave = (id: string, actor = PO) => post(`/api/teammates/${id}/leave`, { actor });
+  beforeEach(async () => {
+    expect((await post("/api/teammates", newcomer)).status).toBe(201);
+  });
+
+  it("takes the person off the team and the board, keeps them in former_teammates and their history in the log", async () => {
+    const res = await leave(newcomer.id);
+    expect(res.status).toBe(200);
+    expect(teammateResponse.parse(await res.json()).teammate).toMatchObject({ id: newcomer.id, name: "Invented newcomer" });
+    const board = boardResponse.parse(await (await app.request("/api/board")).json());
+    expect(board.teammates.map((t) => t.id)).not.toContain(newcomer.id);
+    expect(board.former_teammates).toEqual([{ kind: "human", id: newcomer.id, name: "Invented newcomer", roles: ["fe"], process_profile: {} }]);
+    expect(board.log.slice(-2)).toEqual([
+      expect.objectContaining({ id: `roles-${newcomer.id}-joined`, actor: PO }),
+      { id: "invented-new-1", type: "teammate_left", teammate_id: newcomer.id, actor: PO, at: "2026-11-07T10:00:00.000Z" },
+    ]);
+    const team = teamResponse.parse(await (await app.request("/api/team")).json());
+    expect(team.people.map((p) => p.teammate.id)).not.toContain(newcomer.id);
+    // Their profile still reads, so a link from an old log line does not break.
+    expect((await app.request(`/api/teammates/${newcomer.id}/profile`)).status).toBe(200);
+  });
+
+  it("refuses a second leave with 409, and a person who left as an actor with 422", async () => {
+    expect((await leave(newcomer.id)).status).toBe(200);
+    await expectProblem(await leave(newcomer.id), 409, "conflict", /already left/);
+    await expectProblem(await post(`/api/teammates/${FE}/roles`, { actor: newcomer.id, roles: ["be"], was: ["fe"] }), 422, "rule_violation", /has left the team/);
+    await expectProblem(await leave(UX, newcomer.id), 422, "rule_violation", /has left the team/);
+    await expectProblem(await post("/api/teammates", newcomer), 409, "conflict", /left the team/);
+  });
+
+  it("refuses a person who owns a card that is not done with 422, naming the cards, and records nothing", async () => {
+    const before = await lastSeq(db);
+    const body = await expectProblem(await leave(FE), 422, "rule_violation", /owns .*not done/);
+    expect(body.reason).toMatch(/^Alex Example \(invented frontend developer\) owns /);
+    expect(await lastSeq(db)).toBe(before);
+  });
+
+  it("refuses the AI teammate and an unknown id, and an AI or unknown actor", async () => {
+    await expectProblem(await leave(AI), 422, "rule_violation", /only a person/);
+    await expectProblem(await leave("invented-nobody"), 404, "not_found");
+    await expectProblem(await leave(newcomer.id, AI), 403, "forbidden");
+    await expectProblem(await leave(newcomer.id, "invented-nobody"), 422, "rule_violation", /actor/);
+    await expectProblem(await post(`/api/teammates/${newcomer.id}/leave`, {}), 400, "invalid_request");
+  });
+
+  it("refuses a card owned by, and a question asked of, a person who left", async () => {
+    expect((await leave(newcomer.id)).status).toBe(200);
+    const card = { actor: PO, title: "Invented card", function_id: "frame_problem", owner: newcomer.id, links: [] };
+    await expectProblem(await post("/api/cards", card), 422, "rule_violation", /has left the team/);
+    const inProgress = (await listCards(db)).find((c) => c.status.state === "in_progress")!;
+    const asked = { actor: AI, asked_of: newcomer.id, text: "Invented?", why_it_blocks: "Invented." };
+    await expectProblem(await post(`/api/cards/${inProgress.id}/questions`, asked), 422, "rule_violation", /asked_of 'invented-newcomer' has left the team/);
+  });
+
+  it("lets a person take themselves off", async () => {
+    expect((await leave(newcomer.id, newcomer.id)).status).toBe(200);
   });
 });
 

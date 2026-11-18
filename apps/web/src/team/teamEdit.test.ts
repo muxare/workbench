@@ -14,6 +14,9 @@ import {
   emptyAddForm,
   followHeldRoles,
   hasProblems,
+  leaveFailure,
+  leaveQuestion,
+  leaveRequest,
   roleOptions,
   rolesFailure,
 } from "./teamEdit.ts";
@@ -179,5 +182,28 @@ describe("failure messages", () => {
     );
     expect(rolesFailure(new ApiRequestError("server_error", "the API answered 500", 500), person)).toBe("the API answered 500");
     expect(rolesFailure(new Error("boom"), person)).toBe("the roles could not be saved");
+  });
+});
+
+describe("taking a person off the team", () => {
+  it("is sent as the person chosen under Changing as", () => {
+    expect(leaveRequest("inv-po")).toEqual({ actor: "inv-po" });
+  });
+
+  it("asks first, naming who it is recorded as and that the id cannot be used again", () => {
+    expect(leaveQuestion(person, "inv-po", team)).toBe(
+      "Take Invented developer off the team, recorded as made by Invented owner? Their cards and log entries stay and keep their name; the id inv-fe cannot be used again.",
+    );
+    expect(leaveQuestion(person, "inv-fe", team)).toMatch(/recorded as made by Invented developer themselves\?/);
+  });
+
+  it("shows the API's reason for a refusal, says someone else was first on a 409, and a sentence for anything else", () => {
+    const owns = "Invented developer owns #3, which is not done; a person leaves once every card they own is done or withdrawn";
+    expect(leaveFailure(new ApiRequestError("rule_violation", owns, 422), person)).toBe(owns);
+    expect(leaveFailure(new ApiRequestError("conflict", "Invented developer has already left the team", 409), person)).toBe(
+      "someone took Invented developer off the team in the meantime",
+    );
+    expect(leaveFailure(new ApiRequestError("network", "the API cannot be reached"), person)).toBe("the API cannot be reached");
+    expect(leaveFailure(new Error("boom"), person)).toBe("Invented developer could not be taken off the team");
   });
 });

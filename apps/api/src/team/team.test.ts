@@ -145,6 +145,14 @@ describe("enterCards", () => {
     await expect(enterCards(db, bad, functionIds)).rejects.toThrow(/invented-nobody/);
   });
 
+  it("refuses an owner who has left the team", async () => {
+    await addTeammate(db, { kind: "human", id: "invented-gone", name: "Invented leaver", roles: ["fe"] }, joinedAt, { addedBy: "invented-person" });
+    await appendEvent(db, { id: "invented-left", type: "teammate_left", teammate_id: "invented-gone", actor: "invented-person", at: joinedAt });
+    const bad = { cards: [{ ...cards.cards[0]!, owner: "invented-gone" }] };
+    await expect(enterCards(db, bad, functionIds)).rejects.toThrow(/owner 'invented-gone' has left the team/);
+    expect(await listCards(db)).toEqual([]);
+  });
+
   it("refuses a dependency that is not on the board", async () => {
     await expect(enterCards(db, { cards: [cards.cards[1]!] }, functionIds)).rejects.toThrow(/depends on '1'/);
   });

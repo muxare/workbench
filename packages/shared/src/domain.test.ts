@@ -15,6 +15,7 @@ import {
   deriveCriticGates,
   deriveLogFilters,
   deriveProfile,
+  deriveLeft,
   deriveRoles,
   eventSubject,
   isCardEvent,
@@ -284,6 +285,14 @@ describe("teammate events", () => {
     expect(deriveRoles(events, "invented-all")).toEqual(["fe", "po", "ux", "be"]);
     expect(deriveRoles(events, "invented-be")).toEqual([]);
     expect(deriveProfile(events, "invented-all")).toEqual({});
+  });
+
+  it("record a person leaving as a teammate event, and give the people who left", () => {
+    const left: StreamEvent = { id: "invented-l1", type: "teammate_left", teammate_id: "invented-ux", actor: "invented-all", at };
+    expect(streamEvent.parse(left)).toEqual(left);
+    expect(eventSubject(left)).toEqual({ kind: "teammate", id: "invented-ux" });
+    expect([...deriveLeft([joined, left])]).toEqual(["invented-ux"]);
+    expect(deriveLeft([joined]).size).toBe(0);
   });
 
   it("compare roles in order, since the first is the main role", () => {

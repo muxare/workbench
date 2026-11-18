@@ -8,7 +8,9 @@
 // `mode_changed` events, their roles from their `roles_changed` events, and
 // the team's log filters from the `log_filter_changed` events, and each
 // function's critic gate from the `critic_gate_changed` events, and the
-// team's name from the `team_named` events, in the same way. The filters are a view setting: no query here applies them.
+// team's name from the `team_named` events, in the same way. Who is on the
+// team is derived from the `teammate_left` events: a person who left keeps
+// their row, so their events and the cards' logs still read with their name. The filters are a view setting: no query here applies them.
 // Batches of cards handed to the AI are derived from the `batch_handed` and
 // `batch_planned` events and the statuses of their cards. A card's withdrawal
 // is derived from its `card_withdrawn` event: the card keeps the status it was
@@ -22,6 +24,7 @@ import {
   cycle as cycleSchema,
   deriveBatches,
   deriveCriticGates,
+  deriveLeft,
   deriveLogFilters,
   deriveProfile,
   deriveRoles,
@@ -51,6 +54,7 @@ import {
   type LogName,
   type Mode,
   type ModeChangedEvent,
+  type HumanTeammate,
   type Question,
   type RolesChangedEvent,
   type Status,
@@ -59,6 +63,7 @@ import {
   type TeamName,
   type TeamNamedEvent,
   type Teammate,
+  type TeammateLeftEvent,
   type TeammateRole,
   type ProcessProfile,
 } from "@workbench/shared";
@@ -152,10 +157,10 @@ function teammateFromRow(row: typeof teammates.$inferSelect, changes: readonly S
 }
 
 /** The event types a person's settings are derived from. */
-const SETTING_TYPES: StreamEventType[] = ["mode_changed", "roles_changed"];
+const SETTING_TYPES: StreamEventType[] = ["mode_changed", "roles_changed", "teammate_left"];
 
 /**
- * Every `mode_changed` and `roles_changed` event, or one teammate's, in
+ * Every `mode_changed`, `roles_changed` and `teammate_left` event, or one teammate's, in
  * stream order. Both queries filter on `teammate_id` so SQLite searches
  * `events_teammate_seq` instead of scanning every card event. For all
  * teammates the filter is `teammate_id > ''` (ids are never empty) with the
@@ -192,6 +197,11 @@ export async function heldRoles(db: Db, teammateId: string): Promise<TeammateRol
   return deriveRoles(await settingChanges(db, teammateId), teammateId);
 }
 
+/** Whether a teammate has left the team (`teammate_left`). */
+export async function hasLeft(db: Db, teammateId: string): Promise<boolean> {
+  return deriveLeft(await settingChanges(db, teammateId)).has(teammateId);
+}
+
 /**
  * The team's filter for each log, derived from its `log_filter_changed`
  * events: the latest change per log wins, and a log nobody has changed shows
@@ -225,6 +235,8 @@ interface Pending {
   modes: Map<string, Mode | null>;
   /** Keyed by teammate id. */
   roles: Map<string, TeammateRole[]>;
+  /** The people earlier events in the write set took off the team. */
+  left: Set<string>;
   /** What earlier events in the write set each log's filter to. */
   filters: Map<LogName, StreamEventType[]>;
   /** What earlier events in the write set each function's critic gate to. */
@@ -400,6 +412,9 @@ async function checkModeChange(db: Db, event: ModeChangedEvent, pending: Pending
   if (subject.kind !== "human") {
     throw new StoreError(`${event.id}: ${event.teammate_id} is not a person and has no process profile`);
   }
+  if (pending.left.has(event.teammate_id) || (await hasLeft(db, event.teammate_id))) {
+    throw new StoreError(`${event.id}: ${event.teammate_id} has left the team, so their modes no longer change`);
+  }
   if (event.from === event.to) throw new StoreError(`${event.id}: a mode change must change the mode, not keep ${event.to}`);
   const key = JSON.stringify([event.teammate_id, event.function_id]);
   const current = pending.modes.has(key)
@@ -415,8 +430,8 @@ async function checkModeChange(db: Db, event: ModeChangedEvent, pending: Pending
 }
 
 /**
- * A roles change must be about a person, must be made by a person, must
- * change the roles, and must name as `from` the roles the person holds now, so
+ * A roles change must be about a person on the team, must be made by a
+ * person on the team, must change the roles, and must name as `from` the roles the person holds now, so
  * two changes made from the same view cannot both win. Joining is the change
  * from no roles.
  */
@@ -427,6 +442,12 @@ async function checkRolesChange(db: Db, event: RolesChangedEvent, pending: Pendi
   const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
   if (!actor) throw new StoreError(`${event.id}: no teammate '${event.actor}'`, "not_found");
   if (actor.kind !== "human") throw new StoreError(`${event.id}: roles are set by a person, not ${event.actor}`, "forbidden");
+  if (pending.left.has(event.teammate_id) || (await hasLeft(db, event.teammate_id))) {
+    throw new StoreError(`${event.id}: ${event.teammate_id} has left the team, so their roles no longer change`);
+  }
+  if (pending.left.has(event.actor) || (await hasLeft(db, event.actor))) {
+    throw new StoreError(`${event.id}: ${event.actor} has left the team and changes nothing on it`, "forbidden");
+  }
   const current = pending.roles.get(event.teammate_id) ?? (await heldRoles(db, event.teammate_id));
   const list = (roles: readonly string[]) => (roles.length === 0 ? "no roles" : roles.join(", "));
   if (!sameRoles(current, event.from)) {
@@ -436,6 +457,57 @@ async function checkRolesChange(db: Db, event: RolesChangedEvent, pending: Pendi
     throw new StoreError(`${event.id}: a roles change must change the roles, not keep ${list(event.to)}`);
   }
   pending.roles.set(event.teammate_id, [...event.to]);
+}
+
+/** A card as a refusal names it: "#25" for a numbered card, its id otherwise. */
+function cardName(id: string): string {
+  return /^\d+$/.test(id) ? `#${id}` : id;
+}
+
+/**
+ * Taking a person off the team: the subject must be a person on the team, not
+ * an AI teammate; the actor must be a person on the team, who may be the
+ * subject; at least one other person must stay, so someone can still act;
+ * and the person must own no card that is neither done nor withdrawn and have
+ * no open question waiting on them on a card still on the board, so no work
+ * is left with nobody to carry it. Each refusal says what to do first.
+ */
+async function checkTeammateLeft(db: Db, event: TeammateLeftEvent, pending: Pending): Promise<void> {
+  const id = event.teammate_id;
+  const [subject] = await db.select().from(teammates).where(eq(teammates.id, id));
+  // The reasons name the person rather than the event, since the team screen shows them as they are.
+  if (!subject) throw new StoreError(`no teammate '${id}'`, "not_found");
+  if (subject.kind !== "human") throw new StoreError(`${id} is an AI teammate; only a person is taken off the team`);
+  const who = subject.name;
+  if (pending.left.has(id) || (await hasLeft(db, id))) throw new StoreError(`${who} has already left the team`, "conflict");
+  const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
+  if (!actor) throw new StoreError(`no teammate '${event.actor}'`, "not_found");
+  if (actor.kind !== "human") throw new StoreError(`a person is taken off the team by a person, not ${event.actor}`, "forbidden");
+  if (pending.left.has(event.actor) || (await hasLeft(db, event.actor))) {
+    throw new StoreError(`${event.actor} has left the team and changes nothing on it`, "forbidden");
+  }
+  const others = (await listTeammates(db)).filter((t) => t.kind === "human" && t.id !== id && !pending.left.has(t.id));
+  if (others.length === 0) throw new StoreError(`${who} is the last person on the team, and a team needs a person to act on it`);
+  // Every card, withdrawn ones included, so a withdrawn card is skipped on purpose rather than missed.
+  const owned = await listCards(db, { includeWithdrawn: true });
+  const withdrawn = new Set(owned.filter((c) => c.withdrawn !== undefined || pending.withdrawn.has(c.id)).map((c) => c.id));
+  const open = owned
+    .filter((c) => c.owner === id && !withdrawn.has(c.id) && (pending.statuses.get(c.id) ?? c.status).state !== "done")
+    .map((c) => cardName(c.id));
+  if (open.length > 0) {
+    const one = open.length === 1;
+    throw new StoreError(
+      `${who} owns ${open.join(", ")}, which ${one ? "is" : "are"} not done; a person leaves once every card they own is done or withdrawn`,
+    );
+  }
+  // A withdrawn card takes no answer, so a question left open on it waits on nobody.
+  const waiting = (await listQuestions(db))
+    .filter((q) => q.asked_of === id && q.answer === undefined && !withdrawn.has(q.card_id))
+    .map((q) => cardName(q.card_id));
+  if (waiting.length > 0) {
+    throw new StoreError(`a question on ${[...new Set(waiting)].join(", ")} waits on ${who}; answer it first`);
+  }
+  pending.left.add(id);
 }
 
 /**
@@ -507,14 +579,20 @@ export async function cardWithdrawal(db: Db, cardId: string): Promise<CardWithdr
  * a withdrawal must pass `checkCardWithdrawn`; a status change's
  * `from` must be the card's current state; an answer must come from a human,
  * because in every protocol `decides` is human; a mode change must pass
- * `checkModeChange`, a roles change `checkRolesChange`, a filter change
+ * `checkModeChange`, a roles change `checkRolesChange`, a person leaving
+ * `checkTeammateLeft`, a filter change
  * `checkLogFilterChange`, a critic gate change `checkCriticGateChange`, a
  * team name change `checkTeamNamed`, a handed batch `checkBatchHanded` and a
  * batch's plan `checkBatchPlanned`.
+ * Before all of these, the actor must not be a person who has left.
  * `pending` holds what earlier events in the same write have changed.
  */
 async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise<StreamEvent> {
   const event = streamEvent.parse(input);
+  // A person who left acts on nothing, whoever records the event: a route, the runner or the GitHub webhook.
+  if (pending.left.has(event.actor) || (await hasLeft(db, event.actor))) {
+    throw new StoreError(`${event.id}: ${event.actor} has left the team and changes nothing on it`, "forbidden");
+  }
   if (isCardEvent(event) && (pending.withdrawn.has(event.card_id) || (await cardWithdrawal(db, event.card_id)))) {
     throw new StoreError(`${event.id}: card ${event.card_id} was withdrawn and takes no further event`, "conflict");
   }
@@ -530,6 +608,7 @@ async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise
   }
   if (event.type === "mode_changed") await checkModeChange(db, event, pending);
   if (event.type === "roles_changed") await checkRolesChange(db, event, pending);
+  if (event.type === "teammate_left") await checkTeammateLeft(db, event, pending);
   if (event.type === "log_filter_changed") await checkLogFilterChange(db, event, pending);
   if (event.type === "critic_gate_changed") await checkCriticGateChange(db, event, pending);
   if (event.type === "team_named") await checkTeamNamed(db, event, pending);
@@ -540,6 +619,10 @@ async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise
     if (actor?.kind !== "human") {
       throw new StoreError(`${event.id}: answers are decided by a human, not ${event.actor}`, "forbidden");
     }
+  }
+  // A question waits on someone on the team: a person who left answers nothing.
+  if (event.type === "asked" && (pending.left.has(event.asked_of) || (await hasLeft(db, event.asked_of)))) {
+    throw new StoreError(`${event.id}: ${event.asked_of} has left the team, so nobody would answer`);
   }
   // A question for someone outside the team is relayed by a person, who records the answer.
   if (event.type === "asked" && event.external) {
@@ -630,6 +713,7 @@ async function appendNow(db: Db, inputs: readonly StreamEvent[]): Promise<Stored
     statuses: new Map(),
     modes: new Map(),
     roles: new Map(),
+    left: new Set(),
     filters: new Map(),
     gates: new Map(),
     batches: [],
@@ -705,7 +789,8 @@ export function joiningEvent(t: TeammateRecord, at: string, actor: string = t.id
  * The row and the joining event are written in one batch, so a reader never
  * sees a person without roles, and inside the store's serialized writes, so
  * the checks below cannot interleave with another add:
- * - the id must be free (`conflict`);
+ * - the id must be free (`conflict`), including the id of a person who left,
+ *   which keeps naming them in the stream;
  * - `addedBy`, when someone else, must be a person (`not_found`, `forbidden`);
  * - with `founding`, the team must have no person yet (`conflict`), which is
  *   how the first person adds themselves.
@@ -721,6 +806,9 @@ export async function addTeammate(
   const t = teammateRecord.parse(input);
   await serialized(db, async () => {
     const [taken] = await db.select({ id: teammates.id }).from(teammates).where(eq(teammates.id, t.id));
+    if (taken && (await hasLeft(db, t.id))) {
+      throw new StoreError(`'${t.id}' left the team and still names them in its history; choose another id`, "conflict");
+    }
     if (taken) throw new StoreError(`there is already a teammate '${t.id}'; choose another id`, "conflict");
     if (options.founding) {
       const [person] = await db.select({ id: teammates.id }).from(teammates).where(eq(teammates.kind, "human")).limit(1);
@@ -737,6 +825,9 @@ export async function addTeammate(
       const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
       if (!actor) throw new StoreError(`${event.id}: no teammate '${event.actor}'`, "not_found");
       if (actor.kind !== "human") throw new StoreError(`${event.id}: roles are set by a person, not ${event.actor}`, "forbidden");
+      if (await hasLeft(db, event.actor)) {
+        throw new StoreError(`${event.id}: ${event.actor} has left the team and changes nothing on it`, "forbidden");
+      }
     }
     // One batch is one transaction: the row and its joining event are stored together or not at all.
     const [, inserted] = await db.batch([row, db.insert(events).values(toRow(event)).returning({ seq: events.seq })]);
@@ -776,6 +867,14 @@ export async function addCycle(db: Db, input: Cycle): Promise<void> {
 }
 
 /**
+ * A new card's owner must not be a person who has left: checked inside the
+ * serialized write, so a card cannot be added while its owner is taken off.
+ */
+async function checkOwnerOnTeam(db: Db, owner: string, what: string): Promise<void> {
+  if (await hasLeft(db, owner)) throw new StoreError(`${what}: owner '${owner}' has left the team`, "rule_violation");
+}
+
+/**
  * Add a card. `functionIds` are the function names read from process/
  * (see `loadFunctionIds`); the store never lists them itself.
  */
@@ -788,13 +887,16 @@ export async function addCard(db: Db, input: CardRecord, functionIds: ReadonlySe
   if (/^[0-9]+$/.test(c.id) && !Number.isSafeInteger(Number(c.id))) {
     throw new StoreError(`${c.id}: a numeric card id must be at most ${Number.MAX_SAFE_INTEGER}`, "rule_violation");
   }
-  await db.insert(cards).values({
-    id: c.id,
-    title: c.title,
-    functionId: c.function_id,
-    owner: c.owner,
-    milestone: c.milestone ?? null,
-    links: c.links,
+  await serialized(db, async () => {
+    await checkOwnerOnTeam(db, c.owner, c.id);
+    await db.insert(cards).values({
+      id: c.id,
+      title: c.title,
+      functionId: c.function_id,
+      owner: c.owner,
+      milestone: c.milestone ?? null,
+      links: c.links,
+    });
   });
 }
 
@@ -809,19 +911,30 @@ export async function addCard(db: Db, input: CardRecord, functionIds: ReadonlySe
  * primary key stops a duplicate, and the losing writer may instead fail with
  * SQLITE_BUSY, since no busy_timeout is set. Answers with the new card's id.
  */
-export async function addNumberedCard(db: Db, input: Omit<CardRecord, "id">, functionIds: ReadonlySet<string>): Promise<string> {
+export async function addNumberedCard(
+  db: Db,
+  input: Omit<CardRecord, "id">,
+  functionIds: ReadonlySet<string>,
+  options: { actor?: string } = {},
+): Promise<string> {
   const c = cardRecord.omit({ id: true }).parse(input);
   if (!functionIds.has(c.function_id)) {
     throw new StoreError(`no function '${c.function_id}' in process/functions`, "unknown_function");
   }
-  const row = await db.get<{ id: string }>(sql`
-    INSERT INTO ${cards} (id, title, function_id, owner, milestone, links)
-    SELECT CAST(COALESCE(MAX(CAST(id AS INTEGER)), 0) + 1 AS TEXT),
-      ${c.title}, ${c.function_id}, ${c.owner}, ${c.milestone ?? null}, ${JSON.stringify(c.links)}
-    FROM ${cards}
-    WHERE id GLOB '[1-9]*' AND id NOT GLOB '*[^0-9]*'
-    RETURNING id`);
-  return row.id;
+  return serialized(db, async () => {
+    if (options.actor !== undefined && (await hasLeft(db, options.actor))) {
+      throw new StoreError(`${options.actor} has left the team and changes nothing on it`, "forbidden");
+    }
+    await checkOwnerOnTeam(db, c.owner, "the card");
+    const row = await db.get<{ id: string }>(sql`
+      INSERT INTO ${cards} (id, title, function_id, owner, milestone, links)
+      SELECT CAST(COALESCE(MAX(CAST(id AS INTEGER)), 0) + 1 AS TEXT),
+        ${c.title}, ${c.function_id}, ${c.owner}, ${c.milestone ?? null}, ${JSON.stringify(c.links)}
+      FROM ${cards}
+      WHERE id GLOB '[1-9]*' AND id NOT GLOB '*[^0-9]*'
+      RETURNING id`);
+    return row.id;
+  });
 }
 
 /** One teammate; a person comes with their roles and process profile derived from their teammate events. */
@@ -831,11 +944,27 @@ export async function getTeammate(db: Db, teammateId: string): Promise<Teammate 
   return teammateFromRow(row, row.kind === "human" ? await settingChanges(db, teammateId) : []);
 }
 
-/** Every teammate; people come with their roles and process profiles derived from the stream. */
+/**
+ * Every teammate on the team; people come with their roles and process
+ * profiles derived from the stream. A person who left is not listed
+ * (`listFormerTeammates`), though `getTeammate` still finds them.
+ */
 export async function listTeammates(db: Db): Promise<Teammate[]> {
   const rows = await db.select().from(teammates).orderBy(asc(teammates.id));
   const changes = await settingChanges(db);
-  return rows.map((row) => teammateFromRow(row, changes));
+  const left = deriveLeft(changes);
+  return rows.filter((row) => !left.has(row.id)).map((row) => teammateFromRow(row, changes));
+}
+
+/** The people who have left the team, as they stood when they left: their name, roles and modes. */
+export async function listFormerTeammates(db: Db): Promise<HumanTeammate[]> {
+  const rows = await db.select().from(teammates).orderBy(asc(teammates.id));
+  const changes = await settingChanges(db);
+  const left = deriveLeft(changes);
+  return rows
+    .filter((row) => left.has(row.id))
+    .map((row) => teammateFromRow(row, changes))
+    .filter((t): t is HumanTeammate => t.kind === "human");
 }
 
 export async function getCycle(db: Db, cycleId: string): Promise<Cycle | undefined> {

@@ -1,11 +1,12 @@
-// The team screen's writes: add a person, change a person's roles, and the
+// The team screen's writes: add a person, change a person's roles, take a
+// person off the team (asked first, under each person's roles), and the
 // "Changing as" picker that names who makes each change, since there is no
 // sign-in. The choice is remembered per browser (changingAsStore.ts). Every
 // write is answered by the API, and only the team reloaded after it changes
 // what the table shows, so a refused change never looks saved.
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { sameRoles, type HumanTeammate, type TeamResponse, type TeammateRole } from "@workbench/shared";
-import { addTeammate, ApiRequestError, setRoles } from "../api/client.ts";
+import { addTeammate, ApiRequestError, leaveTeam, setRoles } from "../api/client.ts";
 import { shortLabel } from "../board/teammates.ts";
 import { teammateHref } from "../route.ts";
 import { readChangingAs, rememberChangingAs } from "./changingAsStore.ts";
@@ -20,6 +21,9 @@ import {
   emptyAddForm,
   followHeldRoles,
   hasProblems,
+  leaveFailure,
+  leaveQuestion,
+  leaveRequest,
   roleOptions,
   rolesFailure,
   type AddForm,
@@ -81,18 +85,115 @@ function RoleChoice({
   );
 }
 
+/**
+ * Taking one person off the team, as the person chosen under "Changing as":
+ * a quiet button that asks first, since the id cannot be used again. The API
+ * decides whether the person may leave; when it refuses, its reason shows
+ * here, such as the cards the person still owns.
+ */
+function LeaveTeam({
+  person,
+  team,
+  actor,
+  onLeft,
+  onStart,
+}: {
+  person: HumanTeammate;
+  team: TeamResponse;
+  actor: string | undefined;
+  /** Called once the API has taken the person off the team. */
+  onLeft: (person: HumanTeammate) => void;
+  /** Called when the viewer starts another change, so the panel's last message clears. */
+  onStart: () => void;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [failure, setFailure] = useState<string | undefined>();
+  const questionId = useId();
+
+  const leave = () => {
+    if (actor === undefined || sending) return;
+    setSending(true);
+    setFailure(undefined);
+    leaveTeam(person.id, leaveRequest(actor)).then(
+      () => {
+        setSending(false);
+        setAsking(false);
+        onLeft(person);
+      },
+      (err: unknown) => {
+        setSending(false);
+        setAsking(false);
+        setFailure(leaveFailure(err, person));
+      },
+    );
+  };
+
+  return (
+    <div className="team-edit__leave" aria-busy={sending}>
+      {asking && actor !== undefined ? (
+        <>
+          <p id={questionId} className="team-edit__question">
+            {leaveQuestion(person, actor, team)}
+          </p>
+          <div className="team-edit__actions">
+            <button type="button" className="button" onClick={leave} disabled={sending} aria-describedby={questionId}>
+              Take {person.name} off the team
+            </button>
+            <button type="button" className="button button--quiet" onClick={() => setAsking(false)} disabled={sending}>
+              Cancel
+            </button>
+            {sending && (
+              <span className="team-edit__status" role="status">
+                Taking off…
+              </span>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="team-edit__actions">
+          <button
+            type="button"
+            className="button button--quiet"
+            disabled={actor === undefined}
+            onClick={() => {
+              setAsking(true);
+              onStart();
+              setFailure(undefined);
+            }}
+          >
+            Take off the team…
+          </button>
+          {failure !== undefined && (
+            <span className="team-edit__error" role="alert">
+              Not taken off: {failure}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** One person's roles, saved with the Save button as the person chosen under "Changing as". */
 function RolesEditor({
   person,
+  team,
   options,
   actor,
   onSaved,
+  onLeft,
+  onStart,
 }: {
   person: HumanTeammate;
+  team: TeamResponse;
   options: RoleOption[];
   actor: string | undefined;
   /** Reload the team; resolves to whether the reload reached the API. */
   onSaved: () => Promise<boolean>;
+  onLeft: (person: HumanTeammate) => void;
+  /** Called when the viewer starts a change here, so the panel's last message clears. */
+  onStart: () => void;
 }) {
   // The roles the API last answered with, until the reloaded team brings them, so a second
   // save right after the first sends the right `was` even if the reload is slow or fails.
@@ -167,6 +268,7 @@ function RolesEditor({
         onChange={(next) => {
           setDraft(next);
           setSaved(false);
+          onStart();
         }}
         disabled={saving || actor === undefined}
         invalid={empty}
@@ -215,6 +317,7 @@ function RolesEditor({
           </span>
         )}
       </div>
+      <LeaveTeam person={person} team={team} actor={actor} onLeft={onLeft} onStart={onStart} />
     </form>
   );
 }
@@ -225,11 +328,14 @@ function AddPerson({
   options,
   actor,
   onAdded,
+  onStart,
 }: {
   team: TeamResponse;
   options: RoleOption[];
   actor: string | undefined;
   onAdded: () => Promise<boolean>;
+  /** Called when the viewer starts a change here, so the panel's last message clears. */
+  onStart: () => void;
 }) {
   const [form, setForm] = useState<AddForm>(emptyAddForm);
   const [tried, setTried] = useState(false);
@@ -244,6 +350,7 @@ function AddPerson({
   const update = (next: Partial<AddForm>) => {
     setForm({ ...form, ...next });
     setAdded(undefined);
+    onStart();
   };
 
   const submit = (e: FormEvent) => {
@@ -372,10 +479,18 @@ export function PeoplePanel({ team, onChanged }: { team: TeamResponse; onChanged
   const actor = changingAs(team, remembered);
   const choices = changingAsChoices(team);
   const options = roleOptions(team);
+  const [left, setLeft] = useState<string | undefined>();
   const choose = (id: string) => {
     setRemembered(id);
     rememberChangingAs(id);
   };
+  // The row goes once the reloaded team leaves the person out; the panel says what happened
+  // until the next change, as "Added …" and "Saved." do.
+  const onLeft = (person: HumanTeammate) => {
+    setLeft(person.name);
+    void onChanged();
+  };
+
 
   return (
     <section className="profile__panel team-edit" aria-labelledby="people-heading">
@@ -396,12 +511,27 @@ export function PeoplePanel({ team, onChanged }: { team: TeamResponse; onChanged
       </div>
       <p className="profile__note">
         There is no sign-in yet, so each change is recorded as made by the person chosen under “Changing as”. This browser remembers
-        the choice. The first role is the main one, which seats the person on the board.
+        the choice. The first role is the main one, which seats the person on the board. A person taken off the team keeps their
+        cards and log entries.
       </p>
+      {left !== undefined && (
+        <p className="team-edit__status" role="status">
+          Took {left} off the team.
+        </p>
+      )}
       {team.people.map(({ teammate }) => (
-        <RolesEditor key={teammate.id} person={teammate} options={options} actor={actor} onSaved={onChanged} />
+        <RolesEditor
+          key={teammate.id}
+          person={teammate}
+          team={team}
+          options={options}
+          actor={actor}
+          onSaved={onChanged}
+          onLeft={onLeft}
+          onStart={() => setLeft(undefined)}
+        />
       ))}
-      <AddPerson team={team} options={options} actor={actor} onAdded={onChanged} />
+      <AddPerson team={team} options={options} actor={actor} onAdded={onChanged} onStart={() => setLeft(undefined)} />
     </section>
   );
 }

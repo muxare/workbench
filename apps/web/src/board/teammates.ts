@@ -91,8 +91,12 @@ export function shortLabel(teammate: Teammate | undefined, id: string): string {
   return mainRole(teammate).toUpperCase();
 }
 
+/**
+ * A teammate by id: someone on the team, or else a person who left, so the
+ * events and cards that name them still read with their role and name.
+ */
 export function findTeammate(board: BoardResponse, id: string): Teammate | undefined {
-  return board.teammates.find((t) => t.id === id);
+  return board.teammates.find((t) => t.id === id) ?? board.former_teammates.find((t) => t.id === id);
 }
 
 export function labelOf(board: BoardResponse, id: string): string {
