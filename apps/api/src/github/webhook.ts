@@ -222,6 +222,8 @@ async function cardOnBoard(ctx: WebhookContext, cardId: string | undefined, what
   if (cardId === undefined) return { plan: ignore(`${what} names no card`) };
   const card = await getCard(ctx.db, cardId);
   if (!card) return { plan: ignore(`card ${cardId} is not on the board`, cardId) };
+  // A withdrawn card takes no further event, so work reported for it later is not recorded.
+  if (card.withdrawn) return { plan: ignore(`card ${cardId} was withdrawn, so it is not on the board`, cardId) };
   return { card };
 }
 

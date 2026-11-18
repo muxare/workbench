@@ -496,6 +496,101 @@ describe("POST /api/cards/:id/questions/:questionId/answer", () => {
   });
 });
 
+describe("POST /api/cards/:id/withdraw", () => {
+  const withdraw = (id: string, from: string, actor = PO, reason = "Invented: the residents dropped the reminder idea") =>
+    post(`/api/cards/${id}/withdraw`, { actor, reason, from });
+  const boardIds = async () => boardResponse.parse(await (await app.request("/api/board")).json()).cards.map((c) => c.id);
+
+  it("withdraws a Ready card: one event, the card keeps its status and leaves the board, and stays readable with its log", async () => {
+    const res = await withdraw("invented-108", "ready");
+    expect(res.status).toBe(200);
+    const out = writeResponse.parse(await res.json());
+    expect(out.card).toMatchObject({
+      status: { state: "ready" },
+      withdrawn: { by: PO, at: "2026-11-07T10:00:00.000Z", reason: "Invented: the residents dropped the reminder idea", from: "ready" },
+    });
+    expect(out.events).toEqual([
+      {
+        id: "invented-new-1",
+        type: "card_withdrawn",
+        card_id: "invented-108",
+        actor: PO,
+        at: "2026-11-07T10:00:00.000Z",
+        reason: "Invented: the residents dropped the reminder idea",
+        from: "ready",
+      },
+    ]);
+    expect(await boardIds()).not.toContain("invented-108");
+    const board = boardResponse.parse(await (await app.request("/api/board")).json());
+    expect(board.log.at(-1)).toMatchObject({ type: "card_withdrawn", card_id: "invented-108" });
+    const detail = cardResponse.parse(await (await app.request("/api/cards/invented-108")).json());
+    expect(detail.card.withdrawn?.from).toBe("ready");
+    expect(detail.log.at(-1)?.type).toBe("card_withdrawn");
+    expect(detail.log.filter((e) => e.type === "status_changed").length).toBeGreaterThan(0);
+  });
+
+  it("withdraws a card in progress with no branch linked", async () => {
+    expect((await withdraw("invented-107", "in_progress")).status).toBe(200);
+    expect(await boardIds()).not.toContain("invented-107");
+  });
+
+  it("refuses a card in progress with a branch linked with 422", async () => {
+    await appendEvent(db, {
+      id: "invented-link",
+      type: "workspace_linked",
+      card_id: "invented-107",
+      actor: FE,
+      at: "2026-11-07T09:00:00Z",
+      workspace: "github",
+      repository: "invented/repo",
+      branch: "wb/invented-107-invented",
+      url: "https://github.com/invented/repo/tree/wb/invented-107-invented",
+    });
+    await expectProblem(await withdraw("invented-107", "in_progress"), 422, "rule_violation", /branch linked/);
+    expect(await boardIds()).toContain("invented-107");
+  });
+
+  it("refuses Review, Done and Needs input as from, and an empty reason, with 400", async () => {
+    for (const from of ["review", "done", "needs_input"]) await expectProblem(await withdraw("invented-104", from), 400, "invalid_request");
+    await expectProblem(await withdraw("invented-108", "ready", PO, "  "), 400, "invalid_request");
+  });
+
+  it("refuses a stale from and a card withdrawn already with 409, an AI with 403, and unknowns with 404 and 422", async () => {
+    await expectProblem(await withdraw("invented-104", "ready"), 409, "conflict", /is done, not ready/);
+    await expectProblem(await withdraw("invented-108", "ready", AI), 403, "forbidden");
+    await expectProblem(await withdraw("invented-108", "ready", "invented-nobody"), 422, "rule_violation");
+    await expectProblem(await withdraw("invented-999", "ready"), 404, "not_found");
+    await withdraw("invented-108", "ready");
+    await expectProblem(await withdraw("invented-108", "ready"), 409, "conflict", /withdrawn already/);
+  });
+
+  it("refuses any later move, pick, question or report on the withdrawn card with 409", async () => {
+    await withdraw("invented-108", "ready");
+    await withdraw("invented-107", "in_progress");
+    const refused = [
+      await post("/api/cards/invented-108/status", { actor: FE, from: "ready", to: { state: "backlog" } }),
+      await post("/api/cards/invented-108/pick", { actor: FE }),
+      await post("/api/cards/invented-108/pick", { actor: AI }),
+      await post("/api/cards/invented-107/questions", { actor: FE, asked_of: PO, text: "Invented?", why_it_blocks: "Invented." }),
+      await post("/api/cards/invented-107/reports", { actor: FE, text: "Invented report." }),
+    ];
+    for (const res of refused) await expectProblem(res, 409, "conflict", /withdrawn/);
+    expect(cardResponse.parse(await (await app.request("/api/cards/invented-108")).json()).log.at(-1)?.type).toBe("card_withdrawn");
+  });
+
+  it("refuses a new card that depends on a withdrawn card", async () => {
+    await withdraw("invented-108", "ready");
+    const res = await post("/api/cards", {
+      actor: PO,
+      title: "Invented: follow-up",
+      function_id: "refine_ui_spec",
+      owner: FE,
+      links: [{ relation: "depends_on", card_id: "invented-108" }],
+    });
+    await expectProblem(res, 409, "conflict", /withdrawn/);
+  });
+});
+
 describe("POST /api/cards/:id/status", () => {
   it("makes a manual move", async () => {
     const res = await post("/api/cards/invented-108/status", { actor: PO, from: "ready", to: { state: "backlog" } });

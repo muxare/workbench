@@ -10,7 +10,9 @@
 // function's critic gate from the `critic_gate_changed` events, and the
 // team's name from the `team_named` events, in the same way. The filters are a view setting: no query here applies them.
 // Batches of cards handed to the AI are derived from the `batch_handed` and
-// `batch_planned` events and the statuses of their cards.
+// `batch_planned` events and the statuses of their cards. A card's withdrawal
+// is derived from its `card_withdrawn` event: the card keeps the status it was
+// withdrawn from, leaves the board and any batch, and takes no further event.
 import { and, asc, desc, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   card as cardSchema,
@@ -25,6 +27,7 @@ import {
   deriveRoles,
   deriveTeamName,
   humanTeammate,
+  isCardEvent,
   nextBatchId,
   openBatches,
   sameEventTypes,
@@ -32,11 +35,14 @@ import {
   sameTeamName,
   streamEvent,
   teammate as teammateSchema,
+  withdrawalOf,
   type Batch,
   type BatchHandedEvent,
   type BatchPlannedEvent,
   type Card,
   type CardEvent,
+  type CardWithdrawal,
+  type CardWithdrawnEvent,
   type CriticGateChangedEvent,
   type CriticGates,
   type Cycle,
@@ -60,9 +66,9 @@ import { z } from "zod";
 import type { Db } from "./db/client.ts";
 import { cards, cycles, events, teammates, type EventPayload } from "./db/schema.ts";
 
-/** A card as stored: everything but its status, which comes from events. */
-export const cardRecord = cardSchema.omit({ status: true });
-export type CardRecord = Omit<Card, "status">;
+/** A card as stored: everything but its status and its withdrawal, which come from events. */
+export const cardRecord = cardSchema.omit({ status: true, withdrawn: true });
+export type CardRecord = Omit<Card, "status" | "withdrawn">;
 
 /**
  * A teammate as added: everything but a person's process profile, which
@@ -227,13 +233,18 @@ interface Pending {
   team?: TeamName | null;
   /** The events earlier in the write set that batches are derived from (`BATCH_TYPES`). */
   batches: StreamEvent[];
+  /** The cards an earlier event in the write set withdrew. */
+  withdrawn: Set<string>;
+  /** The cards an earlier event in the write set linked a branch to. */
+  linked: Set<string>;
 }
 
 /**
- * The event types batches are derived from: the batch events, and status
- * changes, since a card moved back to Backlog leaves its batch.
+ * The event types batches are derived from: the batch events, status
+ * changes, since a card moved back to Backlog leaves its batch, and
+ * withdrawals, since a withdrawn card leaves its batch too.
  */
-const BATCH_TYPES: StreamEventType[] = ["batch_handed", "batch_planned", "status_changed"];
+const BATCH_TYPES: StreamEventType[] = ["batch_handed", "batch_planned", "status_changed", "card_withdrawn"];
 
 /**
  * Every event batches are derived from, in stream order; served by the
@@ -272,7 +283,7 @@ export async function getBatch(db: Db, batchId: string): Promise<Batch | undefin
 
 /** The batches and cards as they stand after the earlier events of the write, for checking the next one. */
 async function batchesWithPending(db: Db, pending: Pending): Promise<{ batches: Batch[]; cards: Card[] }> {
-  const cards = (await listCards(db)).map((c) => ({ ...c, status: pending.statuses.get(c.id) ?? c.status }));
+  const cards = (await listCards(db, { includeWithdrawn: true })).map((c) => ({ ...c, status: pending.statuses.get(c.id) ?? c.status }));
   return { batches: deriveBatches([...(await batchEvents(db)), ...pending.batches], cards), cards };
 }
 
@@ -297,6 +308,7 @@ async function checkBatchHanded(db: Db, event: BatchHandedEvent, pending: Pendin
   for (const id of event.card_ids) {
     const card = cards.find((c) => c.id === id);
     if (!card) throw new StoreError(`${event.id}: no card '${id}'`, "not_found");
+    if (card.withdrawn || pending.withdrawn.has(id)) throw new StoreError(`${event.id}: ${id} was withdrawn`, "conflict");
     if (card.status.state !== "ready") {
       throw new StoreError(`${event.id}: ${id} is ${card.status.state}; only Ready cards are handed over`, "conflict");
     }
@@ -444,7 +456,55 @@ async function checkTeamNamed(db: Db, event: TeamNamedEvent, pending: Pending): 
 }
 
 /**
- * Check an event against the stream so far: it must parse; a status change's
+ * A card is withdrawn by a person, from the state it is in now (`from`), so
+ * a withdrawal made from an out-of-date view cannot land. The schema allows
+ * only Backlog, Ready and In progress as `from`, and whatever `from` is, the
+ * card must never have had a branch linked (`workspace_linked`, in the stream
+ * or earlier in the same write), because work on a branch is on record and
+ * goes through review instead; a card moved back to Ready from In progress
+ * keeps its branch. A card withdrawn already is
+ * refused before this, like any event on it.
+ */
+async function checkCardWithdrawn(db: Db, event: CardWithdrawnEvent, pending: Pending): Promise<void> {
+  const [actor] = await db.select().from(teammates).where(eq(teammates.id, event.actor));
+  if (!actor) throw new StoreError(`${event.id}: no teammate '${event.actor}'`, "not_found");
+  if (actor.kind !== "human") throw new StoreError(`${event.id}: a card is withdrawn by a person, not ${event.actor}`, "forbidden");
+  const [row] = await db.select({ id: cards.id }).from(cards).where(eq(cards.id, event.card_id));
+  if (!row) throw new StoreError(`${event.id}: no card '${event.card_id}'`, "not_found");
+  const current = pending.statuses.get(event.card_id) ?? (await cardStatus(db, event.card_id));
+  if (current.state !== event.from) {
+    throw new StoreError(`${event.id}: card ${event.card_id} is ${current.state}, not ${event.from}`, "conflict");
+  }
+  const [linked] = pending.linked.has(event.card_id)
+    ? [true]
+    : await db
+        .select({ seq: events.seq })
+        .from(events)
+        .where(and(eq(events.cardId, event.card_id), eq(events.type, "workspace_linked")))
+        .limit(1);
+  if (linked) {
+    throw new StoreError(`${event.id}: card ${event.card_id} has a branch linked, so it goes through review rather than being withdrawn`);
+  }
+  pending.withdrawn.add(event.card_id);
+  pending.batches.push(event);
+}
+
+/** The card's withdrawal, from its `card_withdrawn` event; undefined for a card on the board. */
+export async function cardWithdrawal(db: Db, cardId: string): Promise<CardWithdrawal | undefined> {
+  const [row] = await db
+    .select()
+    .from(events)
+    .where(and(eq(events.cardId, cardId), eq(events.type, "card_withdrawn")))
+    .orderBy(asc(events.seq))
+    .limit(1);
+  const e = row && fromRow(row);
+  return e?.type === "card_withdrawn" ? withdrawalOf(e) : undefined;
+}
+
+/**
+ * Check an event against the stream so far: it must parse; a card event on
+ * a withdrawn card is refused, since a withdrawn card takes no further event;
+ * a withdrawal must pass `checkCardWithdrawn`; a status change's
  * `from` must be the card's current state; an answer must come from a human,
  * because in every protocol `decides` is human; a mode change must pass
  * `checkModeChange`, a roles change `checkRolesChange`, a filter change
@@ -455,6 +515,11 @@ async function checkTeamNamed(db: Db, event: TeamNamedEvent, pending: Pending): 
  */
 async function checkEvent(db: Db, input: StreamEvent, pending: Pending): Promise<StreamEvent> {
   const event = streamEvent.parse(input);
+  if (isCardEvent(event) && (pending.withdrawn.has(event.card_id) || (await cardWithdrawal(db, event.card_id)))) {
+    throw new StoreError(`${event.id}: card ${event.card_id} was withdrawn and takes no further event`, "conflict");
+  }
+  if (event.type === "card_withdrawn") await checkCardWithdrawn(db, event, pending);
+  if (event.type === "workspace_linked") pending.linked.add(event.card_id);
   if (event.type === "status_changed") {
     const current = pending.statuses.get(event.card_id) ?? (await cardStatus(db, event.card_id));
     if (current.state !== event.from) {
@@ -561,7 +626,16 @@ export function handBatch(
 /** `appendEvents` without the queue; only for work already inside `serialized`. */
 async function appendNow(db: Db, inputs: readonly StreamEvent[]): Promise<StoredEvent[]> {
   if (inputs.length === 0) return [];
-  const pending: Pending = { statuses: new Map(), modes: new Map(), roles: new Map(), filters: new Map(), gates: new Map(), batches: [] };
+  const pending: Pending = {
+    statuses: new Map(),
+    modes: new Map(),
+    roles: new Map(),
+    filters: new Map(),
+    gates: new Map(),
+    batches: [],
+    withdrawn: new Set(),
+    linked: new Set(),
+  };
   const checked: StreamEvent[] = [];
   for (const input of inputs) checked.push(await checkEvent(db, input, pending));
   // One multi-row INSERT is one statement, so SQLite stores all rows or none.
@@ -787,7 +861,7 @@ export async function cardStatus(db: Db, cardId: string): Promise<Status> {
   return last?.type === "status_changed" ? last.to : INITIAL_STATUS;
 }
 
-function cardFromRow(row: typeof cards.$inferSelect, status: Status): Card {
+function cardFromRow(row: typeof cards.$inferSelect, status: Status, withdrawn?: CardWithdrawal): Card {
   return cardSchema.parse({
     id: row.id,
     title: row.title,
@@ -796,13 +870,14 @@ function cardFromRow(row: typeof cards.$inferSelect, status: Status): Card {
     status,
     ...(row.milestone === null ? {} : { milestone: row.milestone }),
     links: row.links,
+    ...(withdrawn === undefined ? {} : { withdrawn }),
   });
 }
 
-/** One card with its status derived from the event stream. */
+/** One card with its status and any withdrawal derived from the event stream; a withdrawn card is still read. */
 export async function getCard(db: Db, cardId: string): Promise<Card | undefined> {
   const [row] = await db.select().from(cards).where(eq(cards.id, cardId));
-  return row && cardFromRow(row, await cardStatus(db, cardId));
+  return row && cardFromRow(row, await cardStatus(db, cardId), await cardWithdrawal(db, cardId));
 }
 
 /**
@@ -835,11 +910,14 @@ export async function listQuestions(db: Db, options: { cardId?: string } = {}): 
 }
 
 /**
- * Every card with its status derived from the event stream. Numbered cards
- * come first, by number, so #6 comes before #10; cards with any other id
- * follow, by text. "Numbered" is the same test `addNumberedCard` uses.
+ * Every card on the board with its status derived from the event stream. A
+ * withdrawn card is not on the board, so it is left out unless
+ * `includeWithdrawn` asks for it, when it comes with its `withdrawn`.
+ * Numbered cards come first, by number, so #6 comes before #10; cards with
+ * any other id follow, by text. "Numbered" is the same test `addNumberedCard`
+ * uses.
  */
-export async function listCards(db: Db): Promise<Card[]> {
+export async function listCards(db: Db, options: { includeWithdrawn?: boolean } = {}): Promise<Card[]> {
   const numbered = sql`(${cards.id} GLOB '[1-9]*' AND ${cards.id} NOT GLOB '*[^0-9]*')`;
   const rows = await db
     .select()
@@ -848,14 +926,17 @@ export async function listCards(db: Db): Promise<Card[]> {
   const changes = await db
     .select()
     .from(events)
-    .where(eq(events.type, "status_changed"))
-    .orderBy(asc(events.seq));
+    .where(inArray(events.type, ["status_changed", "card_withdrawn"]));
   const statusByCard = new Map<string, Status>();
-  for (const row of changes) {
+  const withdrawnByCard = new Map<string, CardWithdrawal>();
+  for (const row of changes.sort((a, b) => a.seq - b.seq)) {
     const e = fromRow(row);
     if (e.type === "status_changed") statusByCard.set(e.card_id, e.to);
+    if (e.type === "card_withdrawn" && !withdrawnByCard.has(e.card_id)) withdrawnByCard.set(e.card_id, withdrawalOf(e));
   }
-  return rows.map((row) => cardFromRow(row, statusByCard.get(row.id) ?? INITIAL_STATUS));
+  return rows
+    .filter((row) => options.includeWithdrawn === true || !withdrawnByCard.has(row.id))
+    .map((row) => cardFromRow(row, statusByCard.get(row.id) ?? INITIAL_STATUS, withdrawnByCard.get(row.id)));
 }
 
 /** The card log: every event whose subject is one card, oldest first. */

@@ -281,6 +281,15 @@ describe("push", () => {
     expect(missing.card_id).toBe("99");
   });
 
+  it("ignores a push for a withdrawn card, which takes no further event", async () => {
+    await moveCard2("ready");
+    await appendEvents(db, [
+      { id: "w", type: "card_withdrawn", card_id: "2", actor: "mikael", at: "2026-11-11T09:30:00Z", reason: "Invented: not needed", from: "ready" },
+    ]);
+    await ignored("push", fixture("push.created"), /card 2 was withdrawn/);
+    expect((await cardLog(db, "2")).at(-1)?.type).toBe("card_withdrawn");
+  });
+
   it("ignores a push by a GitHub account that is not a teammate", async () => {
     await ignored("push", tweak(fixture("push"), "sender.login", "invented-stranger"), /invented-stranger is not mapped to a teammate/);
   });

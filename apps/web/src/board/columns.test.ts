@@ -25,4 +25,10 @@ describe("groupIntoColumns", () => {
     const cols = groupIntoColumns([card("x", { status: { state: "needs_input", waiting_on: "p", question_id: "q" } })]);
     expect(cols.find((c) => c.status === "needs_input")!.cards).toHaveLength(1);
   });
+
+  it("leaves a withdrawn card out of every column", () => {
+    const withdrawn = { by: "p", at: "2026-11-17T10:00:00Z", reason: "Not needed", from: "ready" as const };
+    const cols = groupIntoColumns([card("w", { status: { state: "ready" }, withdrawn }), card("r", { status: { state: "ready" } })]);
+    expect(cols.flatMap((c) => c.cards.map((x) => x.id))).toEqual(["r"]);
+  });
 });

@@ -70,6 +70,21 @@ describe("deriveBatches", () => {
     expect(openBatches(later).map((b) => b.id)).toEqual(["2"]);
   });
 
+  it("releases a withdrawn card, so the batch finishes on the cards left in it", () => {
+    const withdrawn: StreamEvent = {
+      id: "w1",
+      type: "card_withdrawn",
+      card_id: "2",
+      actor: "invented-po",
+      at,
+      reason: "Invented: no longer needed.",
+      from: "ready",
+    };
+    // The withdrawn card keeps its Ready status, and the board no longer lists it.
+    const [batch] = deriveBatches([handed("1", ["1", "2", "3"]), withdrawn], [card("1", "review"), card("3", "done")]);
+    expect(batch).toMatchObject({ released_card_ids: ["2"], state: "finished" });
+  });
+
   it("counts a card it cannot see as unfinished, ignores a plan for no batch, and keeps only the first plan", () => {
     const events = [
       planned("9", [{ card_ids: ["1"], note: "Invented." }]),

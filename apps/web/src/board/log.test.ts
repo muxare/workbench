@@ -80,6 +80,9 @@ describe("describeEvent", () => {
     expect(describeEvent({ ...base, type: "move_skipped", to: "done", state: "review", reason: "nobody approved it on the board" }, board)).toBe(
       "#151 stayed Review, not moved to Done · BE: nobody approved it on the board",
     );
+    expect(describeEvent({ ...base, type: "card_withdrawn", reason: "Invented: a duplicate of #150", from: "in_progress" }, board)).toBe(
+      "BE withdrew #151 from In progress: Invented: a duplicate of #150",
+    );
   });
 
   it("describes a mode change, which has no card", () => {

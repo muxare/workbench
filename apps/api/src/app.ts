@@ -79,6 +79,7 @@ import {
   setRolesRequest,
   batchCards,
   unmetDependencies,
+  withdrawRequest,
   moveFunction,
   type HumanTeammate,
   type TeammateResponse,
@@ -234,6 +235,13 @@ export function createApp(deps: AppDeps) {
     return card;
   }
 
+  /** A card still on the board: 404 for no such card, 409 for a withdrawn one, which takes no further move, pick, question or report. */
+  async function onBoardOr409(id: string): Promise<Card> {
+    const card = await cardOr404(id);
+    if (card.withdrawn) throw new ApiProblem("conflict", `${id} was withdrawn, so it is no longer on the board`);
+    return card;
+  }
+
   async function teammateOr422(id: string, role: string): Promise<Teammate> {
     const t = await getTeammate(db, id);
     if (!t) throw new ApiProblem("rule_violation", `${role} '${id}' is not a teammate`);
@@ -351,7 +359,7 @@ export function createApp(deps: AppDeps) {
       if (actor.kind !== "human") throw new ApiProblem("forbidden", `a batch is handed over by a person, not ${actor.id}`);
       const handedTo = await batchTeammate(req.handed_to);
       const handed: Card[] = [];
-      for (const id of req.card_ids) handed.push(await cardOr404(id));
+      for (const id of req.card_ids) handed.push(await onBoardOr409(id));
       const defs = definitions();
       const cards = await listCards(db);
       const teammates = await listTeammates(db);
@@ -398,7 +406,7 @@ export function createApp(deps: AppDeps) {
       const req = await body(c, createCardRequest);
       await teammateOr422(req.actor, "actor");
       await teammateOr422(req.owner, "owner");
-      for (const link of req.links) await cardOr404(link.card_id);
+      for (const link of req.links) await onBoardOr409(link.card_id);
       const id = await addNumberedCard(
         db,
         {
@@ -414,7 +422,7 @@ export function createApp(deps: AppDeps) {
     })
 
     .post("/cards/:id/pick", async (c) => {
-      const card = await cardOr404(c.req.param("id"));
+      const card = await onBoardOr409(c.req.param("id"));
       const req = await body(c, pickRequest);
       const actor = await teammateOr422(req.actor, "actor");
       const owner = await teammateOr422(card.owner, "owner");
@@ -462,7 +470,7 @@ export function createApp(deps: AppDeps) {
     })
 
     .post("/cards/:id/questions", async (c) => {
-      const card = await cardOr404(c.req.param("id"));
+      const card = await onBoardOr409(c.req.param("id"));
       const req = await body(c, askRequest);
       await teammateOr422(req.actor, "actor");
       const askedOf = await teammateOr422(req.asked_of, "asked_of");
@@ -507,7 +515,7 @@ export function createApp(deps: AppDeps) {
     })
 
     .post("/cards/:id/questions/:questionId/answer", async (c) => {
-      const card = await cardOr404(c.req.param("id"));
+      const card = await onBoardOr409(c.req.param("id"));
       const questionId = c.req.param("questionId");
       const req = await body(c, answerRequest);
       await teammateOr422(req.actor, "actor");
@@ -522,7 +530,7 @@ export function createApp(deps: AppDeps) {
     })
 
     .post("/cards/:id/reports", async (c) => {
-      const card = await cardOr404(c.req.param("id"));
+      const card = await onBoardOr409(c.req.param("id"));
       const req = await body(c, reportRequest);
       const actor = await teammateOr422(req.actor, "actor");
       if (!REPORTABLE.includes(card.status.state)) {
@@ -539,7 +547,7 @@ export function createApp(deps: AppDeps) {
     })
 
     .post("/cards/:id/status", async (c) => {
-      const card = await cardOr404(c.req.param("id"));
+      const card = await onBoardOr409(c.req.param("id"));
       const req = await body(c, moveStatusRequest);
       await teammateOr422(req.actor, "actor");
       if (!isManualMove(req.from, req.to.state)) {
@@ -550,6 +558,18 @@ export function createApp(deps: AppDeps) {
       }
       return c.json(
         await write(card.id, [{ ...base(card.id, req.actor), type: "status_changed", from: req.from, to: req.to }]),
+      );
+    })
+
+    .post("/cards/:id/withdraw", async (c) => {
+      const card = await cardOr404(c.req.param("id"));
+      const req = await body(c, withdrawRequest);
+      const actor = await teammateOr422(req.actor, "actor");
+      if (actor.kind !== "human") throw new ApiProblem("forbidden", `a card is withdrawn by a person, not ${actor.id}`);
+      if (card.withdrawn) throw new ApiProblem("conflict", `${card.id} was withdrawn already`);
+      // The store checks `from` against the card's state and refuses a card with a branch linked, whatever its state (422).
+      return c.json(
+        await write(card.id, [{ ...base(card.id, actor.id), type: "card_withdrawn", reason: req.reason, from: req.from }]),
       );
     })
 

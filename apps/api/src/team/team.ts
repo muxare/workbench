@@ -120,7 +120,8 @@ export async function nameTeam(db: Db, team: TeamFile, at: string): Promise<bool
  * is taken by a different card is refused: `POST /cards` numbers cards from
  * the same pool, so the API may have used the id first. Checks what `POST /cards` checks: the
  * function exists in process/ (`functionIds`), the owner is a teammate, and
- * every `depends_on` card exists, earlier in the file or already on the board.
+ * every `depends_on` card exists, earlier in the file or already on the board,
+ * and was not withdrawn.
  */
 export async function enterCards(
   db: Db,
@@ -144,8 +145,12 @@ export async function enterCards(
     }
     if (!(await getTeammate(db, c.owner))) throw new StoreError(`${c.id}: owner '${c.owner}' is not a teammate`, "rule_violation");
     for (const link of c.links) {
-      if (!(await getCard(db, link.card_id))) {
+      const dependency = await getCard(db, link.card_id);
+      if (!dependency) {
         throw new StoreError(`${c.id}: depends on '${link.card_id}', which is not on the board`, "rule_violation");
+      }
+      if (dependency.withdrawn) {
+        throw new StoreError(`${c.id}: depends on '${link.card_id}', which was withdrawn, so it is no longer on the board`, "conflict");
       }
     }
     await addCard(db, c, functionIds);

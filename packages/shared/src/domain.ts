@@ -124,6 +124,34 @@ export type Status = z.infer<typeof status>;
 export const cardLink = z.object({ relation: z.literal("depends_on"), card_id: cardId });
 export type CardLink = z.infer<typeof cardLink>;
 
+/**
+ * The states a card may be withdrawn from: before anyone has started the
+ * work, or while it is in progress. A card in Review or Done has work on
+ * record, and one waiting on an answer has a question open, so it is not
+ * withdrawn from those; nor is a card in any state once a branch is linked
+ * to it, which the store checks.
+ */
+export const withdrawableStatus = cardStatus.extract(["backlog", "ready", "in_progress"]);
+export type WithdrawableStatus = z.infer<typeof withdrawableStatus>;
+
+/** Why a card is withdrawn, in the person's words: not empty, and not only spaces. */
+export const withdrawalReason = z.string().trim().min(1);
+
+/**
+ * Why and when a card was withdrawn, derived from its `card_withdrawn` event:
+ * the person who withdrew it (`by`), the reason they gave, the state it was
+ * withdrawn from and the time. A withdrawn card keeps that state as its
+ * `status`, takes no further event, and is off the board, but it can still be
+ * read with its log.
+ */
+export const cardWithdrawal = z.strictObject({
+  by: teammateId,
+  at: timestamp,
+  reason: withdrawalReason,
+  from: withdrawableStatus,
+});
+export type CardWithdrawal = z.infer<typeof cardWithdrawal>;
+
 export const card = z.object({
   id: cardId,
   title: z.string().min(1),
@@ -132,6 +160,8 @@ export const card = z.object({
   status,
   milestone: z.string().min(1).optional(),
   links: z.array(cardLink),
+  /** Set once the card is withdrawn; absent on a card on the board. */
+  withdrawn: cardWithdrawal.optional(),
 });
 export type Card = z.infer<typeof card>;
 
@@ -276,6 +306,8 @@ const commitSha = z.string().min(1);
  * the pull request's number. `move_skipped` says a delivery would have moved
  * the card but the card's lane or a rule kept it where it was, so the drift
  * between the board and the work is on the record and can be counted.
+ * `card_withdrawn` says a person took the card off the board for `reason`,
+ * from the state `from`; the card takes no event after it (added 2026-11-17).
  */
 export const cardEvent = z.discriminatedUnion("type", [
   z.object({ ...cardEventBase, type: z.literal("picked"), mode }),
@@ -362,6 +394,13 @@ export const cardEvent = z.discriminatedUnion("type", [
     reason: z.string().min(1),
     /** The pull request the delivery was about, when it was about one. */
     pull_request: pullRequestNumber.optional(),
+  }),
+  z.object({
+    ...cardEventBase,
+    type: z.literal("card_withdrawn"),
+    reason: withdrawalReason,
+    /** The state the card was in, which it keeps as its status. */
+    from: withdrawableStatus,
   }),
 ]);
 export type CardEvent = z.infer<typeof cardEvent>;
@@ -570,6 +609,13 @@ export function eventSubject(e: StreamEvent): EventSubject {
 
 export function isCardEvent(e: StreamEvent): e is CardEvent {
   return eventSubject(e).kind === "card";
+}
+
+export type CardWithdrawnEvent = Extract<CardEvent, { type: "card_withdrawn" }>;
+
+/** The withdrawal a `card_withdrawn` event records, as a card carries it. */
+export function withdrawalOf(e: CardWithdrawnEvent): CardWithdrawal {
+  return { by: e.actor, at: e.at, reason: e.reason, from: e.from };
 }
 
 /**

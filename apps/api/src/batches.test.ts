@@ -323,6 +323,32 @@ describe("cards leaving a batch", () => {
     expect((await hand([a, c])).status).toBe(201);
   });
 
+  it("releases a withdrawn card, so the batch finishes without it and a plan leaves it out", async () => {
+    const [a, b, c] = [await readyCard("a"), await readyCard("b"), await readyCard("c")];
+    await hand([a, b, c]);
+    expect((await post(`/api/cards/${a}/withdraw`, { actor: FE, reason: "Invented: no longer needed", from: "ready" })).status).toBe(200);
+    expect(await getBatch(db, "1")).toMatchObject({ state: "handed", released_card_ids: [a] });
+    await expectProblem(await plan("1", [{ card_ids: [a, b, c], note: "n" }]), 409, "conflict", new RegExp(`${a} is not in the batch`));
+    expect((await plan("1", [{ card_ids: [b, c], note: "n" }])).status).toBe(200);
+    const detail = batchDetailResponse.parse(await (await app.request("/api/batches/1")).json());
+    expect(detail.cards.map((x) => x.card.id)).toEqual([b, c]);
+    for (const id of [b, c]) {
+      await post(`/api/cards/${id}/pick`, { actor: AI });
+      await post(`/api/cards/${id}/status`, { actor: AI, from: "in_progress", to: { state: "review" } });
+    }
+    expect((await getBatch(db, "1"))?.state).toBe("finished");
+  });
+
+  it("refuses to hand over a withdrawn card, and the store refuses it too", async () => {
+    const [a, b] = [await readyCard("a"), await readyCard("b")];
+    await post(`/api/cards/${a}/withdraw`, { actor: FE, reason: "Invented: duplicate", from: "ready" });
+    await expectProblem(await hand([a, b]), 409, "conflict", /withdrawn/);
+    await expect(handBatch(db, { id: "e-hand", actor: PO, at: AT, card_ids: [a, b], handed_to: AI })).rejects.toMatchObject({
+      code: "conflict",
+      message: expect.stringMatching(/withdrawn/),
+    });
+  });
+
   it("refuses a plan for a finished batch", async () => {
     const [a, b] = [await readyCard("a"), await readyCard("b")];
     await hand([a, b]);
